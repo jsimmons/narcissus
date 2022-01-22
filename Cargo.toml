@@ -1,0 +1,20 @@
+[workspace]
+
+members = [
+    "vulkan-sys",
+    "sdl2-sys",
+    "renderdoc-sys",
+    "narcissus",
+    "narcissus-core",
+    "narcissus-gpu",
+    "narcissus-app",
+    "narcissus-maths",
+    "narcissus-world",
+]
+
+[profile.release]
+panic = "abort"
+debug = true
+
+[profile.dev]
+panic = "abort"
