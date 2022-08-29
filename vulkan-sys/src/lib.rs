@@ -287,9 +287,9 @@ impl GlobalFunctions {
     pub unsafe fn get_instance_proc_addr(
         &self,
         instance: Instance,
-        name: *const c_char,
+        name: &CStr,
     ) -> Option<FnVoidFunction> {
-        (self.get_instance_proc_addr)(instance, name)
+        (self.get_instance_proc_addr)(instance, name.as_ptr())
     }
 
     #[inline]
@@ -334,7 +334,7 @@ impl InstanceFunctions {
             let load = |name: &CStr, function_version| {
                 if api_version >= function_version {
                     global_functions
-                        .get_instance_proc_addr(instance, name.as_ptr())
+                        .get_instance_proc_addr(instance, name)
                         .unwrap_or_else(
                             #[cold]
                             || {
@@ -2201,7 +2201,7 @@ impl SurfaceKHRFunctions {
         unsafe {
             let load = |name: &CStr| {
                 global_functions
-                    .get_instance_proc_addr(instance, name.as_ptr())
+                    .get_instance_proc_addr(instance, name)
                     .unwrap_or_else(
                         #[cold]
                         || panic!("failed to load device function {}", name.to_string_lossy()),
@@ -2309,7 +2309,7 @@ impl SwapchainKHRFunctions {
             let load = |name: &CStr, function_version: u32| {
                 if api_version >= function_version {
                     global_functions
-                        .get_instance_proc_addr(instance, name.as_ptr())
+                        .get_instance_proc_addr(instance, name)
                         .unwrap_or_else(
                             #[cold]
                             || panic!("failed to load device function {}", name.to_string_lossy()),
