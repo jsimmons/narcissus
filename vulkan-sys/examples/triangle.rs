@@ -3,20 +3,18 @@ use libc::c_void;
 use vulkan_sys as vk;
 use vulkan_sys::cstr;
 
-#[macro_export]
 macro_rules! vk_check {
     ($e:expr) => ({
-        let e = $e;
-        if e != vk::Result::Success {
+        #[allow(unused_unsafe)]
+        let e = unsafe { $e };
+        if e != vulkan_sys::Result::Success {
             panic!("assertion failed: `result == vk::Result::Success`: \n value: `{:?}`", e);
         }
     });
-    ($e:expr, ) => ({
-        vk_assert!($e);
-    });
     ($e:expr, $($msg_args:tt)+) => ({
-        let e = $e;
-        if e != vk::Result::Success {
+        #[allow(unused_unsafe)]
+        let e = unsafe { $e };
+        if e != vulkan_sys::::Result::Success {
             panic!("assertion failed: `result == vk::Result::Success`: \n value: `{:?}: {}`", e, format_args!($($msg_args)+));
         }
     })
@@ -78,7 +76,7 @@ pub fn main() {
             ..default()
         };
         let mut instance = vk::Instance::null();
-        vk_check!(unsafe { global_fn.create_instance(&create_info, None, &mut instance) });
+        vk_check!(global_fn.create_instance(&create_info, None, &mut instance));
         instance
     };
 
@@ -223,9 +221,7 @@ pub fn main() {
             ..default()
         };
         let mut shader_module = vk::ShaderModule::null();
-        vk_check!(unsafe {
-            device_fn.create_shader_module(device, &create_info, None, &mut shader_module)
-        });
+        vk_check!(device_fn.create_shader_module(device, &create_info, None, &mut shader_module));
         shader_module
     };
 
@@ -236,9 +232,12 @@ pub fn main() {
         let layout = {
             let create_info = vk::PipelineLayoutCreateInfo::default();
             let mut pipeline_layout = vk::PipelineLayout::null();
-            vk_check!(unsafe {
-                device_fn.create_pipeline_layout(device, &create_info, None, &mut pipeline_layout)
-            });
+            vk_check!(device_fn.create_pipeline_layout(
+                device,
+                &create_info,
+                None,
+                &mut pipeline_layout
+            ));
             pipeline_layout
         };
 
@@ -341,9 +340,7 @@ pub fn main() {
             ..default()
         };
         let mut command_pool = vk::CommandPool::default();
-        vk_check!(unsafe {
-            device_fn.create_command_pool(device, &create_info, None, &mut command_pool)
-        });
+        vk_check!(device_fn.create_command_pool(device, &create_info, None, &mut command_pool));
         command_pool
     };
 
@@ -384,7 +381,7 @@ pub fn main() {
             ..default()
         };
         let mut image = vk::Image::null();
-        vk_check!(unsafe { device_fn.create_image(device, &create_info, None, &mut image) });
+        vk_check!(device_fn.create_image(device, &create_info, None, &mut image));
 
         let memory_requirements = {
             let mut memory_requirements = vk::MemoryRequirements2::default();
@@ -402,18 +399,16 @@ pub fn main() {
         );
 
         let mut memory = vk::DeviceMemory::null();
-        vk_check!(unsafe {
-            device_fn.allocate_memory(
-                device,
-                &vk::MemoryAllocateInfo {
-                    allocation_size: memory_requirements.memory_requirements.size,
-                    memory_type_index,
-                    ..default()
-                },
-                None,
-                &mut memory,
-            )
-        });
+        vk_check!(device_fn.allocate_memory(
+            device,
+            &vk::MemoryAllocateInfo {
+                allocation_size: memory_requirements.memory_requirements.size,
+                memory_type_index,
+                ..default()
+            },
+            None,
+            &mut memory,
+        ));
         unsafe {
             device_fn.bind_image_memory2(
                 device,
@@ -451,7 +446,7 @@ pub fn main() {
             },
             ..default()
         };
-        vk_check!(unsafe { device_fn.create_image_view(device, &create_info, None, &mut view) });
+        vk_check!(device_fn.create_image_view(device, &create_info, None, &mut view));
         (image, view, memory)
     };
 
@@ -505,16 +500,14 @@ pub fn main() {
     };
 
     let mut data = std::ptr::null_mut();
-    vk_check!(unsafe {
-        device_fn.map_memory(
-            device,
-            host_image_memory,
-            0,
-            vk::WHOLE_SIZE,
-            vk::MemoryMapFlags::default(),
-            &mut data,
-        )
-    });
+    vk_check!(device_fn.map_memory(
+        device,
+        host_image_memory,
+        0,
+        vk::WHOLE_SIZE,
+        vk::MemoryMapFlags::default(),
+        &mut data,
+    ));
 
     // Do the rendering!
     let command_buffer = {
@@ -524,9 +517,11 @@ pub fn main() {
             command_buffer_count: command_buffers.len() as u32,
             ..default()
         };
-        vk_check!(unsafe {
-            device_fn.allocate_command_buffers(device, &allocate_info, command_buffers.as_mut_ptr())
-        });
+        vk_check!(device_fn.allocate_command_buffers(
+            device,
+            &allocate_info,
+            command_buffers.as_mut_ptr()
+        ));
         command_buffers[0]
     };
 
@@ -535,7 +530,7 @@ pub fn main() {
             flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
             ..default()
         };
-        vk_check!(unsafe { device_fn.begin_command_buffer(command_buffer, &begin_info) });
+        vk_check!(device_fn.begin_command_buffer(command_buffer, &begin_info));
     }
 
     unsafe {
@@ -711,7 +706,7 @@ pub fn main() {
         )
     };
 
-    vk_check!(unsafe { device_fn.end_command_buffer(command_buffer) });
+    vk_check!(device_fn.end_command_buffer(command_buffer));
 
     // SUBMIT!
     semaphore_value += 1;
@@ -731,18 +726,16 @@ pub fn main() {
         signal_semaphore_infos: signal_semaphore_infos.into(),
         ..default()
     };
-    vk_check!(unsafe { device_fn.queue_submit2(queue, &[submit], vk::Fence::null()) });
+    vk_check!(device_fn.queue_submit2(queue, &[submit], vk::Fence::null()));
 
-    vk_check!(unsafe {
-        device_fn.wait_semaphores(
-            device,
-            &vk::SemaphoreWaitInfo {
-                semaphores: (&[semaphore], &[semaphore_value]).into(),
-                ..default()
-            },
-            !0,
-        )
-    });
+    vk_check!(device_fn.wait_semaphores(
+        device,
+        &vk::SemaphoreWaitInfo {
+            semaphores: (&[semaphore], &[semaphore_value]).into(),
+            ..default()
+        },
+        !0,
+    ));
 
     let data = data as *const u8;
     let image_bytes = unsafe {
