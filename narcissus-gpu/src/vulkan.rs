@@ -1125,14 +1125,12 @@ impl<'driver> Device for VulkanDevice<'driver> {
         let layout = {
             let create_info = vk::PipelineLayoutCreateInfo::default();
             let mut pipeline_layout = vk::PipelineLayout::null();
-            vk_check!(unsafe {
-                self.device_fn.create_pipeline_layout(
-                    self.device,
-                    &create_info,
-                    None,
-                    &mut pipeline_layout,
-                )
-            });
+            vk_check!(self.device_fn.create_pipeline_layout(
+                self.device,
+                &create_info,
+                None,
+                &mut pipeline_layout,
+            ));
             pipeline_layout
         };
 
