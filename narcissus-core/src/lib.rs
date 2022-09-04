@@ -253,17 +253,6 @@ pub unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>; N]) -
     (&array as *const _ as *const [T; N]).read()
 }
 
-pub fn make_array<T, F: FnMut() -> T, const N: usize>(mut f: F) -> [T; N]
-where
-    T: Sized,
-{
-    let mut array = uninit_array();
-    for elem in &mut array[..] {
-        elem.write(f());
-    }
-    unsafe { array_assume_init(array) }
-}
-
 pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
     let layout = std::alloc::Layout::new::<MaybeUninit<T>>();
     unsafe {

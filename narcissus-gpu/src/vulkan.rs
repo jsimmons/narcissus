@@ -9,7 +9,7 @@ use std::{
 
 use narcissus_app::{App, Window};
 use narcissus_core::{
-    cstr, default, make_array, manual_arc, manual_arc::ManualArc, Mutex, PhantomUnsend, Pool,
+    cstr, default, manual_arc, manual_arc::ManualArc, Mutex, PhantomUnsend, Pool,
 };
 
 use vk::{DeviceFunctions, SurfaceKHRFunctions, SwapchainKHRFunctions};
@@ -544,7 +544,7 @@ impl<'app> VulkanDevice<'app> {
             semaphore
         };
 
-        let frames = Box::new(make_array(|| {
+        let frames = Box::new(std::array::from_fn(|_| {
             let cmd_buffer_pools = GpuConcurrent::new(|| {
                 let pool = {
                     let create_info = vk::CommandPoolCreateInfo {
