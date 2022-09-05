@@ -1,10 +1,10 @@
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 
-use super::RawVirtualVec;
+use super::VirtualRawVec;
 
 pub struct VirtualVec<T> {
-    buf: RawVirtualVec<T>,
+    buf: VirtualRawVec<T>,
     len: usize,
 }
 
@@ -20,14 +20,14 @@ impl<T> VirtualVec<T> {
     /// Panics if the memory reservation fails, or if there's any overflow in the size calculations.
     pub fn new(max_capacity: usize) -> Self {
         Self {
-            buf: RawVirtualVec::new(max_capacity),
+            buf: VirtualRawVec::new(max_capacity),
             len: 0,
         }
     }
 
     pub fn with_capacity(capacity: usize, max_capacity: usize) -> Self {
         Self {
-            buf: RawVirtualVec::with_capacity(capacity, max_capacity),
+            buf: VirtualRawVec::with_capacity(capacity, max_capacity),
             len: 0,
         }
     }

@@ -3,13 +3,13 @@ use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice;
 
-use super::RawVirtualVec;
+use super::VirtualRawVec;
 
 const INITIAL_CAPACITY: usize = 7; // 2^3 - 1
 const MINIMUM_CAPACITY: usize = 1; // 2 - 1
 
 pub struct VirtualDeque<T> {
-    buf: RawVirtualVec<T>,
+    buf: VirtualRawVec<T>,
     head: usize,
     tail: usize,
 }
@@ -24,7 +24,7 @@ impl<T> VirtualDeque<T> {
         assert!(max_capacity < std::isize::MAX as usize);
         let cap = std::cmp::max(capacity + 1, MINIMUM_CAPACITY + 1).next_power_of_two();
         Self {
-            buf: RawVirtualVec::with_capacity(cap, max_capacity),
+            buf: VirtualRawVec::with_capacity(cap, max_capacity),
             head: 0,
             tail: 0,
         }

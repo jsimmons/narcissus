@@ -6,13 +6,13 @@ use std::{
 
 use crate::{page_size, virtual_commit, virtual_free, virtual_reserve};
 
-pub struct RawVirtualVec<T> {
+pub struct VirtualRawVec<T> {
     ptr: NonNull<T>,
     cap: usize,
     max_cap: usize,
 }
 
-impl<T> RawVirtualVec<T> {
+impl<T> VirtualRawVec<T> {
     pub fn new(max_capacity: usize) -> Self {
         assert!(max_capacity != 0);
 
@@ -121,7 +121,7 @@ impl<T> RawVirtualVec<T> {
     }
 }
 
-impl<T> Drop for RawVirtualVec<T> {
+impl<T> Drop for VirtualRawVec<T> {
     fn drop(&mut self) {
         unsafe {
             // The preconditions here that max_cap multiplied by the size won't overflow and
