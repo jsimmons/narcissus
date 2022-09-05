@@ -18,6 +18,9 @@ jobs:
     - uses: rui314/setup-mold@v1
       with:
         make-default: false
+    - name: install_dependencies
+      run: |
+        sudo apt-get install libsdl2-dev
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
