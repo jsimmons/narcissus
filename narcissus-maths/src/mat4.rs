@@ -85,11 +85,20 @@ impl Mat4 {
         result
     }
 
-    pub fn from_scale(scale: Vec3) -> Mat4 {
+    pub const fn from_scale(scale: Vec3) -> Mat4 {
         Mat4::from_rows_array([
             [scale.x, 0.0, 0.0, 0.0],
             [0.0, scale.y, 0.0, 0.0],
             [0.0, 0.0, scale.z, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
+    pub const fn from_translation(translation: Vec3) -> Mat4 {
+        Mat4::from_rows_array([
+            [1.0, 0.0, 0.0, translation.x],
+            [0.0, 1.0, 0.0, translation.y],
+            [0.0, 0.0, 1.0, translation.z],
             [0.0, 0.0, 0.0, 1.0],
         ])
     }
@@ -316,68 +325,88 @@ impl std::ops::Mul<Vec3> for Mat4 {
 mod tests {
     use super::*;
 
+    const IDENTITY: Mat4 = Mat4::IDENTITY;
+    const SCALE: Mat4 = Mat4::from_scale(Vec3::splat(2.0));
+    const TRANSLATE: Mat4 = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
+    const M: Mat4 = Mat4::from_rows_array([
+        [1.0, 2.0, 3.0, 4.0],
+        [5.0, 6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0, 12.0],
+        [13.0, 14.0, 15.0, 16.0],
+    ]);
+    const T: Mat4 = Mat4::from_rows_array([
+        [1.0, 5.0, 9.0, 13.0],
+        [2.0, 6.0, 10.0, 14.0],
+        [3.0, 7.0, 11.0, 15.0],
+        [4.0, 8.0, 12.0, 16.0],
+    ]);
+    const V3: Vec3 = Vec3::new(1.0, 2.0, 3.0);
+    const V: Vec4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
+
     #[test]
-    fn basics() {
-        assert_eq!(Mat4::IDENTITY.transpose(), Mat4::IDENTITY);
-        #[rustfmt::skip]
-        let x = Mat4([
-            1.0,  2.0,  3.0,  4.0,
-            5.0,  6.0,  7.0,  8.0,
-            9.0,  10.0, 11.0, 12.0,
-            13.0, 14.0, 15.0, 16.0,
-        ]);
-        #[rustfmt::skip]
-        let y = Mat4([
-            1.0, 5.0,  9.0, 13.0,
-            2.0, 6.0, 10.0, 14.0,
-            3.0, 7.0, 11.0, 15.0,
-            4.0, 8.0, 12.0, 16.0,
-        ]);
-        assert_eq!(x.transpose(), y);
-        assert_eq!(x.transpose().transpose(), x);
+    fn transpose() {
+        assert_eq!(IDENTITY.transpose(), IDENTITY);
+        assert_eq!(M.transpose(), T);
+        assert_eq!(M.transpose().transpose(), M);
     }
 
     #[test]
     fn mul() {
-        assert_eq!(Mat4::IDENTITY.mul_mat4_base(Mat4::IDENTITY), Mat4::IDENTITY);
+        assert_eq!(IDENTITY * IDENTITY, IDENTITY);
+        assert_eq!(SCALE * IDENTITY, SCALE);
+        assert_eq!(M * IDENTITY, M);
+
+        assert_eq!(IDENTITY.mul_mat4_base(IDENTITY), IDENTITY);
+        assert_eq!(SCALE.mul_mat4_base(IDENTITY), SCALE);
+        assert_eq!(M.mul_mat4_base(IDENTITY), M);
 
         if std::is_x86_feature_detected!("sse2") {
-            assert_eq!(
-                unsafe { Mat4::IDENTITY.mul_mat4_sse2(Mat4::IDENTITY) },
-                Mat4::IDENTITY
-            );
+            assert_eq!(unsafe { IDENTITY.mul_mat4_sse2(IDENTITY) }, IDENTITY);
+            assert_eq!(unsafe { SCALE.mul_mat4_sse2(IDENTITY) }, SCALE);
+            assert_eq!(unsafe { M.mul_mat4_sse2(IDENTITY) }, M);
         }
 
         if std::is_x86_feature_detected!("avx2") {
-            assert_eq!(
-                unsafe { Mat4::IDENTITY.mul_mat4_avx2(Mat4::IDENTITY) },
-                Mat4::IDENTITY
-            );
+            assert_eq!(unsafe { IDENTITY.mul_mat4_avx2(IDENTITY) }, IDENTITY);
+            assert_eq!(unsafe { SCALE.mul_mat4_avx2(IDENTITY) }, SCALE);
+            assert_eq!(unsafe { M.mul_mat4_avx2(IDENTITY) }, M);
         }
+    }
 
-        assert_eq!(Mat4::IDENTITY * Mat4::IDENTITY, Mat4::IDENTITY);
-
-        let scale = Mat4::from_scale(Vec3::splat(2.0));
-        assert_eq!(scale * Mat4::IDENTITY, scale);
+    #[test]
+    fn mul_vec3() {
+        assert_eq!(IDENTITY * Vec3::ZERO, Vec3::ZERO);
+        assert_eq!(IDENTITY * V3, V3);
+        assert_eq!(SCALE * Vec3::ZERO, Vec3::ZERO);
+        assert_eq!(SCALE * Vec3::ONE, Vec3::splat(2.0));
+        assert_eq!(TRANSLATE * Vec3::ZERO, V3);
     }
 
     #[test]
     fn mul_vec4() {
-        assert_eq!(Mat4::IDENTITY * Vec4::ZERO, Vec4::ZERO);
-
+        assert_eq!(IDENTITY * Vec4::ZERO, Vec4::ZERO);
+        assert_eq!(IDENTITY * V, V);
+        assert_eq!(SCALE * Vec4::ZERO, Vec4::ZERO);
+        assert_eq!(SCALE * Vec4::ONE, Vec4::new(2.0, 2.0, 2.0, 1.0));
         assert_eq!(
-            Mat4::IDENTITY.mul_vec4_base(Vec4::new(1.0, 2.0, 3.0, 4.0)),
-            Vec4::new(1.0, 2.0, 3.0, 4.0)
+            TRANSLATE * Vec4::new(0.0, 0.0, 0.0, 1.0),
+            Vec4::new(1.0, 2.0, 3.0, 1.0)
         );
 
         if std::is_x86_feature_detected!("sse4.1") {
-            assert_eq!(
-                unsafe { Mat4::IDENTITY.mul_vec4_sse41(Vec4::new(1.0, 2.0, 3.0, 4.0)) },
-                Vec4::new(1.0, 2.0, 3.0, 4.0)
-            );
+            unsafe {
+                assert_eq!(IDENTITY.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
+                assert_eq!(IDENTITY.mul_vec4_sse41(V), V);
+                assert_eq!(SCALE.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
+                assert_eq!(
+                    SCALE.mul_vec4_sse41(Vec4::ONE),
+                    Vec4::new(2.0, 2.0, 2.0, 1.0)
+                );
+                assert_eq!(
+                    TRANSLATE.mul_vec4_sse41(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                    Vec4::new(1.0, 2.0, 3.0, 1.0)
+                );
+            }
         }
-
-        let scale = Mat4::from_scale(Vec3::splat(2.0));
-        assert_eq!(scale.mul_vec3(Vec3::splat(1.0)), Vec3::splat(2.0));
     }
 }
