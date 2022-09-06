@@ -1,4 +1,4 @@
-use crate::{Vec3, Vec4};
+use crate::{Point2, Point3, Vec2, Vec3, Vec4};
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(C)]
@@ -6,35 +6,27 @@ pub struct Mat4(pub [f32; 16]);
 
 impl std::fmt::Debug for Mat4 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Mat4 [")?;
         if f.alternate() {
-            writeln!(f)?;
-            for row in self.as_rows_array() {
-                f.write_str("\t")?;
-                for value in row {
-                    f.write_fmt(format_args!("{value}, "))?;
-                }
-                f.write_str("\n")?;
+            writeln!(f, "Mat4 [")?;
+            for row in self.as_rows() {
+                writeln!(f, "\t{:?}", row)?;
             }
+            writeln!(f, "]")
         } else {
-            for value in &self.0[..15] {
-                f.write_fmt(format_args!("{value}, "))?;
-            }
-            f.write_fmt(format_args!("{}", self.0[15]))?;
+            writeln!(f, "Mat4 {:?}", self.as_rows())
         }
-        f.write_str("]")
     }
 }
 
 impl Mat4 {
-    pub const ZERO: Mat4 = Mat4::from_rows_array([
+    pub const ZERO: Mat4 = Mat4::from_rows([
         [0.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
     ]);
 
-    pub const IDENTITY: Mat4 = Mat4::from_rows_array([
+    pub const IDENTITY: Mat4 = Mat4::from_rows([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -42,17 +34,17 @@ impl Mat4 {
     ]);
 
     #[inline(always)]
-    pub fn as_rows_array(&self) -> &[[f32; 4]; 4] {
+    pub fn as_rows(&self) -> &[[f32; 4]; 4] {
         unsafe { std::mem::transmute(&self.0) }
     }
 
     #[inline(always)]
-    pub fn as_rows_array_mut(&mut self) -> &mut [[f32; 4]; 4] {
+    pub fn as_rows_mut(&mut self) -> &mut [[f32; 4]; 4] {
         unsafe { std::mem::transmute(&mut self.0) }
     }
 
     #[inline(always)]
-    pub const fn from_rows_array(rows: [[f32; 4]; 4]) -> Self {
+    pub const fn from_rows(rows: [[f32; 4]; 4]) -> Self {
         unsafe { std::mem::transmute(rows) }
     }
 
@@ -85,8 +77,26 @@ impl Mat4 {
         result
     }
 
+    pub const fn from_diagonal(diagonal: Vec4) -> Mat4 {
+        Mat4::from_rows([
+            [diagonal.x, 0.0, 0.0, 0.0],
+            [0.0, diagonal.y, 0.0, 0.0],
+            [0.0, 0.0, diagonal.z, 0.0],
+            [0.0, 0.0, 0.0, diagonal.w],
+        ])
+    }
+
+    pub const fn from_rotation(scale: Vec3) -> Mat4 {
+        Mat4::from_rows([
+            [scale.x, 0.0, 0.0, 0.0],
+            [0.0, scale.y, 0.0, 0.0],
+            [0.0, 0.0, scale.z, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
     pub const fn from_scale(scale: Vec3) -> Mat4 {
-        Mat4::from_rows_array([
+        Mat4::from_rows([
             [scale.x, 0.0, 0.0, 0.0],
             [0.0, scale.y, 0.0, 0.0],
             [0.0, 0.0, scale.z, 0.0],
@@ -95,7 +105,7 @@ impl Mat4 {
     }
 
     pub const fn from_translation(translation: Vec3) -> Mat4 {
-        Mat4::from_rows_array([
+        Mat4::from_rows([
             [1.0, 0.0, 0.0, translation.x],
             [0.0, 1.0, 0.0, translation.y],
             [0.0, 0.0, 1.0, translation.z],
@@ -107,7 +117,7 @@ impl Mat4 {
     #[inline(always)]
     fn transpose_base(self) -> Mat4 {
         let m = &self.0;
-        Mat4::from_rows_array([
+        Mat4::from_rows([
             [m[0x0], m[0x4], m[0x8], m[0xc]],
             [m[0x1], m[0x5], m[0x9], m[0xd]],
             [m[0x2], m[0x6], m[0xa], m[0xe]],
@@ -139,20 +149,44 @@ impl Mat4 {
 
     #[must_use]
     #[inline]
-    pub fn mul_vec3(&self, vec: Vec3) -> Vec3 {
-        let vec = Vec4::new(vec.x, vec.y, vec.z, 1.0);
+    pub fn mul_vec2(&self, vec: Vec2) -> Vec2 {
+        let vec = Vec4::new(vec.x, vec.y, 0.0, 0.0);
         let vec = self.mul_vec4(vec);
-        Vec3::new(vec.x, vec.y, vec.z)
+        Vec2::new(vec.x, vec.y)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn mul_point2(&self, point: Point2) -> Point2 {
+        let vec = Vec4::new(point.x, point.y, 0.0, 1.0);
+        let vec = self.mul_vec4(vec);
+        Point2::new(vec.x, vec.y)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn mul_vec3(&self, vec: Vec3) -> Vec3 {
+        let vec = Vec4::new(vec.x, vec.y, vec.z, 0.0);
+        let vec = self.mul_vec4(vec);
+        [vec.x, vec.y, vec.z].into()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn mul_point3(&self, point: Point3) -> Point3 {
+        let vec = Vec4::new(point.x, point.y, point.z, 1.0);
+        let vec = self.mul_vec4(vec);
+        Point3::new(vec.x, vec.y, vec.z)
     }
 
     #[inline(always)]
     fn mul_vec4_base(&self, vec: Vec4) -> Vec4 {
-        let rows = self.as_rows_array();
+        let rows = self.as_rows();
         Vec4::new(
-            Vec4::dot(Vec4::from_array(rows[0]), vec),
-            Vec4::dot(Vec4::from_array(rows[1]), vec),
-            Vec4::dot(Vec4::from_array(rows[2]), vec),
-            Vec4::dot(Vec4::from_array(rows[3]), vec),
+            Vec4::dot(rows[0].into(), vec),
+            Vec4::dot(rows[1].into(), vec),
+            Vec4::dot(rows[2].into(), vec),
+            Vec4::dot(rows[3].into(), vec),
         )
     }
 
@@ -162,7 +196,7 @@ impl Mat4 {
     unsafe fn mul_vec4_sse41(&self, vec: Vec4) -> Vec4 {
         use std::arch::x86_64::{_mm_hadd_ps, _mm_mul_ps};
 
-        let vec = vec.as_m128();
+        let vec = vec.into();
         let rows = self.as_m128_array();
 
         let values = _mm_hadd_ps(
@@ -170,7 +204,7 @@ impl Mat4 {
             _mm_hadd_ps(_mm_mul_ps(rows[2], vec), _mm_mul_ps(rows[3], vec)),
         );
 
-        Vec4::from_m128(values)
+        values.into()
     }
 
     #[must_use]
@@ -192,9 +226,9 @@ impl Mat4 {
     fn mul_mat4_base(self: &Mat4, rhs: Mat4) -> Mat4 {
         let mut result = Mat4::IDENTITY;
         {
-            let result = result.as_rows_array_mut();
-            let lhs = self.as_rows_array();
-            let rhs = rhs.as_rows_array();
+            let result = result.as_rows_mut();
+            let lhs = self.as_rows();
+            let rhs = rhs.as_rows();
             for i in 0..4 {
                 for j in 0..4 {
                     result[i][j] = lhs[i][0] * rhs[0][j]
@@ -244,19 +278,19 @@ impl Mat4 {
         };
 
         #[inline(always)]
-        unsafe fn two_linear_combine(a: __m256, mat: &[__m128; 4]) -> __m256 {
-            let r = _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x00), _mm256_broadcast_ps(&mat[0]));
+        unsafe fn two_linear_combine(a: __m256, m: &[__m128; 4]) -> __m256 {
+            let r = _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x00), _mm256_broadcast_ps(&m[0]));
             let r = _mm256_add_ps(
                 r,
-                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x55), _mm256_broadcast_ps(&mat[1])),
+                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x55), _mm256_broadcast_ps(&m[1])),
             );
             let r = _mm256_add_ps(
                 r,
-                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xaa), _mm256_broadcast_ps(&mat[2])),
+                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xaa), _mm256_broadcast_ps(&m[2])),
             );
             _mm256_add_ps(
                 r,
-                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xff), _mm256_broadcast_ps(&mat[3])),
+                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xff), _mm256_broadcast_ps(&m[3])),
             )
         }
 
@@ -321,6 +355,33 @@ impl std::ops::Mul<Vec3> for Mat4 {
     }
 }
 
+impl std::ops::Mul<Point3> for Mat4 {
+    type Output = Point3;
+
+    #[inline(always)]
+    fn mul(self, rhs: Point3) -> Self::Output {
+        self.mul_point3(rhs)
+    }
+}
+
+impl std::ops::Mul<Vec2> for Mat4 {
+    type Output = Vec2;
+
+    #[inline(always)]
+    fn mul(self, rhs: Vec2) -> Self::Output {
+        self.mul_vec2(rhs)
+    }
+}
+
+impl std::ops::Mul<Point2> for Mat4 {
+    type Output = Point2;
+
+    #[inline(always)]
+    fn mul(self, rhs: Point2) -> Self::Output {
+        self.mul_point2(rhs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,20 +389,24 @@ mod tests {
     const IDENTITY: Mat4 = Mat4::IDENTITY;
     const SCALE: Mat4 = Mat4::from_scale(Vec3::splat(2.0));
     const TRANSLATE: Mat4 = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
-    const M: Mat4 = Mat4::from_rows_array([
+    const M: Mat4 = Mat4::from_rows([
         [1.0, 2.0, 3.0, 4.0],
         [5.0, 6.0, 7.0, 8.0],
         [9.0, 10.0, 11.0, 12.0],
         [13.0, 14.0, 15.0, 16.0],
     ]);
-    const T: Mat4 = Mat4::from_rows_array([
+    const T: Mat4 = Mat4::from_rows([
         [1.0, 5.0, 9.0, 13.0],
         [2.0, 6.0, 10.0, 14.0],
         [3.0, 7.0, 11.0, 15.0],
         [4.0, 8.0, 12.0, 16.0],
     ]);
+
+    const V2: Vec2 = Vec2::new(1.0, 2.0);
     const V3: Vec3 = Vec3::new(1.0, 2.0, 3.0);
-    const V: Vec4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
+    const V4: Vec4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
+    const P2: Point2 = Point2::new(1.0, 2.0);
+    const P3: Point3 = Point3::new(1.0, 2.0, 3.0);
 
     #[test]
     fn transpose() {
@@ -374,18 +439,45 @@ mod tests {
     }
 
     #[test]
+    fn mul_vec2() {
+        assert_eq!(IDENTITY * Vec2::ZERO, Vec2::ZERO);
+        assert_eq!(IDENTITY * V2, V2);
+        assert_eq!(SCALE * Vec2::ZERO, Vec2::ZERO);
+        assert_eq!(SCALE * Vec2::ONE, Vec2::splat(2.0));
+        assert_eq!(TRANSLATE * Vec2::ZERO, Vec2::ZERO);
+    }
+
+    #[test]
+    fn mul_point2() {
+        assert_eq!(IDENTITY * Point2::ZERO, Point2::ZERO);
+        assert_eq!(IDENTITY * P2, P2);
+        assert_eq!(SCALE * Point2::ZERO, Point2::ZERO);
+        assert_eq!(SCALE * Point2::ONE, Point2::splat(2.0));
+        assert_eq!(TRANSLATE * Point2::ZERO, P2);
+    }
+
+    #[test]
     fn mul_vec3() {
         assert_eq!(IDENTITY * Vec3::ZERO, Vec3::ZERO);
         assert_eq!(IDENTITY * V3, V3);
         assert_eq!(SCALE * Vec3::ZERO, Vec3::ZERO);
         assert_eq!(SCALE * Vec3::ONE, Vec3::splat(2.0));
-        assert_eq!(TRANSLATE * Vec3::ZERO, V3);
+        assert_eq!(TRANSLATE * Vec3::ZERO, Vec3::ZERO);
+    }
+
+    #[test]
+    fn mul_point3() {
+        assert_eq!(IDENTITY * Point3::ZERO, Point3::ZERO);
+        assert_eq!(IDENTITY * P3, P3);
+        assert_eq!(SCALE * Point3::ZERO, Point3::ZERO);
+        assert_eq!(SCALE * Point3::ONE, Point3::splat(2.0));
+        assert_eq!(TRANSLATE * Point3::ZERO, P3);
     }
 
     #[test]
     fn mul_vec4() {
         assert_eq!(IDENTITY * Vec4::ZERO, Vec4::ZERO);
-        assert_eq!(IDENTITY * V, V);
+        assert_eq!(IDENTITY * V4, V4);
         assert_eq!(SCALE * Vec4::ZERO, Vec4::ZERO);
         assert_eq!(SCALE * Vec4::ONE, Vec4::new(2.0, 2.0, 2.0, 1.0));
         assert_eq!(
@@ -396,7 +488,7 @@ mod tests {
         if std::is_x86_feature_detected!("sse4.1") {
             unsafe {
                 assert_eq!(IDENTITY.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
-                assert_eq!(IDENTITY.mul_vec4_sse41(V), V);
+                assert_eq!(IDENTITY.mul_vec4_sse41(V4), V4);
                 assert_eq!(SCALE.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
                 assert_eq!(
                     SCALE.mul_vec4_sse41(Vec4::ONE),

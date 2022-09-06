@@ -1,3 +1,5 @@
+use crate::{impl_shared, impl_vector};
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default, Debug)]
 #[repr(C)]
 pub struct Vec2 {
@@ -5,80 +7,34 @@ pub struct Vec2 {
     pub y: f32,
 }
 
-impl Vec2 {
-    pub const ZERO: Self = Self::splat(0.0);
-    pub const ONE: Self = Self::splat(1.0);
+impl_shared!(Vec2, f32, 2);
+impl_vector!(Vec2, f32, 2);
 
+impl Vec2 {
     pub const X: Self = Self::new(1.0, 0.0);
     pub const Y: Self = Self::new(0.0, 1.0);
 
+    /// Creates a new 2d vector with the given `x` and `y` components.
     #[inline(always)]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
+    /// Returns a new 2d vector with the function `f` applied to each component in order.
     #[inline(always)]
-    pub const fn splat(value: f32) -> Self {
-        Self { x: value, y: value }
-    }
-
-    #[inline(always)]
-    pub fn as_array(self) -> [f32; 2] {
-        unsafe { std::mem::transmute(self) }
-    }
-
-    #[inline(always)]
-    pub fn from_array(values: [f32; 2]) -> Self {
-        unsafe { std::mem::transmute(values) }
-    }
-
-    #[inline]
-    pub fn distance(a: Self, b: Self) -> f32 {
-        (a - b).length()
-    }
-
-    #[inline]
-    pub fn distance_sq(a: Self, b: Self) -> f32 {
-        (a - b).length_sq()
+    pub fn map<F>(self, mut f: F) -> Self
+    where
+        F: FnMut(f32) -> f32,
+    {
+        Self {
+            x: f(self.x),
+            y: f(self.y),
+        }
     }
 
     #[inline]
     pub fn dot(a: Self, b: Self) -> f32 {
         a.x * b.x + a.y * b.y
-    }
-
-    #[inline]
-    pub fn length(self) -> f32 {
-        self.length_sq().sqrt()
-    }
-
-    #[inline]
-    pub fn length_sq(self) -> f32 {
-        Self::dot(self, self)
-    }
-
-    #[inline]
-    pub fn ceil(self) -> Self {
-        Self {
-            x: self.x.ceil(),
-            y: self.y.ceil(),
-        }
-    }
-
-    #[inline]
-    pub fn floor(self) -> Self {
-        Self {
-            x: self.x.floor(),
-            y: self.y.floor(),
-        }
-    }
-
-    #[inline]
-    pub fn round(self) -> Self {
-        Self {
-            x: self.x.round(),
-            y: self.y.round(),
-        }
     }
 }
 

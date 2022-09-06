@@ -1,3 +1,5 @@
+use crate::{impl_shared, impl_vector};
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default, Debug)]
 #[repr(C)]
 pub struct Vec3 {
@@ -6,46 +8,27 @@ pub struct Vec3 {
     pub z: f32,
 }
 
+impl_shared!(Vec3, f32, 3);
+impl_vector!(Vec3, f32, 3);
+
 impl Vec3 {
-    pub const ZERO: Self = Self::splat(0.0);
-    pub const ONE: Self = Self::splat(1.0);
-
-    pub const X: Self = Self::new(1.0, 0.0, 0.0);
-    pub const Y: Self = Self::new(0.0, 1.0, 0.0);
-    pub const Z: Self = Self::new(0.0, 0.0, 1.0);
-
+    /// Creates a new 3d vector with the given `x`, `y` and `z` components.
     #[inline(always)]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 
+    /// Returns a new 3d vector with the function `f` applied to each component in order.
     #[inline(always)]
-    pub const fn splat(value: f32) -> Self {
+    pub fn map<F>(self, mut f: F) -> Self
+    where
+        F: FnMut(f32) -> f32,
+    {
         Self {
-            x: value,
-            y: value,
-            z: value,
+            x: f(self.x),
+            y: f(self.y),
+            z: f(self.z),
         }
-    }
-
-    #[inline(always)]
-    pub fn as_array(self) -> [f32; 3] {
-        unsafe { std::mem::transmute(self) }
-    }
-
-    #[inline(always)]
-    pub fn from_array(values: [f32; 3]) -> Self {
-        unsafe { std::mem::transmute(values) }
-    }
-
-    #[inline]
-    pub fn distance(a: Self, b: Self) -> f32 {
-        (a - b).length()
-    }
-
-    #[inline]
-    pub fn distance_sq(a: Self, b: Self) -> f32 {
-        (a - b).length_sq()
     }
 
     #[inline]
@@ -54,40 +37,13 @@ impl Vec3 {
     }
 
     #[inline]
-    pub fn length(self) -> f32 {
-        self.length_sq().sqrt()
-    }
-
-    #[inline]
-    pub fn length_sq(self) -> f32 {
-        Self::dot(self, self)
-    }
-
-    #[inline]
-    pub fn ceil(self) -> Self {
-        Self {
-            x: self.x.ceil(),
-            y: self.y.ceil(),
-            z: self.z.ceil(),
-        }
-    }
-
-    #[inline]
-    pub fn floor(self) -> Self {
-        Self {
-            x: self.x.floor(),
-            y: self.y.floor(),
-            z: self.z.floor(),
-        }
-    }
-
-    #[inline]
-    pub fn round(self) -> Self {
-        Self {
-            x: self.x.round(),
-            y: self.y.round(),
-            z: self.z.round(),
-        }
+    pub fn cross(a: Self, b: Self) -> Vec3 {
+        [
+            a.y * b.z - a.z * b.y,
+            -(a.x * b.z - a.z * b.x),
+            a.x * b.y - a.y * b.x,
+        ]
+        .into()
     }
 }
 
