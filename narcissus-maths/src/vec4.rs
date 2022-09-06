@@ -9,6 +9,7 @@ pub struct Vec4 {
 
 impl Vec4 {
     pub const ZERO: Self = Self::splat(0.0);
+    pub const ONE: Self = Self::splat(1.0);
 
     pub const X: Self = Self::new(1.0, 0.0, 0.0, 0.0);
     pub const Y: Self = Self::new(0.0, 1.0, 0.0, 0.0);
