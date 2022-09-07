@@ -22,6 +22,48 @@ pub use vec2::Vec2;
 pub use vec3::Vec3;
 pub use vec4::Vec4;
 
+/// Unit type for an angle expressed in radians.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Default)]
+pub struct Rad(f32);
+
+impl Rad {
+    pub const fn new(x: f32) -> Self {
+        Self(x)
+    }
+
+    pub const fn as_f32(self) -> f32 {
+        self.0
+    }
+}
+
+/// Unit type for an angle expressed in degrees.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Default)]
+pub struct Deg(f32);
+
+impl Deg {
+    pub const fn new(x: f32) -> Self {
+        Self(x)
+    }
+
+    pub const fn as_f32(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<Rad> for Deg {
+    #[inline(always)]
+    fn from(x: Rad) -> Self {
+        Self(x.0.to_degrees())
+    }
+}
+
+impl From<Deg> for Rad {
+    #[inline(always)]
+    fn from(x: Deg) -> Self {
+        Self(x.0.to_radians())
+    }
+}
+
 #[macro_export]
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
