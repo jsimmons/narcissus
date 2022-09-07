@@ -141,5 +141,81 @@ macro_rules! impl_vector {
                 Self::dot(self, self)
             }
         }
+
+        impl std::ops::Neg for $name {
+            type Output = $name;
+            #[inline(always)]
+            fn neg(self) -> Self::Output {
+                self.map(|x| -x)
+            }
+        }
+
+        impl std::ops::Add<$t> for $name {
+            type Output = $name;
+            #[inline(always)]
+            fn add(self, rhs: $t) -> Self::Output {
+                self.map(|x| x + rhs)
+            }
+        }
+
+        impl std::ops::Sub<$t> for $name {
+            type Output = $name;
+            #[inline(always)]
+            fn sub(self, rhs: $t) -> Self::Output {
+                self.map(|x| x - rhs)
+            }
+        }
+
+        impl std::ops::Mul<$t> for $name {
+            type Output = $name;
+            #[inline(always)]
+            fn mul(self, rhs: $t) -> Self::Output {
+                self.map(|x| x * rhs)
+            }
+        }
+
+        impl std::ops::Mul<$name> for $t {
+            type Output = $name;
+            #[inline(always)]
+            fn mul(self, rhs: $name) -> Self::Output {
+                rhs.map(|x| self * x)
+            }
+        }
+
+        impl std::ops::Div<$t> for $name {
+            type Output = $name;
+            #[inline(always)]
+            fn div(self, rhs: $t) -> Self::Output {
+                self.map(|x| x / rhs)
+            }
+        }
+
+        impl std::ops::AddAssign<$t> for $name {
+            #[inline(always)]
+            fn add_assign(&mut self, rhs: $t) {
+                *self = *self + rhs;
+            }
+        }
+
+        impl std::ops::SubAssign<$t> for $name {
+            #[inline(always)]
+            fn sub_assign(&mut self, rhs: $t) {
+                *self = *self - rhs;
+            }
+        }
+
+        impl std::ops::MulAssign<$t> for $name {
+            #[inline(always)]
+            fn mul_assign(&mut self, rhs: $t) {
+                *self = *self * rhs;
+            }
+        }
+
+        impl std::ops::DivAssign<$t> for $name {
+            #[inline(always)]
+            fn div_assign(&mut self, rhs: $t) {
+                *self = *self / rhs;
+            }
+        }
     };
 }
