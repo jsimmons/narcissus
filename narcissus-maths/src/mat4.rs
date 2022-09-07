@@ -1,4 +1,4 @@
-use crate::{Point2, Point3, Vec2, Vec3, Vec4};
+use crate::{Point2, Point3, Rad, Vec2, Vec3, Vec4};
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(C)]
@@ -86,15 +86,6 @@ impl Mat4 {
         ])
     }
 
-    pub const fn from_rotation(scale: Vec3) -> Mat4 {
-        Mat4::from_rows([
-            [scale.x, 0.0, 0.0, 0.0],
-            [0.0, scale.y, 0.0, 0.0],
-            [0.0, 0.0, scale.z, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-    }
-
     pub const fn from_scale(scale: Vec3) -> Mat4 {
         Mat4::from_rows([
             [scale.x, 0.0, 0.0, 0.0],
@@ -109,6 +100,37 @@ impl Mat4 {
             [1.0, 0.0, 0.0, translation.x],
             [0.0, 1.0, 0.0, translation.y],
             [0.0, 0.0, 1.0, translation.z],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
+    pub fn from_axis_angle(axis: Vec3, angle: Rad) -> Mat4 {
+        let (sin, cos) = angle.as_f32().sin_cos();
+        let axis_sin = axis * sin;
+        let axis_sq = axis * axis;
+        let one_minus_cos = 1.0 - cos;
+        let xy = axis.x * axis.y * one_minus_cos;
+        let xz = axis.x * axis.z * one_minus_cos;
+        let yz = axis.y * axis.z * one_minus_cos;
+        Mat4::from_rows([
+            [
+                axis_sq.x * one_minus_cos + cos,
+                xy - axis_sin.z,
+                xz + axis_sin.y,
+                0.0,
+            ],
+            [
+                xy + axis_sin.z,
+                axis_sq.y * one_minus_cos + cos,
+                yz - axis_sin.x,
+                0.0,
+            ],
+            [
+                xz - axis_sin.y,
+                yz + axis_sin.x,
+                axis_sq.z * one_minus_cos + cos,
+                0.0,
+            ],
             [0.0, 0.0, 0.0, 1.0],
         ])
     }
@@ -384,6 +406,8 @@ impl std::ops::Mul<Point2> for Mat4 {
 
 #[cfg(test)]
 mod tests {
+    use crate::Deg;
+
     use super::*;
 
     const IDENTITY: Mat4 = Mat4::IDENTITY;
@@ -413,6 +437,19 @@ mod tests {
         assert_eq!(IDENTITY.transpose(), IDENTITY);
         assert_eq!(M.transpose(), T);
         assert_eq!(M.transpose().transpose(), M);
+    }
+
+    #[test]
+    fn axis_angle() {
+        let rot_180_x = Mat4::from_axis_angle(Vec3::X, Deg::new(180.0).into());
+        assert_eq!(rot_180_x * Vec3::X, Vec3::X);
+        // TODO: requires approximate equality assert.
+        // assert_eq!(rot_180_x * Vec3::Y, -Vec3::Y);
+        // assert_eq!(rot_180_x * Vec3::Z, -Vec3::Z);
+        let rot_180_y = Mat4::from_axis_angle(Vec3::Y, Deg::new(180.0).into());
+        assert_eq!(rot_180_y * Vec3::Y, Vec3::Y);
+        let rot_180_z = Mat4::from_axis_angle(Vec3::Z, Deg::new(180.0).into());
+        assert_eq!(rot_180_z * Vec3::Z, Vec3::Z);
     }
 
     #[test]
