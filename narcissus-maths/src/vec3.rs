@@ -12,6 +12,10 @@ impl_shared!(Vec3, f32, 3);
 impl_vector!(Vec3, f32, 3);
 
 impl Vec3 {
+    pub const X: Self = Self::new(1.0, 0.0, 0.0);
+    pub const Y: Self = Self::new(0.0, 1.0, 0.0);
+    pub const Z: Self = Self::new(0.0, 0.0, 1.0);
+
     /// Creates a new 3d vector with the given `x`, `y` and `z` components.
     #[inline(always)]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
