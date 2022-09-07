@@ -412,13 +412,15 @@ impl<'app> VulkanDevice<'app> {
                     let mut properties_12 = vk::PhysicalDeviceVulkan12Properties::default();
                     let mut properties_11 = vk::PhysicalDeviceVulkan11Properties::default();
                     let mut properties = vk::PhysicalDeviceProperties2::default();
+
+                    properties._next =
+                        &mut properties_11 as *mut vk::PhysicalDeviceVulkan11Properties as *mut _;
+                    properties_11._next =
+                        &mut properties_12 as *mut vk::PhysicalDeviceVulkan12Properties as *mut _;
+                    properties_12._next =
+                        &mut properties_13 as *mut vk::PhysicalDeviceVulkan13Properties as *mut _;
+
                     unsafe {
-                        properties._next =
-                            std::mem::transmute::<_, *mut c_void>(&mut properties_11);
-                        properties_11._next =
-                            std::mem::transmute::<_, *mut c_void>(&mut properties_12);
-                        properties_12._next =
-                            std::mem::transmute::<_, *mut c_void>(&mut properties_13);
                         instance_fn
                             .get_physical_device_properties2(physical_device, &mut properties);
                     }
@@ -435,10 +437,15 @@ impl<'app> VulkanDevice<'app> {
                     let mut features_12 = vk::PhysicalDeviceVulkan12Features::default();
                     let mut features_11 = vk::PhysicalDeviceVulkan11Features::default();
                     let mut features = vk::PhysicalDeviceFeatures2::default();
+
+                    features._next =
+                        &mut features_11 as *mut vk::PhysicalDeviceVulkan11Features as *mut _;
+                    features_11._next =
+                        &mut features_12 as *mut vk::PhysicalDeviceVulkan12Features as *mut _;
+                    features_12._next =
+                        &mut features_13 as *mut vk::PhysicalDeviceVulkan13Features as *mut _;
+
                     unsafe {
-                        features._next = std::mem::transmute::<_, *mut c_void>(&mut features_11);
-                        features_11._next = std::mem::transmute::<_, *mut c_void>(&mut features_12);
-                        features_12._next = std::mem::transmute::<_, *mut c_void>(&mut features_13);
                         instance_fn.get_physical_device_features2(physical_device, &mut features);
                     }
                     (features.features, features_11, features_12, features_13)
@@ -475,7 +482,7 @@ impl<'app> VulkanDevice<'app> {
             })
             .expect("failed to find universal queue for chosen device");
 
-        let device = unsafe {
+        let device = {
             let queue_priorities: &[_] = &[1.0];
             let device_queue_create_infos: &[_] = &[vk::DeviceQueueCreateInfo {
                 queue_family_index,
@@ -493,7 +500,7 @@ impl<'app> VulkanDevice<'app> {
                 ..Default::default()
             };
             let enabled_features_12 = vk::PhysicalDeviceVulkan12Features {
-                _next: std::mem::transmute::<_, *mut c_void>(&enabled_features_13),
+                _next: &enabled_features_13 as *const vk::PhysicalDeviceVulkan13Features as *mut _,
                 timeline_semaphore: vk::Bool32::True,
                 descriptor_indexing: vk::Bool32::True,
                 descriptor_binding_partially_bound: vk::Bool32::True,
@@ -501,15 +508,15 @@ impl<'app> VulkanDevice<'app> {
                 ..Default::default()
             };
             let enabled_features_11 = vk::PhysicalDeviceVulkan11Features {
-                _next: std::mem::transmute::<_, *mut c_void>(&enabled_features_12),
+                _next: &enabled_features_12 as *const vk::PhysicalDeviceVulkan12Features as *mut _,
                 ..Default::default()
             };
             let enabled_features = vk::PhysicalDeviceFeatures2 {
-                _next: std::mem::transmute::<_, *mut c_void>(&enabled_features_11),
+                _next: &enabled_features_11 as *const vk::PhysicalDeviceVulkan11Features as *mut _,
                 ..Default::default()
             };
             let create_info = vk::DeviceCreateInfo {
-                _next: std::mem::transmute::<_, *mut c_void>(&enabled_features),
+                _next: &enabled_features as *const vk::PhysicalDeviceFeatures2 as *const _,
                 enabled_extension_names: enabled_extensions.as_slice().into(),
                 queue_create_infos: device_queue_create_infos.into(),
                 ..Default::default()
@@ -536,7 +543,7 @@ impl<'app> VulkanDevice<'app> {
                 ..Default::default()
             };
             let create_info = vk::SemaphoreCreateInfo {
-                _next: unsafe { std::mem::transmute::<_, _>(&type_create_info) },
+                _next: &type_create_info as *const vk::SemaphoreTypeCreateInfo as *const _,
                 ..Default::default()
             };
             let mut semaphore = vk::Semaphore::null();
@@ -1755,10 +1762,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     VulkanTextureHolder::Shared(texture) => texture.view,
                     VulkanTextureHolder::Swapchain(texture) => {
                         assert!(
-                            command_buffer
+                            !command_buffer
                                 .swapchains_touched
-                                .contains_key(&texture.window)
-                                == false,
+                                .contains_key(&texture.window),
                             "swapchain attached multiple times in a command buffer"
                         );
                         command_buffer.swapchains_touched.insert(
@@ -1916,7 +1922,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
         let command_buffer = self.command_buffer_mut(&mut command_buffer_token);
 
-        for (_, &(image, _)) in &command_buffer.swapchains_touched {
+        for &(image, _) in command_buffer.swapchains_touched.values() {
             // transition swapchain image from attachment optimal to present src
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
                 src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -1954,7 +1960,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         let mut wait_semaphores = Vec::new();
         let mut signal_semaphores = Vec::new();
 
-        if command_buffer.swapchains_touched.len() != 0 {
+        if !command_buffer.swapchains_touched.is_empty() {
             let mut present_swapchains = frame.present_swapchains.lock();
 
             for (swapchain, (_, stage_mask)) in command_buffer.swapchains_touched.drain() {
@@ -2065,7 +2071,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         let frame = self.frame_mut(&mut frame_token);
 
         let present_swapchains = frame.present_swapchains.get_mut();
-        if present_swapchains.len() != 0 {
+        if !present_swapchains.is_empty() {
             let mut windows = Vec::new();
             let mut wait_semaphores = Vec::new();
             let mut swapchains = Vec::new();
@@ -2138,7 +2144,7 @@ impl<'app> Drop for VulkanDevice<'app> {
             Self::destroy_deferred(device_fn, device, frame);
 
             for pool in frame.command_buffer_pools.slots_mut() {
-                if pool.command_buffers.len() > 0 {
+                if !pool.command_buffers.is_empty() {
                     let command_buffers = pool
                         .command_buffers
                         .iter()

@@ -271,7 +271,7 @@ pub trait Device {
 
     fn submit(&self, command_buffer_token: CommandBufferToken);
 
-    fn begin_frame<'device>(&'device self) -> FrameToken<'device>;
+    fn begin_frame(&self) -> FrameToken;
     fn end_frame<'device>(&'device self, frame_token: FrameToken<'device>);
 }
 
