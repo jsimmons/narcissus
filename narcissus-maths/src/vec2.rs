@@ -11,39 +11,40 @@ impl_shared!(Vec2, f32, 2);
 impl_vector!(Vec2, f32, 2);
 
 impl Vec2 {
-    pub const X: Self = Self::new(1.0, 0.0);
-    pub const Y: Self = Self::new(0.0, 1.0);
+    pub const X: Vec2 = Vec2::new(1.0, 0.0);
+    pub const Y: Vec2 = Vec2::new(0.0, 1.0);
 
-    /// Creates a new 2d vector with the given `x` and `y` components.
+    /// Constructs a new [`Vec2`] with the given `x` and `y` components.
     #[inline(always)]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
-    /// Returns a new 2d vector with the function `f` applied to each component in order.
+    /// Returns a [`Vec2`] with the function `f` applied to each component in order.
     #[inline(always)]
-    pub fn map<F>(self, mut f: F) -> Self
+    pub fn map<F>(self, mut f: F) -> Vec2
     where
         F: FnMut(f32) -> f32,
     {
-        Self {
+        Vec2 {
             x: f(self.x),
             y: f(self.y),
         }
     }
 
-    /// Returns a new 2d vector with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Vec2`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
     #[inline(always)]
-    pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
+    pub fn map2<F>(self, rhs: Vec2, mut f: F) -> Vec2
     where
         F: FnMut(f32, f32) -> f32,
     {
-        Self {
+        Vec2 {
             x: f(self.x, rhs.x),
             y: f(self.y, rhs.y),
         }
     }
 
+    /// Returns the dot product of `a` and `b`.
     #[inline]
     pub fn dot(a: Self, b: Self) -> f32 {
         a.x * b.x + a.y * b.y

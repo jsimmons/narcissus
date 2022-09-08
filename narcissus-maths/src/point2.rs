@@ -12,16 +12,13 @@ impl_shared!(Point2, f32, 2);
 impl_affine!(Point2, f32, 2);
 
 impl Point2 {
-    pub const X: Self = Self::new(1.0, 0.0);
-    pub const Y: Self = Self::new(0.0, 1.0);
-
-    /// Creates a new `Point2` with the given `x` and `y` coordinates.
+    /// Constructs a new [`Point2`] with the given `x` and `y` coordinates.
     #[inline(always)]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
-    /// Returns a new `Point2` with the function `f` applied to each coordinate in order.
+    /// Returns a new [`Point2`] with the function `f` applied to each coordinate of `self` in order.
     #[inline(always)]
     pub fn map<F>(self, mut f: F) -> Self
     where
@@ -33,7 +30,7 @@ impl Point2 {
         }
     }
 
-    /// Returns a new point in 2d space with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Point2`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
     #[inline(always)]
     pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
     where

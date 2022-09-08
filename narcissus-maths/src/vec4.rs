@@ -13,20 +13,20 @@ impl_shared!(Vec4, f32, 4);
 impl_vector!(Vec4, f32, 4);
 
 impl Vec4 {
-    pub const X: Self = Self::new(1.0, 0.0, 0.0, 0.0);
-    pub const Y: Self = Self::new(0.0, 1.0, 0.0, 0.0);
-    pub const Z: Self = Self::new(0.0, 0.0, 1.0, 0.0);
-    pub const W: Self = Self::new(0.0, 0.0, 0.0, 1.0);
+    pub const X: Vec4 = Vec4::new(1.0, 0.0, 0.0, 0.0);
+    pub const Y: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
+    pub const Z: Vec4 = Vec4::new(0.0, 0.0, 1.0, 0.0);
+    pub const W: Vec4 = Vec4::new(0.0, 0.0, 0.0, 1.0);
 
-    /// Creates a new 4d vector with the given `x`, `y`, `z` and `w` components.
+    /// Constructs a new [`Vec4`] with the given `x`, `y`, `z` and `w` components.
     #[inline(always)]
-    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self { x, y, z, w }
+    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Vec4 {
+        Vec4 { x, y, z, w }
     }
 
-    /// Returns a new 4d vector with the function `f` applied to each component in order.
+    /// Returns a [`Vec4`] with the function `f` applied to each component in order.
     #[inline(always)]
-    pub fn map<F>(self, mut f: F) -> Self
+    pub fn map<F>(self, mut f: F) -> Vec4
     where
         F: FnMut(f32) -> f32,
     {
@@ -38,13 +38,13 @@ impl Vec4 {
         }
     }
 
-    /// Returns a new 3d vector with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Vec4`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
     #[inline(always)]
-    pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
+    pub fn map2<F>(self, rhs: Self, mut f: F) -> Vec4
     where
         F: FnMut(f32, f32) -> f32,
     {
-        Self {
+        Vec4 {
             x: f(self.x, rhs.x),
             y: f(self.y, rhs.y),
             z: f(self.z, rhs.z),
@@ -52,8 +52,9 @@ impl Vec4 {
         }
     }
 
+    /// Returns the dot product of `a` and `b`.
     #[inline]
-    pub fn dot(a: Self, b: Self) -> f32 {
+    pub fn dot(a: Vec4, b: Vec4) -> f32 {
         a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
     }
 }

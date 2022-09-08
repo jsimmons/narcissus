@@ -64,6 +64,9 @@ impl From<Deg> for Rad {
     }
 }
 
+/// Returns the minimum of `x` and `y`.
+///
+/// Rust's standard `f32::min` function produces not-ideal code, so it's re-implemented here.
 #[inline(always)]
 pub fn min(x: f32, y: f32) -> f32 {
     if x < y {
@@ -73,6 +76,9 @@ pub fn min(x: f32, y: f32) -> f32 {
     }
 }
 
+/// Returns the maximum of `x` and `y`.
+///
+/// Rust's standard `f32::max` function produces not-ideal code, so it's re-implemented here.
 #[inline(always)]
 pub fn max(x: f32, y: f32) -> f32 {
     if x > y {
@@ -82,6 +88,9 @@ pub fn max(x: f32, y: f32) -> f32 {
     }
 }
 
+/// Returns the value `x` clamped between `lo` and `hi`.
+///
+/// Rust's standard `f32::clamp` function produces not-ideal code, so it's re-implemented here.
 #[inline(always)]
 pub fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
     debug_assert!(lo <= hi);
@@ -92,50 +101,67 @@ pub fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
         impl $name {
-            pub const ZERO: Self = Self::splat(0.0);
-            pub const ONE: Self = Self::splat(1.0);
-            pub const NAN: Self = Self::splat(0.0 / 0.0);
+            #[doc = concat!("[`", stringify!($name), "`] with all elements initialized to `0.0`.")]
+            pub const ZERO: $name = Self::splat(0.0);
+            #[doc = concat!("[`", stringify!($name), "`] with all elements initialized to `1.0`.")]
+            pub const ONE: $name = Self::splat(1.0);
+            #[doc = concat!("[`", stringify!($name), "`] with all elements initialized to `NaN`.")]
+            pub const NAN: $name = Self::splat(0.0 / 0.0);
 
+            #[doc = concat!("Constructs a new [`", stringify!($name), "`] where each element is initialized with the given `value`.")]
             #[inline(always)]
-            pub const fn splat(value: $t) -> Self {
+            pub const fn splat(value: $t) -> $name {
                 // we have to transmute here because we can't make `into()` const.
+                // Safety: $name is repr(C) struct with $n elements of type $t, so the transmute is always valid.
                 unsafe { std::mem::transmute([value; $n]) }
             }
 
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the minimum of the respective elements from `a` and `b`.")]
             #[inline]
-            pub fn min(a: Self, b: Self) -> Self {
+            pub fn min(a: $name, b: $name) -> $name {
                 a.map2(b, |a, b| crate::min(a, b))
             }
 
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the maximum of the respective elements from `a` and `b`.")]
             #[inline]
-            pub fn max(a: Self, b: Self) -> Self {
+            pub fn max(a: $name, b: $name) -> $name {
                 a.map2(b, |a, b| crate::max(a, b))
             }
 
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element of `x` is clamped between the respective elements in `a` and `b`.")]
             #[inline]
-            pub fn clamp(x: Self, lo: Self, hi: Self) -> Self {
+            pub fn clamp(x: $name, lo: $name, hi: $name) -> $name {
                 Self::max(Self::min(x, hi), lo)
             }
 
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the absolute value of the corresponding element in `self`.")]
+            #[inline]
+            pub fn abs(self) -> $name {
+                self.map(|x| x.abs())
+            }
+
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the smallest integer value greater than or equal to the corresponding element in `self`.")]
             #[inline(always)]
-            pub fn ceil(self) -> Self {
+            pub fn ceil(self) -> $name {
                 self.map(|x| x.ceil())
             }
 
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the largest integer value less than or equal to the corresponding element in `self`.")]
             #[inline(always)]
-            pub fn floor(self) -> Self {
+            pub fn floor(self) -> $name {
                 self.map(|x| x.floor())
             }
 
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the nearest integer value to the corresponding element in `self`. Rounds half-way cases away from `0.0`.")]
             #[inline(always)]
-            pub fn round(self) -> Self {
+            pub fn round(self) -> $name {
                 self.map(|x| x.round())
             }
         }
 
         impl From<[$t; $n]> for $name {
             #[inline(always)]
-            fn from(x: [$t; $n]) -> Self {
+            fn from(x: [$t; $n]) -> $name {
                 unsafe { std::mem::transmute(x) }
             }
         }
@@ -153,13 +179,15 @@ macro_rules! impl_shared {
 macro_rules! impl_affine {
     ($name:ty, $t:ty, $n:expr) => {
         impl $name {
+            /// Calculates the euclidean distance between the two points `a` and `b`.
             #[inline]
-            pub fn distance(a: Self, b: Self) -> $t {
+            pub fn distance(a: $name, b: $name) -> $t {
                 (b - a).length()
             }
 
+            /// Calculates the squared euclidean distance between the two points `a` and `b`.
             #[inline]
-            pub fn distance_sq(a: Self, b: Self) -> $t {
+            pub fn distance_sq(a: $name, b: $name) -> $t {
                 (b - a).length_sq()
             }
         }
@@ -170,11 +198,13 @@ macro_rules! impl_affine {
 macro_rules! impl_vector {
     ($name:ty, $t:ty, $n:expr) => {
         impl $name {
+            /// Calculates the length of the vector `self`.
             #[inline]
             pub fn length(self) -> $t {
                 self.length_sq().sqrt()
             }
 
+            /// Calculate the squared length of the vector `self`.
             #[inline]
             pub fn length_sq(self) -> $t {
                 Self::dot(self, self)

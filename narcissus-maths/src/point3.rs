@@ -13,36 +13,32 @@ impl_shared!(Point3, f32, 3);
 impl_affine!(Point3, f32, 3);
 
 impl Point3 {
-    pub const X: Self = Self::new(1.0, 0.0, 0.0);
-    pub const Y: Self = Self::new(0.0, 1.0, 0.0);
-    pub const Z: Self = Self::new(0.0, 0.0, 1.0);
-
-    /// Creates a new point in 3d space with the given `x`, `y` and `z` coordinates.
+    /// Constructs a new [`Point3`] with the given `x`, `y`, and `z` coordinates.
     #[inline(always)]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
+    pub const fn new(x: f32, y: f32, z: f32) -> Point3 {
+        Point3 { x, y, z }
     }
 
-    /// Returns a new point in 3d space with the function `f` applied to each coordinate in order.
+    /// Returns a new [`Point3`] with the function `f` applied to each coordinate of `self` in order.
     #[inline(always)]
-    pub fn map<F>(self, mut f: F) -> Self
+    pub fn map<F>(self, mut f: F) -> Point3
     where
         F: FnMut(f32) -> f32,
     {
-        Self {
+        Point3 {
             x: f(self.x),
             y: f(self.y),
             z: f(self.z),
         }
     }
 
-    /// Returns a new point in 3d space with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Point3`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
     #[inline(always)]
-    pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
+    pub fn map2<F>(self, rhs: Point3, mut f: F) -> Point3
     where
         F: FnMut(f32, f32) -> f32,
     {
-        Self {
+        Point3 {
             x: f(self.x, rhs.x),
             y: f(self.y, rhs.y),
             z: f(self.z, rhs.z),

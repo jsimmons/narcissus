@@ -12,52 +12,54 @@ impl_shared!(Vec3, f32, 3);
 impl_vector!(Vec3, f32, 3);
 
 impl Vec3 {
-    pub const X: Self = Self::new(1.0, 0.0, 0.0);
-    pub const Y: Self = Self::new(0.0, 1.0, 0.0);
-    pub const Z: Self = Self::new(0.0, 0.0, 1.0);
+    pub const X: Vec3 = Vec3::new(1.0, 0.0, 0.0);
+    pub const Y: Vec3 = Vec3::new(0.0, 1.0, 0.0);
+    pub const Z: Vec3 = Vec3::new(0.0, 0.0, 1.0);
 
-    /// Creates a new 3d vector with the given `x`, `y` and `z` components.
+    /// Constructs a new [`Vec3`] with the given `x`, `y` and `z` components.
     #[inline(always)]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
+    pub const fn new(x: f32, y: f32, z: f32) -> Vec3 {
+        Vec3 { x, y, z }
     }
 
-    /// Returns a new 3d vector with the function `f` applied to each component in order.
+    /// Returns a [`Vec3`] with the function `f` applied to each component in order.
     #[inline(always)]
-    pub fn map<F>(self, mut f: F) -> Self
+    pub fn map<F>(self, mut f: F) -> Vec3
     where
         F: FnMut(f32) -> f32,
     {
-        Self {
+        Vec3 {
             x: f(self.x),
             y: f(self.y),
             z: f(self.z),
         }
     }
 
-    /// Returns a new 3d vector with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Vec3`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
     #[inline(always)]
-    pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
+    pub fn map2<F>(self, rhs: Self, mut f: F) -> Vec3
     where
         F: FnMut(f32, f32) -> f32,
     {
-        Self {
+        Vec3 {
             x: f(self.x, rhs.x),
             y: f(self.y, rhs.y),
             z: f(self.z, rhs.z),
         }
     }
 
+    /// Returns the dot product of `a` and `b`.
     #[inline]
-    pub fn dot(a: Self, b: Self) -> f32 {
+    pub fn dot(a: Vec3, b: Vec3) -> f32 {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 
+    /// Returns the cross product of `a` and `b`.
     #[inline]
-    pub fn cross(a: Self, b: Self) -> Vec3 {
+    pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
         [
             a.y * b.z - a.z * b.y,
-            -(a.x * b.z - a.z * b.x),
+            a.x * b.z - a.z * b.x,
             a.x * b.y - a.y * b.x,
         ]
         .into()
