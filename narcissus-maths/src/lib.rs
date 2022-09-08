@@ -64,6 +64,30 @@ impl From<Deg> for Rad {
     }
 }
 
+#[inline(always)]
+pub fn min(x: f32, y: f32) -> f32 {
+    if x < y {
+        x
+    } else {
+        y
+    }
+}
+
+#[inline(always)]
+pub fn max(x: f32, y: f32) -> f32 {
+    if x > y {
+        x
+    } else {
+        y
+    }
+}
+
+#[inline(always)]
+pub fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
+    debug_assert!(lo <= hi);
+    max(min(x, hi), lo)
+}
+
 #[macro_export]
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
@@ -76,6 +100,21 @@ macro_rules! impl_shared {
             pub const fn splat(value: $t) -> Self {
                 // we have to transmute here because we can't make `into()` const.
                 unsafe { std::mem::transmute([value; $n]) }
+            }
+
+            #[inline]
+            pub fn min(a: Self, b: Self) -> Self {
+                a.map2(b, |a, b| crate::min(a, b))
+            }
+
+            #[inline]
+            pub fn max(a: Self, b: Self) -> Self {
+                a.map2(b, |a, b| crate::max(a, b))
+            }
+
+            #[inline]
+            pub fn clamp(x: Self, lo: Self, hi: Self) -> Self {
+                Self::max(Self::min(x, hi), lo)
             }
 
             #[inline(always)]
@@ -116,12 +155,12 @@ macro_rules! impl_affine {
         impl $name {
             #[inline]
             pub fn distance(a: Self, b: Self) -> $t {
-                (a - b).length()
+                (b - a).length()
             }
 
             #[inline]
             pub fn distance_sq(a: Self, b: Self) -> $t {
-                (a - b).length_sq()
+                (b - a).length_sq()
             }
         }
     };

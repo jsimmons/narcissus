@@ -35,6 +35,19 @@ impl Point3 {
             z: f(self.z),
         }
     }
+
+    /// Returns a new point in 3d space with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    #[inline(always)]
+    pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
+    where
+        F: FnMut(f32, f32) -> f32,
+    {
+        Self {
+            x: f(self.x, rhs.x),
+            y: f(self.y, rhs.y),
+            z: f(self.z, rhs.z),
+        }
+    }
 }
 
 impl std::ops::Sub for Point3 {

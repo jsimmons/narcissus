@@ -32,6 +32,18 @@ impl Point2 {
             y: f(self.y),
         }
     }
+
+    /// Returns a new point in 2d space with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    #[inline(always)]
+    pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
+    where
+        F: FnMut(f32, f32) -> f32,
+    {
+        Self {
+            x: f(self.x, rhs.x),
+            y: f(self.y, rhs.y),
+        }
+    }
 }
 
 impl std::ops::Sub for Point2 {
