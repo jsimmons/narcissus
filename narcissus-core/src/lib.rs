@@ -73,12 +73,8 @@ macro_rules! thread_token_def {
                 where
                     F: FnMut() -> T,
                 {
-                    let mut slots = uninit_array();
-                    for elem in &mut slots[..] {
-                        elem.write(UnsafeCell::new(f()));
-                    }
                     Self {
-                        slots: unsafe { array_assume_init(slots) },
+                        slots: std::array::from_fn(|_| UnsafeCell::new(f())),
                     }
                 }
 
