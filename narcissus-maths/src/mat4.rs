@@ -1,5 +1,8 @@
 use crate::{Point2, Point3, Rad, Vec2, Vec3, Vec4};
 
+/// 4x4 matrix.
+///
+/// Supports affine transformations.
 #[derive(Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Mat4(pub [f32; 16]);
@@ -77,6 +80,7 @@ impl Mat4 {
         result
     }
 
+    /// Construct a matrix with the provided `diagonal` and all other values set to `0.0`.
     pub const fn from_diagonal(diagonal: Vec4) -> Mat4 {
         Mat4::from_rows([
             [diagonal.x, 0.0, 0.0, 0.0],
@@ -86,6 +90,7 @@ impl Mat4 {
         ])
     }
 
+    /// Construct a transformation matrix which scales along the coordinate axis by the values given in `scale`.
     pub const fn from_scale(scale: Vec3) -> Mat4 {
         Mat4::from_rows([
             [scale.x, 0.0, 0.0, 0.0],
@@ -95,6 +100,7 @@ impl Mat4 {
         ])
     }
 
+    /// Construct an affine transformation matrix with the given `translation` along the coordinate axis.
     pub const fn from_translation(translation: Vec3) -> Mat4 {
         Mat4::from_rows([
             [1.0, 0.0, 0.0, translation.x],
@@ -104,6 +110,7 @@ impl Mat4 {
         ])
     }
 
+    /// Constructs a transformation matrix which rotates around the given `axis` by `angle`.
     pub fn from_axis_angle(axis: Vec3, angle: Rad) -> Mat4 {
         let (sin, cos) = angle.as_f32().sin_cos();
         let axis_sin = axis * sin;
@@ -147,6 +154,7 @@ impl Mat4 {
         ])
     }
 
+    // Safety: Requires SSE2.
     #[inline]
     #[target_feature(enable = "sse2")]
     unsafe fn transpose_sse2(self) -> Mat4 {
@@ -156,6 +164,7 @@ impl Mat4 {
         Mat4::from_m128_array([row0, row1, row2, row3])
     }
 
+    /// Returns the transpose of `self`.
     #[must_use]
     #[inline(always)]
     pub fn transpose(self) -> Mat4 {
@@ -169,6 +178,7 @@ impl Mat4 {
         }
     }
 
+    /// Transforms the given [`Vec2`] `vec` by `self`.
     #[must_use]
     #[inline]
     pub fn mul_vec2(&self, vec: Vec2) -> Vec2 {
@@ -177,6 +187,7 @@ impl Mat4 {
         Vec2::new(vec.x, vec.y)
     }
 
+    /// Transforms the given [`Point2`] `point` by `self`.
     #[must_use]
     #[inline]
     pub fn mul_point2(&self, point: Point2) -> Point2 {
@@ -185,6 +196,7 @@ impl Mat4 {
         Point2::new(vec.x, vec.y)
     }
 
+    /// Transforms the given [`Vec3`] `vec` by `self`.
     #[must_use]
     #[inline]
     pub fn mul_vec3(&self, vec: Vec3) -> Vec3 {
@@ -193,6 +205,7 @@ impl Mat4 {
         [vec.x, vec.y, vec.z].into()
     }
 
+    /// Transforms the given [`Point3`] `point` by `self`.
     #[must_use]
     #[inline]
     pub fn mul_point3(&self, point: Point3) -> Point3 {
@@ -212,6 +225,7 @@ impl Mat4 {
         )
     }
 
+    // Safety: Requires SSE4.1.
     #[allow(dead_code)]
     #[inline]
     #[target_feature(enable = "sse4.1")]
@@ -229,6 +243,7 @@ impl Mat4 {
         values.into()
     }
 
+    /// Transforms the given [`Vec4`] `vec` by `self`.
     #[must_use]
     #[inline(always)]
     pub fn mul_vec4(&self, vec: Vec4) -> Vec4 {
@@ -263,6 +278,7 @@ impl Mat4 {
         result
     }
 
+    // Safety: Requires SSE2.
     #[allow(dead_code)]
     #[inline]
     #[target_feature(enable = "sse2")]
@@ -290,6 +306,7 @@ impl Mat4 {
         Mat4::from_m128_array([x0, x1, x2, x3])
     }
 
+    // Safety: Requires AVX2.
     #[allow(dead_code)]
     #[inline]
     #[target_feature(enable = "avx2")]
