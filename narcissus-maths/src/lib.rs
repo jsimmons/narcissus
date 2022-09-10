@@ -66,31 +66,50 @@ impl From<Deg> for Rad {
 
 /// Returns the minimum of `x` and `y`.
 ///
-/// Rust's standard `f32::min` function produces not-ideal code, so it's re-implemented here.
+/// This function returns a platform dependent value if either of its inputs are `NaN`.
+///
+/// Platform Specific Behavior
+/// ---
+/// On `x86` If either input is `NaN`, returns the value of `y`. Other platforms follow IEEE754-2008 semantics, where if
+/// either input is `NaN` the other input is returned. `NaN` propagates when both inputs are `NaN`.
 #[inline(always)]
 pub fn min(x: f32, y: f32) -> f32 {
+    #[cfg(target_arch = "x86_64")]
     if x < y {
         x
     } else {
         y
     }
+    #[cfg(not(target_arch = "x86_64"))]
+    x.min(y)
 }
 
 /// Returns the maximum of `x` and `y`.
 ///
-/// Rust's standard `f32::max` function produces not-ideal code, so it's re-implemented here.
+/// This function returns a platform dependent value if either of its inputs are `NaN`.
+///
+/// # Platform Specific Behavior
+/// On `x86` If either input is `NaN`, returns the value of `y`. Other platforms follow IEEE754-2008 semantics, where if
+/// either input is `NaN` the other input is returned. `NaN` propagates when both inputs are `NaN`.
 #[inline(always)]
 pub fn max(x: f32, y: f32) -> f32 {
+    #[cfg(target_arch = "x86_64")]
     if x > y {
         x
     } else {
         y
     }
+    #[cfg(not(target_arch = "x86_64"))]
+    x.max(y)
 }
 
 /// Returns the value `x` clamped between `lo` and `hi`.
 ///
-/// Rust's standard `f32::clamp` function produces not-ideal code, so it's re-implemented here.
+/// This function returns an unspecified, platform dependent value if any of its inputs are `NaN`.
+///
+/// # Panics
+///
+/// Panics if `lo` is greater than `hi`.
 #[inline(always)]
 pub fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
     debug_assert!(lo <= hi);
@@ -116,19 +135,19 @@ macro_rules! impl_shared {
                 unsafe { std::mem::transmute([value; $n]) }
             }
 
-            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the minimum of the respective elements from `a` and `b`.")]
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element is initialized with the minimum of the corresponding elements `a[i]` and `b[i]`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::min`] for exact details.")]
             #[inline]
             pub fn min(a: $name, b: $name) -> $name {
                 a.map2(b, |a, b| crate::min(a, b))
             }
 
-            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the maximum of the respective elements from `a` and `b`.")]
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element is initialized with the maximum of the corresponding elements `a[i]` and `b[i]`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::max`] for exact details.")]
             #[inline]
             pub fn max(a: $name, b: $name) -> $name {
                 a.map2(b, |a, b| crate::max(a, b))
             }
 
-            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element of `x` is clamped between the respective elements in `a` and `b`.")]
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element `x[i]` is clamped between the corresponding elements `lo[i]` and `hi[i]`.\n\n# Panics\n\nPanics if any element of `lo` is greater than its corresponding element in `hi`.")]
             #[inline]
             pub fn clamp(x: $name, lo: $name, hi: $name) -> $name {
                 Self::max(Self::min(x, hi), lo)
@@ -186,6 +205,7 @@ macro_rules! impl_affine {
             }
 
             /// Calculates the squared euclidean distance between the two points `a` and `b`.
+            /// Avoids an expensive `sqrt` operation.
             #[inline]
             pub fn distance_sq(a: $name, b: $name) -> $t {
                 (b - a).length_sq()
@@ -205,6 +225,7 @@ macro_rules! impl_vector {
             }
 
             /// Calculate the squared length of the vector `self`.
+            /// Avoids an expensive `sqrt` operation.
             #[inline]
             pub fn length_sq(self) -> $t {
                 Self::dot(self, self)
