@@ -230,6 +230,13 @@ macro_rules! impl_vector {
             pub fn length_sq(self) -> $t {
                 Self::dot(self, self)
             }
+
+            /// Returns a vector with the same direction as `self` but with unit (1.0) length.
+            #[must_use]
+            #[inline]
+            pub fn normalized(self) -> $name {
+                self / self.length()
+            }
         }
 
         impl std::ops::Neg for $name {
