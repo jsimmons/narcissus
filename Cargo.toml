@@ -1,9 +1,9 @@
 [workspace]
 
 members = [
-    "vulkan-sys",
-    "sdl2-sys",
-    "renderdoc-sys",
+    "ffi/vulkan-sys",
+    "ffi/sdl2-sys",
+    "ffi/renderdoc-sys",
     "narcissus",
     "narcissus-core",
     "narcissus-gpu",
