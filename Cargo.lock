@@ -67,6 +67,13 @@ name = "sdl2-sys"
 version = "0.1.0"
 
 [[package]]
+name = "stb_image-sys"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "vulkan-sys"
 version = "0.1.0"
 dependencies = [
