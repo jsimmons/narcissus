@@ -20,7 +20,7 @@ jobs:
         make-default: false
     - name: install_dependencies
       run: |
-        sudo apt-get install libsdl2-dev
+        sudo apt-get install libsdl2-dev clang
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
