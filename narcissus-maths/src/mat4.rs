@@ -90,7 +90,7 @@ impl Mat4 {
         ])
     }
 
-    /// Construct a transformation matrix which scales along the coordinate axis by the values given in `scale`.
+    /// Construct a transformation matrix which scales along the coordinate axes by the values given in `scale`.
     pub const fn from_scale(scale: Vec3) -> Mat4 {
         Mat4::from_rows([
             [scale.x, 0.0, 0.0, 0.0],
@@ -100,7 +100,7 @@ impl Mat4 {
         ])
     }
 
-    /// Construct an affine transformation matrix with the given `translation` along the coordinate axis.
+    /// Construct an affine transformation matrix with the given `translation` along the coordinate axes.
     pub const fn from_translation(translation: Vec3) -> Mat4 {
         Mat4::from_rows([
             [1.0, 0.0, 0.0, translation.x],
@@ -139,6 +139,72 @@ impl Mat4 {
                 0.0,
             ],
             [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
+    /// Constructs a 'look at' transformation from the given `eye` position, look at `center` point, and `up` vector.
+    ///
+    /// Src coordinate space: right-handed, +y-up.
+    /// Dst coordinate space: right-handed, +y-up.
+    pub fn look_at(eye: Point3, center: Point3, up: Vec3) -> Mat4 {
+        let dir = center - eye;
+        let eye = eye.as_vec3();
+        let f = dir.normalized();
+        let r = Vec3::cross(f, up).normalized();
+        let u = Vec3::cross(r, f);
+        let r_dot_eye = Vec3::dot(r, eye);
+        let u_dot_eye = Vec3::dot(u, eye);
+        let f_dot_eye = Vec3::dot(f, eye);
+        Mat4::from_rows([
+            [r.x, r.y, r.z, -r_dot_eye],
+            [u.x, u.y, u.z, -u_dot_eye],
+            [-f.x, -f.y, -f.z, f_dot_eye],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
+    /// Creates an othographic projection matrix with [0,1] depth range.
+    ///
+    /// Destination coordinate space matches native vulkan clip space.
+    ///
+    /// Src coordinate space: right-handed, +y-up.
+    /// Dst coordinate space: right-handed, -y-up, depth range [0,1].
+    pub fn orthographic_zo(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        near: f32,
+        far: f32,
+    ) -> Mat4 {
+        let rml = right - left;
+        let rpl = right + left;
+        let tmb = top - bottom;
+        let tpb = top + bottom;
+        let fmn = far - near;
+        Mat4::from_rows([
+            [2.0 / rml, 0.0, 0.0, -(rpl / rml)],
+            [0.0, -2.0 / tmb, 0.0, -(tpb / tmb)],
+            [0.0, 0.0, -1.0 / fmn, -(near / fmn)],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
+    /// Creates a perspective projection matrix with reversed infinite z and [0,1] depth range.
+    ///
+    /// Destination coordinate space matches native vulkan clip space.
+    ///
+    /// Src coordinate space: right-handed, +y up.
+    /// Dst coordinate space: right-handed, -y up, depth range [0,1].
+    pub fn perspective_rev_inf_zo(vertical_fov: Rad, aspect_ratio: f32, z_near: f32) -> Mat4 {
+        let tan = (vertical_fov.as_f32() / 2.0).tan();
+        let sy = 1.0 / tan;
+        let sx = sy / aspect_ratio;
+        Mat4::from_rows([
+            [sx, 0.0, 0.0, 0.0],
+            [0.0, -sy, 0.0, 0.0],
+            [0.0, 0.0, 0.0, z_near],
+            [0.0, 0.0, -1.0, 0.0],
         ])
     }
 
