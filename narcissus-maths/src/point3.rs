@@ -19,6 +19,12 @@ impl Point3 {
         Point3 { x, y, z }
     }
 
+    /// Converts this point to the equivalent vector.
+    #[inline(always)]
+    pub const fn as_vec3(self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
+    }
+
     /// Returns a new [`Point3`] with the function `f` applied to each coordinate of `self` in order.
     #[inline(always)]
     pub fn map<F>(self, mut f: F) -> Point3

@@ -18,6 +18,12 @@ impl Point2 {
         Self { x, y }
     }
 
+    /// Converts this point to the equivalent vector.
+    #[inline(always)]
+    pub const fn as_vec2(self) -> Vec2 {
+        Vec2::new(self.x, self.y)
+    }
+
     /// Returns a new [`Point2`] with the function `f` applied to each coordinate of `self` in order.
     #[inline(always)]
     pub fn map<F>(self, mut f: F) -> Self
