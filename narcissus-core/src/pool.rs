@@ -462,6 +462,10 @@ impl<T> Pool<T> {
         self.values.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.values.len == 0
+    }
+
     pub fn values(&self) -> &[T] {
         self.values.as_slice()
     }
@@ -593,6 +597,12 @@ impl<T> Drop for Pool<T> {
     }
 }
 
+impl<T> Default for Pool<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -600,7 +610,7 @@ mod tests {
     use super::{Handle, Pool, MAX_CAPACITY, MIN_FREE_SLOTS};
 
     #[test]
-    fn test_pool() {
+    fn basics() {
         let mut pool = Pool::new();
         assert_eq!(pool.get(Handle::null()), None);
         let one = pool.insert(1);
@@ -635,7 +645,7 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn test_pool_magic_fail() {
+    fn magic_fail() {
         let mut pool_1 = Pool::new();
         let pool_2 = Pool::<i32>::new();
 
@@ -644,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pool_capacity() {
+    fn capacity() {
         #[derive(Clone, Copy)]
         struct Chonk {
             value: usize,
@@ -678,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn test_use_after_free() {
+    fn use_after_free() {
         let mut pool = Pool::new();
 
         let handle = pool.insert(1);
@@ -693,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn test_drop_it_like_its_hot() {
+    fn drop_it_like_its_hot() {
         static DROP_COUNT: AtomicU32 = AtomicU32::new(0);
         struct Snoop {}
         impl Drop for Snoop {
