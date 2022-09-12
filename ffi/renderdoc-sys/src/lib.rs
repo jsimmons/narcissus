@@ -314,6 +314,18 @@ pub type FnSetCaptureFileComments =
     extern "system" fn(filepath: *const c_char, comments: *const c_char);
 pub type FnShowReplayUI = extern "system" fn() -> u32;
 
+mod libc {
+    use std::os::raw::{c_char, c_int, c_void};
+
+    pub const RTLD_NOW: c_int = 0x2;
+    pub const RTLD_NOLOAD: c_int = 0x4;
+
+    extern "C" {
+        pub fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+        pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+}
+
 #[repr(C)]
 pub struct RenderdocApi1_5_0 {
     get_api_version: FnGetApiVersion,

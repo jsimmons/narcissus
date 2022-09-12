@@ -935,12 +935,3 @@ pub const INIT_VIDEO: u32 = 0x0000_0020;
 pub const WINDOW_SHOWN: u32 = 0x0000_0004;
 pub const WINDOW_RESIZABLE: u32 = 0x0000_0020;
 pub const WINDOW_VULKAN: u32 = 0x1000_0000;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}

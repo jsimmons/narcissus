@@ -1,3 +1,5 @@
+use crate::libc;
+
 #[cold]
 #[inline(never)]
 pub unsafe fn virtual_reserve(size: usize) -> *mut std::ffi::c_void {

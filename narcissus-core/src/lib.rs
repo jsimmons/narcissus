@@ -1,5 +1,6 @@
 mod bitset;
 mod fixed_vec;
+mod libc;
 pub mod manual_arc;
 mod mutex;
 mod pool;
@@ -274,10 +275,8 @@ pub fn align_offset(x: usize, align: usize) -> usize {
     (x + align - 1) & !(align - 1)
 }
 
-#[cold]
-#[inline(never)]
 pub fn page_size() -> usize {
-    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+    4096
 }
 
 #[cfg(test)]

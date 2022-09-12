@@ -1,3 +1,5 @@
+use crate::libc;
+
 use std::{sync::atomic::AtomicI32, time::Duration};
 
 pub fn wait(futex: &AtomicI32, expected: i32, timeout: Option<Duration>) {

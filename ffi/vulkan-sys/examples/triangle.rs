@@ -1,7 +1,19 @@
-use libc::c_void;
+use std::os::raw::c_void;
 
 use vulkan_sys as vk;
 use vulkan_sys::cstr;
+
+mod libc {
+    use std::os::raw::{c_char, c_int, c_void};
+
+    pub const RTLD_NOW: c_int = 0x2;
+    pub const RTLD_LOCAL: c_int = 0;
+
+    extern "C" {
+        pub fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+        pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+}
 
 macro_rules! vk_check {
     ($e:expr) => ({

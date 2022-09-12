@@ -1,6 +1,14 @@
 use std::os::raw::{c_char, c_float, c_int, c_uchar, c_void};
 
-use libc::FILE;
+mod libc {
+    pub enum FILE {}
+    impl Copy for FILE {}
+    impl Clone for FILE {
+        fn clone(&self) -> FILE {
+            *self
+        }
+    }
+}
 
 #[repr(C)]
 pub struct stbi_io_callbacks {
@@ -31,7 +39,7 @@ extern "C" {
     ) -> *mut c_uchar;
 
     pub fn stbi_load_from_file(
-        f: *mut FILE,
+        f: *mut libc::FILE,
         x: *mut c_int,
         y: *mut c_int,
         comp: *mut c_int,
@@ -65,7 +73,7 @@ extern "C" {
     ) -> *mut c_float;
 
     pub fn stbi_loadf_from_file(
-        f: *mut FILE,
+        f: *mut libc::FILE,
         x: *mut c_int,
         y: *mut c_int,
         comp: *mut c_int,
@@ -95,7 +103,7 @@ extern "C" {
 
     pub fn stbi_is_hdr(filename: *const c_char) -> c_int;
 
-    pub fn stbi_is_hdr_from_file(f: *mut FILE) -> c_int;
+    pub fn stbi_is_hdr_from_file(f: *mut libc::FILE) -> c_int;
 
     pub fn stbi_failure_reason() -> *const c_char;
 
@@ -125,7 +133,7 @@ extern "C" {
     ) -> c_int;
 
     pub fn stbi_info_from_file(
-        f: *mut FILE,
+        f: *mut libc::FILE,
         x: *mut c_int,
         y: *mut c_int,
         comp: *mut c_int,
