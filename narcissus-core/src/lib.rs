@@ -1,5 +1,6 @@
 mod bitset;
 mod fixed_vec;
+mod image;
 mod libc;
 pub mod manual_arc;
 mod mutex;
@@ -12,6 +13,7 @@ mod waiter;
 
 pub use bitset::BitIter;
 pub use fixed_vec::FixedVec;
+pub use image::Image;
 pub use mutex::Mutex;
 pub use pool::{Handle, Pool};
 pub use ref_count::{Arc, Rc};

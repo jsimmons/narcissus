@@ -24,6 +24,7 @@ dependencies = [
 name = "narcissus-core"
 version = "0.1.0"
 dependencies = [
+ "stb_image-sys",
 ]
 
 [[package]]
