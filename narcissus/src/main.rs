@@ -1,65 +1,11 @@
 use narcissus_app::{create_app, Event, Window, WindowDesc};
-use narcissus_core::cstr;
+use narcissus_core::{cstr, Image};
 use narcissus_gpu::{
     create_vulkan_device, ClearValue, Device, FrameToken, GraphicsPipelineDesc,
     GraphicsPipelineLayout, LoadOp, MemoryLocation, Pipeline, RenderingAttachment, RenderingDesc,
     Scissor, ShaderDesc, StoreOp, TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags,
     TextureViewDesc, ThreadToken, Viewport,
 };
-
-fn render_window(
-    device: &dyn Device,
-    frame_token: &FrameToken,
-    thread_token: &mut ThreadToken,
-    pipeline: Pipeline,
-    window: Window,
-) {
-    let (width, height, swapchain_image) =
-        device.acquire_swapchain(&frame_token, window, TextureFormat::BGRA8_SRGB);
-
-    let mut command_buffer_token = device.request_command_buffer(&frame_token, thread_token);
-    device.cmd_begin_rendering(
-        &mut command_buffer_token,
-        &RenderingDesc {
-            x: 0,
-            y: 0,
-            width,
-            height,
-            color_attachments: &[RenderingAttachment {
-                texture: swapchain_image,
-                load_op: LoadOp::Clear(ClearValue::ColorF32([0.392157, 0.584314, 0.929412, 1.0])),
-                store_op: StoreOp::Store,
-            }],
-            depth_attachment: None,
-            stencil_attachment: None,
-        },
-    );
-    device.cmd_bind_pipeline(&mut command_buffer_token, pipeline);
-    device.cmd_set_scissors(
-        &mut command_buffer_token,
-        &[Scissor {
-            x: 0,
-            y: 0,
-            width,
-            height,
-        }],
-    );
-    device.cmd_set_viewports(
-        &mut command_buffer_token,
-        &[Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: width as f32,
-            height: height as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        }],
-    );
-    device.cmd_draw(&mut command_buffer_token, 3, 1, 0, 0);
-    device.cmd_end_rendering(&mut command_buffer_token);
-
-    device.submit(command_buffer_token);
-}
 
 pub fn main() {
     let app = create_app();
@@ -100,6 +46,16 @@ pub fn main() {
             })
         })
         .collect::<Vec<_>>();
+
+    let blåhaj = std::fs::read("narcissus/data/blåhaj.png").unwrap();
+    let blåhaj = Image::from_buffer(&blåhaj).unwrap();
+
+    println!(
+        "loaded blåhaj width: {}, height: {}, components: {}",
+        blåhaj.width(),
+        blåhaj.height(),
+        blåhaj.components()
+    );
 
     let texture = device.create_texture(&TextureDesc {
         memory_location: MemoryLocation::PreferDevice,
@@ -161,4 +117,57 @@ pub fn main() {
 
         device.end_frame(frame_token);
     }
+}
+
+fn render_window(
+    device: &dyn Device,
+    frame_token: &FrameToken,
+    thread_token: &mut ThreadToken,
+    pipeline: Pipeline,
+    window: Window,
+) {
+    let (width, height, swapchain_image) =
+        device.acquire_swapchain(frame_token, window, TextureFormat::BGRA8_SRGB);
+    let mut command_buffer_token = device.request_command_buffer(frame_token, thread_token);
+    device.cmd_begin_rendering(
+        &mut command_buffer_token,
+        &RenderingDesc {
+            x: 0,
+            y: 0,
+            width,
+            height,
+            color_attachments: &[RenderingAttachment {
+                texture: swapchain_image,
+                load_op: LoadOp::Clear(ClearValue::ColorF32([0.392157, 0.584314, 0.929412, 1.0])),
+                store_op: StoreOp::Store,
+            }],
+            depth_attachment: None,
+            stencil_attachment: None,
+        },
+    );
+    device.cmd_bind_pipeline(&mut command_buffer_token, pipeline);
+    device.cmd_set_scissors(
+        &mut command_buffer_token,
+        &[Scissor {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }],
+    );
+    device.cmd_set_viewports(
+        &mut command_buffer_token,
+        &[Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: width as f32,
+            height: height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }],
+    );
+    device.cmd_draw(&mut command_buffer_token, 3, 1, 0, 0);
+    device.cmd_end_rendering(&mut command_buffer_token);
+
+    device.submit(command_buffer_token);
 }
