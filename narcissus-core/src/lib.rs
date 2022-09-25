@@ -6,6 +6,7 @@ pub mod manual_arc;
 mod mutex;
 mod pool;
 mod ref_count;
+pub mod slice;
 mod uuid;
 mod virtual_mem;
 mod virtual_vec;
