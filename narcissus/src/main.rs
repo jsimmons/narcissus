@@ -1,13 +1,77 @@
 use narcissus_app::{create_app, Event, Window, WindowDesc};
-use narcissus_core::{cstr, Image};
+use narcissus_core::{cstr, obj, slice, Image};
 use narcissus_gpu::{
     create_vulkan_device, ClearValue, Device, FrameToken, GraphicsPipelineDesc,
     GraphicsPipelineLayout, LoadOp, MemoryLocation, Pipeline, RenderingAttachment, RenderingDesc,
     Scissor, ShaderDesc, StoreOp, TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags,
     TextureViewDesc, ThreadToken, Viewport,
 };
+use narcissus_maths::{Vec2, Vec3};
 
 pub fn main() {
+    let blåhaj_obj = std::fs::File::open("narcissus/data/blåhaj.obj").unwrap();
+
+    #[derive(Default)]
+    struct ObjVisitor {
+        position: Vec<Vec3>,
+        normals: Vec<Vec3>,
+        texcoords: Vec<Vec2>,
+        indices: Vec<[(i32, i32, i32); 3]>,
+    }
+
+    impl obj::Visitor for ObjVisitor {
+        fn visit_position(&mut self, x: f32, y: f32, z: f32, _w: f32) {
+            self.position.push(Vec3::new(x, y, z))
+        }
+
+        fn visit_texcoord(&mut self, u: f32, v: f32, _w: f32) {
+            self.texcoords.push(Vec2::new(u, v));
+        }
+
+        fn visit_normal(&mut self, x: f32, y: f32, z: f32) {
+            self.normals.push(Vec3::new(x, y, z))
+        }
+
+        fn visit_face(&mut self, indices: &[(i32, i32, i32)]) {
+            for triangle in slice::array_windows::<_, 3>(indices) {
+                self.indices.push(*triangle)
+            }
+        }
+
+        fn visit_object(&mut self, _name: &str) {}
+        fn visit_group(&mut self, _name: &str) {}
+        fn visit_smooth_group(&mut self, _group: i32) {}
+    }
+
+    let mut obj_visitor = ObjVisitor::default();
+    let mut obj_parser = obj::Parser::new(blåhaj_obj);
+
+    let start = std::time::Instant::now();
+    obj_parser.visit(&mut obj_visitor).unwrap();
+    let end = std::time::Instant::now();
+
+    println!(
+        "loaded {} vertices, {} normals, {} texcoords, and {} indices",
+        obj_visitor.position.len(),
+        obj_visitor.normals.len(),
+        obj_visitor.texcoords.len(),
+        obj_visitor.indices.len(),
+    );
+    println!("took {:?}", end - start);
+
+    let start = std::time::Instant::now();
+    let blåhaj_image = std::fs::read("narcissus/data/blåhaj.png").unwrap();
+    let blåhaj = Image::from_buffer(&blåhaj_image).unwrap();
+    let end = std::time::Instant::now();
+
+    println!(
+        "loaded blåhaj width: {}, height: {}, components: {}",
+        blåhaj.width(),
+        blåhaj.height(),
+        blåhaj.components()
+    );
+    println!("took {:?}", end - start);
+
     let app = create_app();
 
     let device = create_vulkan_device(app.as_ref());
@@ -35,27 +99,11 @@ pub fn main() {
         },
     });
 
-    let mut windows = (0..4)
-        .map(|i| {
-            let title = format!("Narcissus {}", i);
-            let title = title.as_str();
-            app.create_window(&WindowDesc {
-                title,
-                width: 800,
-                height: 600,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    let blåhaj = std::fs::read("narcissus/data/blåhaj.png").unwrap();
-    let blåhaj = Image::from_buffer(&blåhaj).unwrap();
-
-    println!(
-        "loaded blåhaj width: {}, height: {}, components: {}",
-        blåhaj.width(),
-        blåhaj.height(),
-        blåhaj.components()
-    );
+    let window = app.create_window(&WindowDesc {
+        title: "narcissus",
+        width: 800,
+        height: 600,
+    });
 
     let texture = device.create_texture(&TextureDesc {
         memory_location: MemoryLocation::PreferDevice,
@@ -84,36 +132,31 @@ pub fn main() {
     device.destroy_texture(&frame_token, texture2);
     device.end_frame(frame_token);
 
-    let mut should_quit = false;
-
-    while !should_quit {
+    'main: loop {
         let frame_token = device.begin_frame();
 
         while let Some(event) = app.poll_event() {
             use Event::*;
             match event {
                 Quit => {
-                    should_quit = true;
-                    break;
+                    break 'main;
                 }
-                WindowClose(window) => {
-                    if let Some(index) = windows.iter().position(|&w| window == w) {
-                        device.destroy_window(windows.swap_remove(index));
-                    }
+                WindowClose(w) => {
+                    assert_eq!(window, w);
+                    device.destroy_window(window);
+                    break 'main;
                 }
                 _ => {}
             }
         }
 
-        for &window in windows.iter() {
-            render_window(
-                device.as_ref(),
-                &frame_token,
-                &mut thread_token,
-                pipeline,
-                window,
-            );
-        }
+        render_window(
+            device.as_ref(),
+            &frame_token,
+            &mut thread_token,
+            pipeline,
+            window,
+        );
 
         device.end_frame(frame_token);
     }
