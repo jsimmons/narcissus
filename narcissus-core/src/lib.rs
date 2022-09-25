@@ -4,6 +4,7 @@ mod image;
 mod libc;
 pub mod manual_arc;
 mod mutex;
+pub mod obj;
 mod pool;
 mod ref_count;
 pub mod slice;
