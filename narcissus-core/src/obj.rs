@@ -261,10 +261,34 @@ where
             let read = self.reader.read(&mut self.buf[self.cap..])?;
             self.cap += read;
 
+            const IS_NEWLINE_LUT: [bool; 256] = [
+                false, false, false, false, false, false, false, false, false, false, true, false,
+                false, true, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false,
+            ];
+
             for (i, &c) in self.buf[..self.cap].iter().enumerate() {
-                let is_newline = (c == b'\n') | (c == b'\r');
                 // skip empty lines
-                if (i - self.pos) > 1 && is_newline {
+                if IS_NEWLINE_LUT[c as usize] && (i - self.pos) > 1 {
                     parse_line(&self.buf[self.pos..i], visitor)?;
                     self.pos = i + 1;
                 }
