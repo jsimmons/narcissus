@@ -163,12 +163,12 @@ impl Mat4 {
         ])
     }
 
-    /// Creates an othographic projection matrix with [0,1] depth range.
+    /// Creates an othographic projection matrix with \[0,1\] depth range.
     ///
     /// Destination coordinate space matches native vulkan clip space.
     ///
     /// Src coordinate space: right-handed, +y-up.
-    /// Dst coordinate space: right-handed, -y-up, depth range [0,1].
+    /// Dst coordinate space: right-handed, -y-up, depth range \[0,1\].
     pub fn orthographic_zo(
         left: f32,
         right: f32,
@@ -190,12 +190,12 @@ impl Mat4 {
         ])
     }
 
-    /// Creates a perspective projection matrix with reversed infinite z and [0,1] depth range.
+    /// Creates a perspective projection matrix with reversed infinite z and \[0,1\] depth range.
     ///
     /// Destination coordinate space matches native vulkan clip space.
     ///
     /// Src coordinate space: right-handed, +y up.
-    /// Dst coordinate space: right-handed, -y up, depth range [0,1].
+    /// Dst coordinate space: right-handed, -y up, depth range \[0,1\].
     pub fn perspective_rev_inf_zo(vertical_fov: Rad, aspect_ratio: f32, z_near: f32) -> Mat4 {
         let tan = (vertical_fov.as_f32() / 2.0).tan();
         let sy = 1.0 / tan;

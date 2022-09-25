@@ -124,6 +124,7 @@ macro_rules! impl_shared {
             pub const ZERO: $name = Self::splat(0.0);
             #[doc = concat!("[`", stringify!($name), "`] with all elements initialized to `1.0`.")]
             pub const ONE: $name = Self::splat(1.0);
+            #[allow(clippy::zero_divided_by_zero)]
             #[doc = concat!("[`", stringify!($name), "`] with all elements initialized to `NaN`.")]
             pub const NAN: $name = Self::splat(0.0 / 0.0);
 
@@ -138,13 +139,13 @@ macro_rules! impl_shared {
             #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element is initialized with the minimum of the corresponding elements `a[i]` and `b[i]`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::min`] for exact details.")]
             #[inline]
             pub fn min(a: $name, b: $name) -> $name {
-                a.map2(b, |a, b| crate::min(a, b))
+                a.map2(b, |a, b| $crate::min(a, b))
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element is initialized with the maximum of the corresponding elements `a[i]` and `b[i]`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::max`] for exact details.")]
             #[inline]
             pub fn max(a: $name, b: $name) -> $name {
-                a.map2(b, |a, b| crate::max(a, b))
+                a.map2(b, |a, b| $crate::max(a, b))
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element `x[i]` is clamped between the corresponding elements `lo[i]` and `hi[i]`.\n\n# Panics\n\nPanics if any element of `lo` is greater than its corresponding element in `hi`.")]
