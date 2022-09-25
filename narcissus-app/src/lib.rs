@@ -4,7 +4,7 @@ use std::ffi::{c_void, CStr};
 
 use narcissus_core::Handle;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Debug)]
 pub struct Window(Handle);
 
 impl Window {
