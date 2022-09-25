@@ -10,10 +10,10 @@ use std::marker::PhantomData;
 /// # Example
 ///
 /// ```
-/// #![feature(array_windows)]
+/// use narcissus_core::slice::array_windows;
 ///
 /// let slice = [0, 1, 2, 3];
-/// let iter = slice.array_windows::<2>();
+/// let iter = array_windows::<_, 2>(&slice);
 /// ```
 ///
 /// [`array_windows`]: slice::array_windows
@@ -129,8 +129,10 @@ impl<'a, T, const N: usize> DoubleEndedIterator for ArrayWindows<'a, T, N> {
 /// # Examples
 ///
 /// ```
+/// use narcissus_core::slice::array_windows;
+///
 /// let slice = [0, 1, 2, 3];
-/// let mut iter = array_windows(slice);
+/// let mut iter = array_windows(&slice);
 /// assert_eq!(iter.next().unwrap(), &[0, 1]);
 /// assert_eq!(iter.next().unwrap(), &[1, 2]);
 /// assert_eq!(iter.next().unwrap(), &[2, 3]);
