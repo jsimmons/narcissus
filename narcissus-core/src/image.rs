@@ -75,8 +75,8 @@ impl Image {
         self.components
     }
 
-    /// The pixel data consists of [`height()`] scanlines of [`width()`] pixels,
-    /// with each pixel consisting of [`components()`] interleaved 8-bit components; the first
+    /// The pixel data consists of [`Self::height()`] scanlines of [`Self::width()`] pixels,
+    /// with each pixel consisting of [`Self::components()`] interleaved 8-bit components; the first
     /// pixel pointed to is top-left-most in the image. There is no padding between
     /// image scanlines or between pixels, regardless of format.
     ///

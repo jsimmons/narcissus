@@ -73,7 +73,7 @@ where
 
     pub fn visit<V: Visitor>(&mut self, visitor: &mut V) -> Result<(), Error> {
         fn parse_line<V: Visitor>(line: &[u8], visitor: &mut V) -> Result<(), Error> {
-            debug_assert!(line.len() > 0);
+            debug_assert!(!line.is_empty());
 
             let mut i = 0;
 
