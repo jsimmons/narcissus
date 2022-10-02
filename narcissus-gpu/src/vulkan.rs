@@ -1,6 +1,6 @@
 use std::{
     cell::UnsafeCell,
-    collections::{HashMap, VecDeque},
+    collections::{hash_map, HashMap, VecDeque},
     marker::PhantomData,
     ops::DerefMut,
     os::raw::{c_char, c_void},
@@ -1305,7 +1305,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                         .push_back(texture.texture.memory);
                 }
                 // The texture was at one point shared, we may or may not have the last reference.
-                VulkanTextureHolder::Shared(mut texture) => {
+                VulkanTextureHolder::Shared(texture) => {
                     frame.destroyed_image_views.lock().push_back(texture.view);
                     // If we had the last reference we need to destroy the image and memory too
                     if let manual_arc::Release::Unique(texture) = texture.texture.release() {
@@ -1471,10 +1471,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
         let mut present_swapchains = frame.present_swapchains.lock();
         let present_info = match present_swapchains.entry(window) {
-            std::collections::hash_map::Entry::Occupied(_) => {
+            hash_map::Entry::Occupied(_) => {
                 panic!("attempting to acquire the same swapchain multiple times in a frame")
             }
-            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(default()),
+            hash_map::Entry::Vacant(entry) => entry.insert(default()),
         };
 
         let mut old_swapchain = vk::SwapchainKHR::null();
