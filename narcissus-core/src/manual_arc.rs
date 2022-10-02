@@ -8,7 +8,9 @@ use std::{
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Release<T> {
+    /// There are other outstanding references to this object.
     Shared,
+    /// This was the final reference, returning the object that the container was holding.
     Unique(T),
 }
 
@@ -39,12 +41,18 @@ impl<T> Inner<T> {
     }
 }
 
+/// A thread-safe reference-counting pointer with manual management.
+///
+/// The type [`ManualArc<T>`] provides shared ownership of a value of type T, allocated in the heap. Invoking clone on
+/// [`ManualArc`] produces a new [`ManualArc`] instance, which points to the same allocation on the heap as the source
+/// [`ManualArc`], while increasing a reference count.
+///
+/// Before a [`ManualArc`] is dropped, the [`ManualArc::release`] method must be called. [`ManualArc::release`] will
+/// return the variant [`Release::Shared`] if there are other references outstanding, or [`Release::Unique`] with the
+/// object being released if the release operation removes the last reference.
 pub struct ManualArc<T> {
-    ptr: NonNull<Inner<T>>,
+    ptr: Option<NonNull<Inner<T>>>,
     phantom: PhantomData<Inner<T>>,
-
-    #[cfg(debug_assertions)]
-    has_released: bool,
 }
 
 impl<T> ManualArc<T> {
@@ -55,45 +63,51 @@ impl<T> ManualArc<T> {
     #[inline]
     fn from_inner(ptr: NonNull<Inner<T>>) -> Self {
         Self {
-            ptr,
+            ptr: Some(ptr),
             phantom: PhantomData,
-
-            #[cfg(debug_assertions)]
-            has_released: false,
         }
     }
 
-    #[inline]
-    fn inner(&self) -> &Inner<T> {
-        unsafe { self.ptr.as_ref() }
-    }
+    /// Returns the variant [`Release::Shared`] if there are other [`ManualArc`] objects alive that reference the
+    /// object that this instance does, or [`Release::Unique`] with the previously contained object if the release
+    /// operation removes the last reference.
+    ///
+    /// Must be explicitly called to drop [`ManualArc`] instances. Dropping implicitly or explicitly without calling
+    /// this function will panic.
+    pub fn release(mut self) -> Release<T> {
+        #[cold]
+        #[inline(never)]
+        unsafe fn release_slow<T>(ptr: NonNull<Inner<T>>) -> T {
+            // Ref-counting operations imply a full memory barrier on x86, but not in general. So insert an acquire
+            // barrier on the slow path here to ensure all modifications to inner are visible before we call drop.
+            std::sync::atomic::fence(Ordering::Acquire);
 
-    #[cold]
-    #[inline(never)]
-    fn release_slow(&self) -> T {
-        std::sync::atomic::fence(Ordering::Acquire);
-        let value;
-        unsafe {
-            let mut inner = Box::from_raw(self.ptr.as_ptr());
-            // extract the value from the container.
+            let value;
+            // Safety: Was created by Box::leak in the constructor, so it's valid to re-create a box here.
+            let mut inner = Box::from_raw(ptr.as_ptr());
+            // extract the value from the container so we can return it.
             value = ManuallyDrop::take(&mut inner.value);
-            // since the value is wrapped in `ManuallyDrop` it won't be dropped here.
+            // since the contained value is wrapped in `ManuallyDrop` it won't be dropped here.
             drop(inner);
-        }
-        value
-    }
 
-    pub fn release(&mut self) -> Release<T> {
-        #[cfg(debug_assertions)]
-        {
-            assert!(!self.has_released);
-            self.has_released = true;
+            value
         }
 
-        if self.inner().decr_strong() {
-            Release::Shared
-        } else {
-            Release::Unique(self.release_slow())
+        // Safety: `release` consumes self, so it's impossible to call twice. Therefore ptr is always valid since
+        // `release` is the only thing which invalidates it.
+        unsafe {
+            // Replace ptr with None so that the drop function doesn't panic
+            let ptr = std::mem::replace(&mut self.ptr, None);
+            let ptr = ptr.unwrap_unchecked();
+            let inner = ptr.as_ref();
+            if inner.decr_strong() {
+                Release::Shared
+            } else {
+                // We have released the last reference to this inner, so we need to free it and return the contained
+                // value.
+                let value = release_slow(ptr);
+                Release::Unique(value)
+            }
         }
     }
 }
@@ -106,8 +120,11 @@ impl<T: Default> Default for ManualArc<T> {
 
 impl<T> Clone for ManualArc<T> {
     fn clone(&self) -> Self {
-        self.inner().incr_strong();
-        Self::from_inner(self.inner().into())
+        // Safety: Inner is valid whilever we have a valid [`ManualArc`] outside of the [`ManualArc::release`] function.
+        let ptr = unsafe { self.ptr.unwrap_unchecked() };
+        let inner = unsafe { ptr.as_ref() };
+        inner.incr_strong();
+        Self::from_inner(ptr)
     }
 }
 
@@ -115,7 +132,10 @@ impl<T> Clone for ManualArc<T> {
 impl<T> Drop for ManualArc<T> {
     fn drop(&mut self) {
         if !std::thread::panicking() {
-            assert!(self.has_released, "must release manually before drop");
+            assert!(
+                self.ptr.is_none(),
+                "must release manually by calling `ManualArc::release` before value is dropped"
+            );
         }
     }
 }
@@ -123,9 +143,12 @@ impl<T> Drop for ManualArc<T> {
 impl<T> Deref for ManualArc<T> {
     type Target = T;
 
-    // Inner is valid whilever we have a valid ManualArc.
+    // Safety: Inner is valid whilever we have a valid [`ManualArc`] outside of the [`ManualArc::release`] function.
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.inner().value.deref()
+        unsafe { self.ptr.unwrap_unchecked().as_ref() }
+            .value
+            .deref()
     }
 }
 
@@ -135,8 +158,8 @@ mod tests {
 
     #[test]
     fn basic() {
-        let mut arc1 = ManualArc::new(42);
-        let mut arc2 = arc1.clone();
+        let arc1 = ManualArc::new(42);
+        let arc2 = arc1.clone();
 
         assert_eq!(*arc1, 42);
         assert_eq!(*arc2, 42);
