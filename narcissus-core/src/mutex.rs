@@ -106,7 +106,7 @@ impl<T: ?Sized> Mutex<T> {
         self.data.get_mut()
     }
 
-    pub unsafe fn raw_lock(&self) {
+    unsafe fn raw_lock(&self) {
         #[cfg(debug_assertions)]
         if self.thread_id.load(Ordering::Relaxed) == get_thread_id() {
             panic!("recursion not supported")
@@ -165,7 +165,7 @@ impl<T: ?Sized> Mutex<T> {
         }
     }
 
-    pub unsafe fn raw_try_lock(&self) -> bool {
+    unsafe fn raw_try_lock(&self) -> bool {
         #[cfg(debug_assertions)]
         if self.thread_id.load(Ordering::Relaxed) == get_thread_id() {
             panic!("recursion not supported")
@@ -185,7 +185,7 @@ impl<T: ?Sized> Mutex<T> {
         }
     }
 
-    pub unsafe fn raw_unlock(&self) {
+    unsafe fn raw_unlock(&self) {
         #[cfg(debug_assertions)]
         self.thread_id.store(0, Ordering::Relaxed);
 

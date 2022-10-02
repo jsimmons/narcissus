@@ -119,6 +119,11 @@ impl<T: ?Sized> Rc<T> {
         }
     }
 
+    /// # Safety
+    ///
+    /// Any other [`Rc`] or [`Arc`] pointers to the same allocation must not be dereferenced for the duration of the
+    /// returned borrow. This is trivially the case if no such pointers exist, for example immediately after
+    /// [`Arc::new`].
     #[inline]
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         // We are careful to *not* create a reference covering the "count" fields, as
@@ -235,6 +240,11 @@ impl<T: ?Sized> Arc<T> {
         }
     }
 
+    /// # Safety
+    ///
+    /// Any other [`Rc`] or [`Arc`] pointers to the same allocation must not be dereferenced for the duration of the
+    /// returned borrow. This is trivially the case if no such pointers exist, for example immediately after
+    /// [`Arc::new`].
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         // We are careful to *not* create a reference covering the "count" fields, as
         // this would alias with concurrent access to the reference counts.

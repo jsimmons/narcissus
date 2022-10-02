@@ -435,7 +435,7 @@ impl<T> Pool<T> {
         mapping_size += MAX_CAPACITY * size_of::<T>();
         mapping_size = align_offset(mapping_size, PAGE_SIZE);
 
-        let mapping_base = unsafe { virtual_reserve(mapping_size) };
+        let mapping_base = virtual_reserve(mapping_size);
         let free_slots = unsafe { mapping_base.add(free_slots_offset) } as _;
         let slots = unsafe { mapping_base.add(slots_offset) } as _;
         let value_slots = unsafe { mapping_base.add(value_slots_offset) } as _;

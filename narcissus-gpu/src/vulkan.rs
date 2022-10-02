@@ -12,7 +12,7 @@ use narcissus_core::{
     cstr, default, manual_arc, manual_arc::ManualArc, Mutex, PhantomUnsend, Pool,
 };
 
-use vk::{DeviceFunctions, SurfaceKHRFunctions, SwapchainKHRFunctions};
+use vk::DeviceFunctions;
 use vulkan_sys as vk;
 
 use crate::{
@@ -308,6 +308,13 @@ struct VulkanFrame {
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
 }
 
+type SwapchainDestroyQueue = DelayQueue<(
+    Window,
+    vk::SwapchainKHR,
+    vk::SurfaceKHR,
+    Box<[vk::ImageView]>,
+)>;
+
 pub(crate) struct VulkanDevice<'app> {
     app: &'app dyn App,
 
@@ -325,14 +332,7 @@ pub(crate) struct VulkanDevice<'app> {
     frames: Box<[UnsafeCell<VulkanFrame>; NUM_FRAMES]>,
 
     swapchains: Mutex<HashMap<Window, VulkanSwapchain>>,
-    destroyed_swapchains: Mutex<
-        DelayQueue<(
-            Window,
-            vk::SwapchainKHR,
-            vk::SurfaceKHR,
-            Box<[vk::ImageView]>,
-        )>,
-    >,
+    destroyed_swapchains: Mutex<SwapchainDestroyQueue>,
 
     pools: Mutex<VulkanPools>,
     semaphores: Mutex<VecDeque<vk::Semaphore>>,
@@ -409,17 +409,21 @@ impl<'app> VulkanDevice<'app> {
                     _physical_device_properties_13,
                 ) = {
                     let mut properties_13 = vk::PhysicalDeviceVulkan13Properties::default();
-                    let mut properties_12 = vk::PhysicalDeviceVulkan12Properties::default();
-                    let mut properties_11 = vk::PhysicalDeviceVulkan11Properties::default();
-                    let mut properties = vk::PhysicalDeviceProperties2::default();
-
-                    properties._next =
-                        &mut properties_11 as *mut vk::PhysicalDeviceVulkan11Properties as *mut _;
-                    properties_11._next =
-                        &mut properties_12 as *mut vk::PhysicalDeviceVulkan12Properties as *mut _;
-                    properties_12._next =
-                        &mut properties_13 as *mut vk::PhysicalDeviceVulkan13Properties as *mut _;
-
+                    let mut properties_12 = vk::PhysicalDeviceVulkan12Properties {
+                        _next: &mut properties_13 as *mut vk::PhysicalDeviceVulkan13Properties
+                            as *mut _,
+                        ..default()
+                    };
+                    let mut properties_11 = vk::PhysicalDeviceVulkan11Properties {
+                        _next: &mut properties_12 as *mut vk::PhysicalDeviceVulkan12Properties
+                            as *mut _,
+                        ..default()
+                    };
+                    let mut properties = vk::PhysicalDeviceProperties2 {
+                        _next: &mut properties_11 as *mut vk::PhysicalDeviceVulkan11Properties
+                            as *mut _,
+                        ..default()
+                    };
                     unsafe {
                         instance_fn
                             .get_physical_device_properties2(physical_device, &mut properties);
@@ -434,16 +438,21 @@ impl<'app> VulkanDevice<'app> {
                     physical_device_features_13,
                 ) = {
                     let mut features_13 = vk::PhysicalDeviceVulkan13Features::default();
-                    let mut features_12 = vk::PhysicalDeviceVulkan12Features::default();
-                    let mut features_11 = vk::PhysicalDeviceVulkan11Features::default();
-                    let mut features = vk::PhysicalDeviceFeatures2::default();
-
-                    features._next =
-                        &mut features_11 as *mut vk::PhysicalDeviceVulkan11Features as *mut _;
-                    features_11._next =
-                        &mut features_12 as *mut vk::PhysicalDeviceVulkan12Features as *mut _;
-                    features_12._next =
-                        &mut features_13 as *mut vk::PhysicalDeviceVulkan13Features as *mut _;
+                    let mut features_12 = vk::PhysicalDeviceVulkan12Features {
+                        _next: &mut features_13 as *mut vk::PhysicalDeviceVulkan13Features
+                            as *mut _,
+                        ..default()
+                    };
+                    let mut features_11 = vk::PhysicalDeviceVulkan11Features {
+                        _next: &mut features_12 as *mut vk::PhysicalDeviceVulkan12Features
+                            as *mut _,
+                        ..default()
+                    };
+                    let mut features = vk::PhysicalDeviceFeatures2 {
+                        _next: &mut features_11 as *mut vk::PhysicalDeviceVulkan11Features
+                            as *mut _,
+                        ..default()
+                    };
 
                     unsafe {
                         instance_fn.get_physical_device_features2(physical_device, &mut features);
@@ -782,17 +791,19 @@ impl<'app> VulkanDevice<'app> {
     }
 
     fn destroy_swapchain(
-        app: &dyn App,
-        device_fn: &DeviceFunctions,
-        swapchain_fn: &SwapchainKHRFunctions,
-        surface_fn: &SurfaceKHRFunctions,
-        instance: vk::Instance,
-        device: vk::Device,
+        &self,
         window: Window,
         surface: vk::SurfaceKHR,
         swapchain: vk::SwapchainKHR,
         image_views: &[vk::ImageView],
     ) {
+        let app = self.app;
+        let device_fn = &self.device_fn;
+        let swapchain_fn = &self.swapchain_fn;
+        let surface_fn = &self.surface_fn;
+        let instance = self.instance;
+        let device = self.device;
+
         if !image_views.is_empty() {
             for &image_view in image_views {
                 unsafe { device_fn.destroy_image_view(device, image_view, None) }
@@ -2050,18 +2061,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         self.destroyed_swapchains
             .lock()
             .expire(|(window, swapchain, surface, image_views)| {
-                Self::destroy_swapchain(
-                    self.app,
-                    device_fn,
-                    &self.swapchain_fn,
-                    &self.surface_fn,
-                    self.instance,
-                    device,
-                    window,
-                    surface,
-                    swapchain,
-                    &image_views,
-                );
+                self.destroy_swapchain(window, surface, swapchain, &image_views);
             });
 
         frame_token
@@ -2197,21 +2197,15 @@ impl<'app> Drop for VulkanDevice<'app> {
             unsafe { device_fn.destroy_semaphore(device, *semaphore, None) }
         }
 
-        for (_, (window, swapchain, surface, image_views)) in
-            self.destroyed_swapchains.get_mut().drain(..)
         {
-            Self::destroy_swapchain(
-                self.app,
-                &self.device_fn,
-                &self.swapchain_fn,
-                &self.surface_fn,
-                self.instance,
-                self.device,
-                window,
-                surface,
-                swapchain,
-                &image_views,
-            );
+            let destroyed_swapchains = self
+                .destroyed_swapchains
+                .get_mut()
+                .drain(..)
+                .collect::<Vec<_>>();
+            for (_, (window, swapchain, surface, image_views)) in destroyed_swapchains {
+                self.destroy_swapchain(window, surface, swapchain, &image_views);
+            }
         }
 
         for (_, swapchain) in self.swapchains.get_mut().iter() {

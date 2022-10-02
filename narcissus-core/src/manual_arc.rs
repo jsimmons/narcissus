@@ -82,11 +82,10 @@ impl<T> ManualArc<T> {
             // barrier on the slow path here to ensure all modifications to inner are visible before we call drop.
             std::sync::atomic::fence(Ordering::Acquire);
 
-            let value;
             // Safety: Was created by Box::leak in the constructor, so it's valid to re-create a box here.
             let mut inner = Box::from_raw(ptr.as_ptr());
             // extract the value from the container so we can return it.
-            value = ManuallyDrop::take(&mut inner.value);
+            let value = ManuallyDrop::take(&mut inner.value);
             // since the contained value is wrapped in `ManuallyDrop` it won't be dropped here.
             drop(inner);
 
