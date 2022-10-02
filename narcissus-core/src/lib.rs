@@ -46,7 +46,7 @@ macro_rules! thread_token_def {
         mod private {
             use std::cell::UnsafeCell;
             use std::sync::atomic::AtomicUsize;
-            use $crate::{array_assume_init, uninit_array, PhantomUnsend};
+            use $crate::PhantomUnsend;
             pub struct $token_name {
                 index: usize,
                 phantom: PhantomUnsend,
@@ -244,14 +244,6 @@ pub fn string_from_c_str(c_str: &[i8]) -> String {
 
 pub fn get_thread_id() -> i32 {
     unsafe { libc::gettid() }
-}
-
-pub fn uninit_array<T, const N: usize>() -> [MaybeUninit<T>; N] {
-    unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() }
-}
-
-pub unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>; N]) -> [T; N] {
-    (&array as *const _ as *const [T; N]).read()
 }
 
 pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
