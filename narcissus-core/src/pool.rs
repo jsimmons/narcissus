@@ -1,17 +1,15 @@
-use std::{marker::PhantomData, mem::size_of, ptr::NonNull, sync::atomic::AtomicU32};
+use std::{marker::PhantomData, mem::size_of, ptr::NonNull};
 
-use crate::{align_offset, static_assert, virtual_commit, virtual_free, virtual_reserve};
+use crate::{
+    align_offset, mod_inverse_u32, static_assert, virtual_commit, virtual_free, virtual_reserve,
+};
 
-/// Each handle contains `MAGIC_BITS` bits of per-pool state.
-/// This value is provided by the user to aid debugging, lookup will panic if attempting to access a
-/// table using a handle with a non-matching magic value.
-const MAGIC_BITS: u32 = 4;
 /// Each handle uses `GEN_BITS` bits of per-slot generation counter. Looking up a handle with the
 /// correct index but an incorrect generation will yield `None`.
-const GEN_BITS: u32 = 8;
+const GEN_BITS: u32 = 9;
 /// Each handle uses `IDX_BITS` bits of index used to select a slot. This limits the maximum
 /// capacity of the table to `2 ^ IDX_BITS - 1`.
-const IDX_BITS: u32 = 20;
+const IDX_BITS: u32 = 23;
 
 const MAX_CAPACITY: usize = 1 << IDX_BITS as usize;
 const PAGE_SIZE: usize = 4096;
@@ -21,16 +19,18 @@ const PAGE_SIZE: usize = 4096;
 /// generated.
 const MIN_FREE_SLOTS: usize = 512;
 
-static_assert!(MAGIC_BITS + GEN_BITS + IDX_BITS == 32);
+static_assert!(GEN_BITS + IDX_BITS == 32);
 
-const MAGIC_MASK: u32 = (1 << MAGIC_BITS) - 1;
 const GEN_MASK: u32 = (1 << GEN_BITS) - 1;
 const IDX_MASK: u32 = (1 << IDX_BITS) - 1;
 
 const IDX_SHIFT: u32 = 0;
 const GEN_SHIFT: u32 = IDX_SHIFT + IDX_BITS;
-const MAGIC_SHIFT: u32 = GEN_SHIFT + GEN_BITS;
 
+/// A handle representing an object stored in the associated pool.
+///
+/// Although the handle is mixed based on a per-pool random number, it's recommended to additionally create a newtype
+/// wrapper around this type, to provide type safety preventing the handles from separate pools from becoming confused.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Handle(u32);
 
@@ -41,27 +41,31 @@ impl Default for Handle {
 }
 
 impl Handle {
-    fn new(magic: u32, generation: u32, slot_index: SlotIndex) -> Self {
-        let value = (magic & MAGIC_MASK) << MAGIC_SHIFT
-            | (generation & GEN_MASK) << GEN_SHIFT
-            | (slot_index.0 & IDX_MASK) << IDX_SHIFT;
-        Self(!value)
+    /// Create a handle from the given encode_multiplier, generation counter and slot index.
+    fn encode(encode_multiplier: u32, generation: u32, slot_index: SlotIndex) -> Self {
+        let value = (generation & GEN_MASK) << GEN_SHIFT | (slot_index.0 & IDX_MASK) << IDX_SHIFT;
+        // Invert bits so that the all bits set, the null handle, becomes zero.
+        let value = !value;
+        // Transform by the per-pool multiplier to mix bits such that handles from different pools are unlikely to collide.
+        // Note this will return 0 for the null handle due to the inversion above.
+        let value = value.wrapping_mul(encode_multiplier);
+        Self(value)
+    }
+
+    /// Return a tuple containing the generation counter and slot index from an encoded handle and decode multiplier.
+    fn decode(self, decode_multiplier: u32) -> (u32, SlotIndex) {
+        let value = self.0;
+        // Undo the bit mix from the encode step by multiplying by the multiplicative inverse of the encode_multiplier.
+        let value = value.wrapping_mul(decode_multiplier);
+        // Invert bits so zero, the null handle, becomes all bits set.
+        let value = !value;
+        let generation = (value >> GEN_SHIFT) & GEN_MASK;
+        let slot_index = SlotIndex(value >> IDX_SHIFT & IDX_MASK);
+        (generation, slot_index)
     }
 
     pub const fn null() -> Self {
         Self(0)
-    }
-
-    const fn magic(self) -> u32 {
-        (!self.0 >> MAGIC_SHIFT) & MAGIC_MASK
-    }
-
-    const fn generation(self) -> u32 {
-        (!self.0 >> GEN_SHIFT) & GEN_MASK
-    }
-
-    const fn slot_index(self) -> SlotIndex {
-        SlotIndex((!self.0 >> IDX_SHIFT) & IDX_MASK)
     }
 
     pub const fn is_null(&self) -> bool {
@@ -72,26 +76,22 @@ impl Handle {
 impl std::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_null() {
-            f.debug_tuple("Handle").field(&"NULL").finish()
+            f.debug_tuple("Handle").field(&"null").finish()
         } else {
-            f.debug_struct("Handle")
-                .field("magic", &self.magic())
-                .field("generation", &self.generation())
-                .field("slot_index", &self.slot_index().0)
-                .finish()
+            f.debug_struct("Handle").field("encoded", &self.0).finish()
         }
     }
 }
 
+/// A strongly typed index in the slots array.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct SlotIndex(u32);
 
+/// A strongly typed index in the values array.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ValueIndex(u32);
 
-// Since slots don't store the magic value, we can use the upper bit as a valid flag.
-const SLOT_EMPTY_BIT: u32 = 0x8000_0000;
-
+/// Packed value storing the generation and value index for each slot in the indirection table.
 struct Slot {
     value_index_and_gen: u32,
 }
@@ -103,46 +103,31 @@ impl Slot {
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.value_index_and_gen & SLOT_EMPTY_BIT != 0
-    }
-
-    fn is_full(&self) -> bool {
-        self.value_index_and_gen & SLOT_EMPTY_BIT == 0
-    }
-
+    /// Extract the current generation counter from this slot.
     fn generation(&self) -> u32 {
         (self.value_index_and_gen >> GEN_SHIFT) & GEN_MASK
     }
 
+    /// Extract the current value index from this slot.
     fn value_index(&self) -> ValueIndex {
         ValueIndex((self.value_index_and_gen >> IDX_SHIFT) & IDX_MASK)
     }
 
+    /// Sets the slot's value index without modifying the generation.
     fn set_value_index(&mut self, value_index: ValueIndex) {
-        debug_assert!(self.is_empty());
         debug_assert!(value_index.0 & IDX_MASK == value_index.0);
         self.value_index_and_gen =
             self.generation() << GEN_SHIFT | (value_index.0 & IDX_MASK) << IDX_SHIFT;
     }
 
-    fn update_value_index(&mut self, value_index: ValueIndex) {
-        debug_assert!(self.is_full());
-        debug_assert!(value_index.0 & IDX_MASK == value_index.0);
-        self.value_index_and_gen =
-            self.generation() << GEN_SHIFT | (value_index.0 & IDX_MASK) << IDX_SHIFT;
-    }
-
+    /// Clears the slot, resetting the value_mask to all bits set and incrementing the generation counter.
     fn clear_value_index(&mut self) {
-        debug_assert!(self.is_full());
         let new_generation = self.generation().wrapping_add(1);
-        self.value_index_and_gen =
-            SLOT_EMPTY_BIT | (new_generation & GEN_MASK) << GEN_SHIFT | IDX_MASK << IDX_SHIFT;
-        debug_assert!(self.is_empty());
+        self.value_index_and_gen = (new_generation & GEN_MASK) << GEN_SHIFT | IDX_MASK << IDX_SHIFT;
     }
 }
 
-/// FIFO free list of slot indices
+/// FIFO free list of slot indices.
 struct FreeSlots {
     head: usize,
     tail: usize,
@@ -223,6 +208,9 @@ impl FreeSlots {
     }
 }
 
+/// Indirection table mapping slot indices stored in handles to values in the values array.
+///
+/// Also contains the generation counter for each slot.
 struct Slots {
     len: usize,
     ptr: NonNull<Slot>,
@@ -270,6 +258,7 @@ impl Slots {
     }
 }
 
+/// A contiguous growable array of values as well as a reverse-lookup table for slot indices that map to those values.
 struct Values<T> {
     cap: usize,
     len: usize,
@@ -346,7 +335,7 @@ impl<T> Values<T> {
             slots
                 .get_mut(last_slot_index)
                 .unwrap()
-                .update_value_index(value_index);
+                .set_value_index(value_index);
         }
 
         let value_index = value_index.0 as usize;
@@ -385,6 +374,7 @@ impl<T> Values<T> {
         unsafe { ptr.add(value_index).as_mut().unwrap() }
     }
 
+    /// Expands the values area by a fixed amount. Commiting the previously reserved virtual memory.
     #[cold]
     fn grow(&mut self) {
         let new_cap = std::cmp::min(self.cap + 1024, MAX_CAPACITY);
@@ -404,8 +394,10 @@ impl<T> Values<T> {
     }
 }
 
+/// A pool for allocating objects of type T and associating them with a POD `Handle`.
 pub struct Pool<T> {
-    magic: u32,
+    encode_multiplier: u32,
+    decode_multiplier: u32,
     free_slots: FreeSlots,
     slots: Slots,
     values: Values<T>,
@@ -413,9 +405,11 @@ pub struct Pool<T> {
     mapping_size: usize,
 }
 
-static NEXT_MAGIC: AtomicU32 = AtomicU32::new(0);
-
 impl<T> Pool<T> {
+    /// Creates a new pool.
+    ///
+    /// This will reserve a large amount of virtual memory for the maximum size of the pool, but won't commit any of it
+    /// until it is required.
     pub fn new() -> Self {
         let mut mapping_size = 0;
 
@@ -441,8 +435,15 @@ impl<T> Pool<T> {
         let value_slots = unsafe { mapping_base.add(value_slots_offset) } as _;
         let values = unsafe { mapping_base.add(values_offset) } as _;
 
+        // virtual reservations are page aligned, so shift out the zeroes in the bottom of the base address.
+        let encode_multiplier = mapping_base as usize >> 12;
+        // multiplier must be odd to calculate the mod inverse.
+        let encode_multiplier = encode_multiplier as u32 | 1;
+        let decode_multiplier = mod_inverse_u32(encode_multiplier);
+
         Self {
-            magic: NEXT_MAGIC.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            encode_multiplier,
+            decode_multiplier,
             free_slots: FreeSlots::new(NonNull::new(free_slots).unwrap()),
             slots: Slots::new(NonNull::new(slots).unwrap()),
             values: Values::new(
@@ -454,26 +455,27 @@ impl<T> Pool<T> {
         }
     }
 
-    fn magic(&self) -> u32 {
-        self.magic & MAGIC_MASK
-    }
-
+    /// Returns the number of values in the pool.
     pub fn len(&self) -> usize {
         self.values.len
     }
 
+    /// Returns `true` if the pool contains no values.
     pub fn is_empty(&self) -> bool {
         self.values.len == 0
     }
 
+    /// Returns a slice containing all values in the pool.
     pub fn values(&self) -> &[T] {
         self.values.as_slice()
     }
 
+    /// Returns a mutable slice containing all values in the pool.
     pub fn values_mut(&mut self) -> &mut [T] {
         self.values.as_mut_slice()
     }
 
+    /// Inserts a value into the pool, returning a handle that represents it.
     pub fn insert(&mut self, value: T) -> Handle {
         let value_index = self.values.push(value);
 
@@ -495,19 +497,16 @@ impl<T> Pool<T> {
         let generation = slot.generation();
         slot.set_value_index(value_index);
 
-        Handle::new(self.magic(), generation, slot_index)
+        Handle::encode(self.encode_multiplier, generation, slot_index)
     }
 
+    /// Removes a value from the pool, returning the value associated with the handle if it was previously valid.
     pub fn remove(&mut self, handle: Handle) -> Option<T> {
-        // Avoid checking magic on null handles, it's always all bits set.
         if handle.is_null() {
             return None;
         }
 
-        assert_eq!(self.magic(), handle.magic());
-
-        let generation = handle.generation();
-        let slot_index = handle.slot_index();
+        let (generation, slot_index) = handle.decode(self.decode_multiplier);
 
         if let Some(slot) = self.slots.get_mut(slot_index) {
             if slot.generation() == generation {
@@ -521,20 +520,16 @@ impl<T> Pool<T> {
         None
     }
 
+    /// Returns a mutable reference to the value corresponding to the handle.
     pub fn get_mut(&mut self, handle: Handle) -> Option<&mut T> {
-        // Avoid checking magic on null handles, it's always all bits set.
         if handle.is_null() {
             return None;
         }
 
-        assert_eq!(self.magic(), handle.magic());
-
-        let generation = handle.generation();
-        let slot_index = handle.slot_index();
+        let (generation, slot_index) = handle.decode(self.decode_multiplier);
 
         if let Some(slot) = self.slots.get(slot_index) {
             if slot.generation() == generation {
-                assert!(slot.is_full());
                 return Some(self.values.get_mut(slot.value_index()));
             }
         }
@@ -542,20 +537,16 @@ impl<T> Pool<T> {
         None
     }
 
+    /// Returns a reference to the value corresponding to the handle.
     pub fn get(&self, handle: Handle) -> Option<&T> {
-        // Avoid checking magic on null handles, it's always all bits set.
         if handle.is_null() {
             return None;
         }
 
-        assert_eq!(self.magic(), handle.magic());
-
-        let generation = handle.generation();
-        let slot_index = handle.slot_index();
+        let (generation, slot_index) = handle.decode(self.decode_multiplier);
 
         if let Some(slot) = self.slots.get(slot_index) {
             if slot.generation() == generation {
-                assert!(slot.is_full());
                 return Some(self.values.get(slot.value_index()));
             }
         }
@@ -563,18 +554,21 @@ impl<T> Pool<T> {
         None
     }
 
-    pub fn clear_no_drop(&mut self) {
-        let len = self.slots.len as u32;
-        for i in 0..len {
-            let slot_index = SlotIndex(i);
+    /// Clears the pool, removing all values without dropping them.
+    ///
+    /// Does not release any memory.
+    fn clear_no_drop(&mut self) {
+        for i in 0..self.slots.len {
+            let slot_index = SlotIndex(i as u32);
             let slot = self.slots.get_mut(slot_index).unwrap();
-            if slot.is_full() {
-                slot.clear_value_index();
-                self.free_slots.push(slot_index);
-            }
+            slot.clear_value_index();
+            self.free_slots.push(slot_index);
         }
     }
 
+    /// Clears the pool, removing all values.
+    ///
+    /// Does not release any memory.
     pub fn clear(&mut self) {
         self.clear_no_drop();
         let len = self.values.len;
@@ -633,8 +627,11 @@ mod tests {
         assert_eq!(pool.remove(three), None);
     }
 
+    // This test is based on randomness in the base address of the pool so disable it by default to
+    // avoid flaky tests in CI.
     #[test]
-    fn test_pool_magic() {
+    #[ignore]
+    fn test_pool_randomiser() {
         let mut pool_1 = Pool::new();
         let mut pool_2 = Pool::new();
 
@@ -643,17 +640,22 @@ mod tests {
         assert_ne!(handle_1, handle_2);
     }
 
+    // This test is based on randomness in the base address of the pool so disable it by default to
+    // avoid flaky tests in CI.
     #[test]
+    #[ignore]
     #[should_panic]
-    fn magic_fail() {
+    fn test_pool_randomiser_fail() {
         let mut pool_1 = Pool::new();
-        let pool_2 = Pool::<i32>::new();
-
+        let mut pool_2 = Pool::new();
         let handle_1 = pool_1.insert(1);
-        pool_2.get(handle_1);
+        let _handle_2 = pool_2.insert(1);
+        pool_2.get(handle_1).unwrap();
     }
 
+    // Fills the entire pool which is slow in debug mode, so ignore this test.
     #[test]
+    #[ignore]
     fn capacity() {
         #[derive(Clone, Copy)]
         struct Chonk {
