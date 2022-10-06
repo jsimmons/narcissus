@@ -275,9 +275,85 @@ pub fn page_size() -> usize {
     4096
 }
 
+/// Returns the base 2 logarithm of the number, rounded down.
+///
+/// # Panics
+///
+/// Panics in debug mode when given a value of zero.
+pub fn log2_u32(value: u32) -> u32 {
+    debug_assert_ne!(value, 0);
+    u32::BITS - value.leading_zeros()
+}
+
+/// Returns the base 2 logarithm of the number, rounded down.
+///
+/// # Panics
+///
+/// Panics in debug mode when given a value of zero.
+pub fn log2_u64(value: u64) -> u32 {
+    debug_assert_ne!(value, 0);
+    u64::BITS - value.leading_zeros()
+}
+
+/// Returns the base 2 logarithm of the number, rounded down.
+///
+/// # Panics
+///
+/// Panics in debug mode when given a value of zero.
+pub fn log2_usize(value: usize) -> u32 {
+    debug_assert_ne!(value, 0);
+    usize::BITS - value.leading_zeros()
+}
+
+/// Returns the multiplicative inverse of the number.
+///
+/// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any **odd** x.
+///
+/// # Panics
+///
+/// Panics in debug mode when passed an even value.
+pub fn mod_inverse_u64(value: u64) -> u64 {
+    debug_assert!(value & 1 == 1);
+
+    // Jeffrey Hurchalla’s method https://arxiv.org/abs/2204.04342
+    let x = value.wrapping_mul(3) ^ 2;
+    let y = u64::wrapping_sub(1, value.wrapping_mul(x));
+    let x = x.wrapping_mul(y.wrapping_add(1));
+    let y = y.wrapping_mul(y);
+    let x = x.wrapping_mul(y.wrapping_add(1));
+    let y = y.wrapping_mul(y);
+    let x = x.wrapping_mul(y.wrapping_add(1));
+    let y = y.wrapping_mul(y);
+    x.wrapping_mul(y.wrapping_add(1))
+}
+
+/// Returns the multiplicative inverse of the number.
+///
+/// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any **odd** x.
+///
+/// # Panics
+///
+/// Panics in debug mode when passed an even value.
+pub fn mod_inverse_u32(value: u32) -> u32 {
+    debug_assert!(value & 1 == 1);
+
+    // Jeffrey Hurchalla’s method https://arxiv.org/abs/2204.04342
+    let x = value.wrapping_mul(3) ^ 2;
+    let y = u32::wrapping_sub(1, value.wrapping_mul(x));
+    let x = x.wrapping_mul(y.wrapping_add(1));
+    let y = y.wrapping_mul(y);
+    let x = x.wrapping_mul(y.wrapping_add(1));
+    let y = y.wrapping_mul(y);
+    x.wrapping_mul(y.wrapping_add(1))
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::CStr;
+
+    use super::cstr;
+    use super::mod_inverse_u32;
+    use super::mod_inverse_u64;
 
     #[test]
     fn test_cstr() {
@@ -285,5 +361,44 @@ mod tests {
             cstr!("hello"),
             CStr::from_bytes_with_nul(b"hello\0").unwrap()
         );
+    }
+
+    // Test is exhaustive and quite slow in debug mode. So ignore by default.
+    #[test]
+    #[ignore]
+    fn test_mod_inverse_u32_exhaustive() {
+        let mut x = 1_u32;
+        loop {
+            assert_eq!(x.wrapping_mul(mod_inverse_u32(x)), 1);
+            if x == u32::MAX {
+                break;
+            }
+            x += 2;
+        }
+    }
+
+    #[test]
+    fn test_mod_inverse_u64() {
+        // Chosen by fair dice roll. (very large dice)
+        {
+            let x = 16594110198632835723_u64;
+            assert_eq!(x.wrapping_mul(mod_inverse_u64(x)), 1);
+        }
+        {
+            let x = 528604400148778217_u64;
+            assert_eq!(x.wrapping_mul(mod_inverse_u64(x)), 1);
+        }
+        {
+            let x = 3300434641321711815_u64;
+            assert_eq!(x.wrapping_mul(mod_inverse_u64(x)), 1);
+        }
+        {
+            let x = 7154793095758979941_u64;
+            assert_eq!(x.wrapping_mul(mod_inverse_u64(x)), 1);
+        }
+        {
+            let x = 8737695847511607165_u64;
+            assert_eq!(x.wrapping_mul(mod_inverse_u64(x)), 1);
+        }
     }
 }
