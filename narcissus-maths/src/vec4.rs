@@ -78,21 +78,6 @@ impl From<Vec4> for std::arch::x86_64::__m128 {
     }
 }
 
-//
-// #[inline(always)]
-// pub(crate) fn as_m128(self) -> std::arch::x86_64::__m128 {
-//
-// }
-
-// #[cfg(target_feature = "sse2")]
-// #[inline(always)]
-// pub(crate) fn from_m128(values: std::arch::x86_64::__m128) -> Self {
-//     use std::arch::x86_64::_mm_storeu_ps;
-//     let mut result = Vec4::ZERO;
-//     unsafe { _mm_storeu_ps(&mut result.x, values) }
-//     result
-// }
-
 impl std::ops::Add for Vec4 {
     type Output = Vec4;
 
