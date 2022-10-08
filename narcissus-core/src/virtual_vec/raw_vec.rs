@@ -32,7 +32,8 @@ impl<T> VirtualRawVec<T> {
         // Check overflow of rounding operation.
         assert!(max_capacity_bytes <= (std::usize::MAX - (align - 1)));
 
-        let ptr = unsafe { NonNull::new_unchecked(virtual_reserve(max_capacity_bytes) as *mut T) };
+        let ptr = virtual_reserve(max_capacity_bytes).expect("mapping failed");
+        let ptr = unsafe { NonNull::new_unchecked(ptr as *mut T) };
 
         Self {
             ptr,
@@ -129,7 +130,8 @@ impl<T> Drop for VirtualRawVec<T> {
             virtual_free(
                 self.ptr.as_ptr() as *mut std::ffi::c_void,
                 self.max_cap * size_of::<T>(),
-            );
+            )
+            .expect("failed to unmap memory");
         }
     }
 }

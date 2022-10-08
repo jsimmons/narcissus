@@ -5,13 +5,9 @@ use crate::libc;
 /// Size will be rounded up to align with the system's page size.
 ///
 /// The range is valid but inaccessible before calling `virtual_commit`.
-///
-/// # Panics
-///
-/// Panics if mapping fails.
 #[cold]
 #[inline(never)]
-pub fn virtual_reserve(size: usize) -> *mut std::ffi::c_void {
+pub fn virtual_reserve(size: usize) -> Result<*mut std::ffi::c_void, ()> {
     let ptr = unsafe {
         libc::mmap(
             std::ptr::null_mut(),
@@ -23,9 +19,11 @@ pub fn virtual_reserve(size: usize) -> *mut std::ffi::c_void {
         )
     };
 
-    assert!(ptr != libc::MAP_FAILED && !ptr.is_null());
-
-    ptr
+    if ptr == libc::MAP_FAILED || ptr.is_null() {
+        Err(())
+    } else {
+        Ok(ptr)
+    }
 }
 
 /// Commit (part of) a previously reserved memory range.
@@ -55,13 +53,13 @@ pub unsafe fn virtual_commit(ptr: *mut std::ffi::c_void, size: usize) {
 ///
 /// - Must point to an existing assignment created by [`virtual_reserve`].
 /// - `size` must be within range of that reservation.
-///
-/// # Panics
-///
-/// Panics if the range could not be unmapped.
 #[cold]
 #[inline(never)]
-pub unsafe fn virtual_free(ptr: *mut std::ffi::c_void, size: usize) {
+pub unsafe fn virtual_free(ptr: *mut std::ffi::c_void, size: usize) -> Result<(), ()> {
     let result = libc::munmap(ptr, size);
-    assert!(result == 0);
+    if result != 0 {
+        Err(())
+    } else {
+        Ok(())
+    }
 }
