@@ -6,9 +6,9 @@ members = [
     "ffi/stb_image-sys",
     "ffi/vulkan-sys",
     "narcissus",
+    "narcissus-app",
     "narcissus-core",
     "narcissus-gpu",
-    "narcissus-app",
     "narcissus-maths",
     "narcissus-world",
 ]

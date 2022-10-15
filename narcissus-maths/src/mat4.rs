@@ -1,4 +1,4 @@
-use crate::{Point2, Point3, Rad, Vec2, Vec3, Vec4};
+use crate::{sin_cos_pi_f32, HalfTurn, Point2, Point3, Rad, Vec2, Vec3, Vec4};
 
 /// 4x4 matrix.
 ///
@@ -111,8 +111,8 @@ impl Mat4 {
     }
 
     /// Constructs a transformation matrix which rotates around the given `axis` by `angle`.
-    pub fn from_axis_angle(axis: Vec3, angle: Rad) -> Mat4 {
-        let (sin, cos) = angle.as_f32().sin_cos();
+    pub fn from_axis_rotation(axis: Vec3, rotation: HalfTurn) -> Mat4 {
+        let (sin, cos) = sin_cos_pi_f32(rotation.as_f32());
         let axis_sin = axis * sin;
         let axis_sq = axis * axis;
         let one_minus_cos = 1.0 - cos;
@@ -489,8 +489,6 @@ impl std::ops::Mul<Point2> for Mat4 {
 
 #[cfg(test)]
 mod tests {
-    use crate::Deg;
-
     use super::*;
 
     const IDENTITY: Mat4 = Mat4::IDENTITY;
@@ -524,14 +522,17 @@ mod tests {
 
     #[test]
     fn axis_angle() {
-        let rot_180_x = Mat4::from_axis_angle(Vec3::X, Deg::new(180.0).into());
+        let rot_180_x = Mat4::from_axis_rotation(Vec3::X, HalfTurn::new(1.0));
         assert_eq!(rot_180_x * Vec3::X, Vec3::X);
-        // TODO: requires approximate equality assert.
-        // assert_eq!(rot_180_x * Vec3::Y, -Vec3::Y);
-        // assert_eq!(rot_180_x * Vec3::Z, -Vec3::Z);
-        let rot_180_y = Mat4::from_axis_angle(Vec3::Y, Deg::new(180.0).into());
+        assert_eq!(rot_180_x * Vec3::Y, -Vec3::Y);
+        assert_eq!(rot_180_x * Vec3::Z, -Vec3::Z);
+        let rot_180_y = Mat4::from_axis_rotation(Vec3::Y, HalfTurn::new(1.0));
+        assert_eq!(rot_180_y * Vec3::X, -Vec3::X);
         assert_eq!(rot_180_y * Vec3::Y, Vec3::Y);
-        let rot_180_z = Mat4::from_axis_angle(Vec3::Z, Deg::new(180.0).into());
+        assert_eq!(rot_180_y * Vec3::Z, -Vec3::Z);
+        let rot_180_z = Mat4::from_axis_rotation(Vec3::Z, HalfTurn::new(1.0));
+        assert_eq!(rot_180_z * Vec3::X, -Vec3::X);
+        assert_eq!(rot_180_z * Vec3::Y, -Vec3::Y);
         assert_eq!(rot_180_z * Vec3::Z, Vec3::Z);
     }
 

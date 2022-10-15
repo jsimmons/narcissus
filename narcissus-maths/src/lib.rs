@@ -3,9 +3,12 @@ mod affine3;
 mod mat2;
 mod mat3;
 mod mat4;
+mod next_after_f32;
 mod point2;
 mod point3;
 mod quat;
+mod sin_cos_pi;
+mod tan_pi;
 mod vec2;
 mod vec3;
 mod vec4;
@@ -15,9 +18,12 @@ pub use affine3::Affine3;
 pub use mat2::Mat2;
 pub use mat3::Mat3;
 pub use mat4::Mat4;
+pub use next_after_f32::next_after_f32;
 pub use point2::Point2;
 pub use point3::Point3;
 pub use quat::Quat;
+pub use sin_cos_pi::sin_cos_pi_f32;
+pub use tan_pi::tan_pi_f32;
 pub use vec2::Vec2;
 pub use vec3::Vec3;
 pub use vec4::Vec4;
@@ -27,10 +33,12 @@ pub use vec4::Vec4;
 pub struct Rad(f32);
 
 impl Rad {
+    #[inline(always)]
     pub const fn new(x: f32) -> Self {
         Self(x)
     }
 
+    #[inline(always)]
     pub const fn as_f32(self) -> f32 {
         self.0
     }
@@ -41,10 +49,31 @@ impl Rad {
 pub struct Deg(f32);
 
 impl Deg {
+    #[inline(always)]
     pub const fn new(x: f32) -> Self {
         Self(x)
     }
 
+    #[inline(always)]
+    pub const fn as_f32(self) -> f32 {
+        self.0
+    }
+}
+
+/// Unit type for an angle expressed in half-turns.
+///
+/// A turn represents a 360 degree rotation, a half-turn represents a 180 degree rotation. A
+/// half-turn is implicitly scaled by pi.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Default)]
+pub struct HalfTurn(f32);
+
+impl HalfTurn {
+    #[inline(always)]
+    pub const fn new(x: f32) -> Self {
+        Self(x)
+    }
+
+    #[inline(always)]
     pub const fn as_f32(self) -> f32 {
         self.0
     }
@@ -57,10 +86,37 @@ impl From<Rad> for Deg {
     }
 }
 
+impl From<HalfTurn> for Deg {
+    fn from(x: HalfTurn) -> Self {
+        Self(x.0 * 180.0)
+    }
+}
+
 impl From<Deg> for Rad {
     #[inline(always)]
     fn from(x: Deg) -> Self {
         Self(x.0.to_radians())
+    }
+}
+
+impl From<HalfTurn> for Rad {
+    #[inline(always)]
+    fn from(x: HalfTurn) -> Self {
+        Self(x.0 * std::f32::consts::PI)
+    }
+}
+
+impl From<Rad> for HalfTurn {
+    #[inline(always)]
+    fn from(x: Rad) -> Self {
+        Self(x.0 / std::f32::consts::PI)
+    }
+}
+
+impl From<Deg> for HalfTurn {
+    #[inline(always)]
+    fn from(x: Deg) -> Self {
+        Self(x.0 / 180.0)
     }
 }
 

@@ -8,3 +8,6 @@ edition = "2021"
 [features]
 
 [dependencies]
+
+[dev-dependencies]
+rug = "1.17.0"

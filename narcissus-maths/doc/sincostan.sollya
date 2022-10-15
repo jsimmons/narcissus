@@ -1,0 +1,149 @@
+// create primary range approximations of sin(pi x) and cos(pi x) for x on [-1/4,1/4]
+// both for single and double precision
+// stolen from https://marc-b-reynolds.github.io/math/2020/03/11/SinCosPi.html
+
+R = [0;1/4];
+T = floating;
+E = relative;
+B = [|SG...|];
+
+// write fp values such that they always have a decimal point
+procedure fp_write(v)
+{
+  if (v != nearestint(v)) then {
+   write(v);
+  } else {
+   write(v,".0");
+  };
+};
+
+// make a copy of list with f applied
+procedure list_apply(l,f)
+{
+  var r,v,i;
+
+  r = [||];
+
+  for i from 0 to length(l)-1 do {
+   v = f(l[i]);
+   r = r :. v;
+  };
+
+  return r;
+};
+
+f32_round = proc(n) { return single(n); };
+f64_round = proc(n) { return double(n); };
+
+// make a copy of list with elements rounded to binary32
+procedure list_to_f32(l) { return list_apply(l, f32_round); };
+procedure list_to_f64(l) { return list_apply(l, f64_round); };
+
+procedure list_of_even_coeff(p)
+{
+  var r,e,i;
+  e = degree(p);
+  r = [||];
+
+  for i from 0 to e by 2 do { r = r :. coeff(p,i); };
+
+  return r;
+};
+
+procedure list_of_odd_coeff(p)
+{
+  var r,e,i;
+  e = degree(p);
+  r = [||];
+
+  for i from 1 to e by 2 do { r = r :. coeff(p,i); };
+
+  return r;
+};
+
+procedure f32_write_list(p,l)
+{
+  var e,i;
+  e = length(l)-1;
+  write("const ", p,"_K: [f32; " @ length(l) @ "] = [\n");
+  display=hexadecimal!;
+  for i from 0 to e do { printsingle(l[i]); print(", //", l[i]); };
+  print("];\n");
+  display=decimal!;
+};
+
+procedure f32_data_write(name,a,f,r)
+{
+  var e,z,d,l,i;
+
+  // dump out the supnorm
+  display=hexadecimal!;
+  e = single(dirtyinfnorm(a-f, r));
+  write("// peak-error: ", e);
+  display=decimal!;
+  print(" (~", e,")");
+
+  // create a debug list of values of 'x' where the approximation
+  // error is max.
+  z = list_to_f32(dirtyfindzeros(diff(a-f), r));
+  l = length(z);
+
+
+  write("const " @ name @ "_EMAX: [f32; " @ l @ "] = [");
+
+  printsingle(z[0]);
+
+  for i from 1 to l-1 do {
+    write(",");
+    printsingle(z[i]);
+  };
+
+  z = list_to_f32(dirtyfindzeros(a-f, r));
+  l = length(z);
+
+  // and where the error is approximately zero
+  write("];\nconst " @ name @ "_EMIN: [f32; " @ l @ "] = [");
+
+  if (l > 0) then {
+    printsingle(z[0]);
+    for i from 1 to l-1 do {
+      write(",");
+      printsingle(z[i]);
+    };
+  };
+
+  // dump out the supnorm
+  e = single(dirtyinfnorm(a-f, r));
+  print("];\n");
+
+  a;
+};
+
+// Actual start of building polynomial
+
+print("sin(pi x) in binary32");
+I = [|1,3,5,7|];
+F = sin(pi*x);
+P = fpminimax(F,I,B,R,T,E);
+f32_data_write("F32_SIN_PI_7", P,F,R);
+f32_write_list("F32_SIN_PI_7", list_of_odd_coeff(P));
+print("\n");
+
+print("cos(pi x) in binary32");
+I = [|0,2,4,6,8|];
+F = cos(pi*x);
+P = fpminimax(F,I,B,R,T,E);
+f32_data_write("F32_COS_PI_8", P,F,R);
+f32_write_list("F32_COS_PI_8", list_of_even_coeff(P));
+print("\n");
+
+B = [|D,SG...|];
+
+print("tan(pi x) in binary32");
+I = [|1,3,5,7,9,11,13,15|];
+F = tan(pi*x);
+
+P = fpminimax(F,I,B,R,T,E);
+
+f32_data_write("F32_TAN_PI", P,F,R);
+f32_write_list("F32_TAN_PI", list_of_odd_coeff(P));
