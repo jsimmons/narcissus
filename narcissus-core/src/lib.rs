@@ -317,7 +317,7 @@ pub fn mod_inverse_u64(value: u64) -> u64 {
 
     // Jeffrey Hurchalla’s method https://arxiv.org/abs/2204.04342
     let x = value.wrapping_mul(3) ^ 2;
-    let y = u64::wrapping_sub(1, value.wrapping_mul(x));
+    let y = 1_u64.wrapping_sub(value.wrapping_mul(x));
     let x = x.wrapping_mul(y.wrapping_add(1));
     let y = y.wrapping_mul(y);
     let x = x.wrapping_mul(y.wrapping_add(1));
@@ -339,7 +339,7 @@ pub fn mod_inverse_u32(value: u32) -> u32 {
 
     // Jeffrey Hurchalla’s method https://arxiv.org/abs/2204.04342
     let x = value.wrapping_mul(3) ^ 2;
-    let y = u32::wrapping_sub(1, value.wrapping_mul(x));
+    let y = 1_u32.wrapping_sub(value.wrapping_mul(x));
     let x = x.wrapping_mul(y.wrapping_add(1));
     let y = y.wrapping_mul(y);
     let x = x.wrapping_mul(y.wrapping_add(1));
@@ -394,7 +394,19 @@ mod tests {
     fn test_mod_inverse_u32_exhaustive() {
         let mut x = 1_u32;
         loop {
-            assert_eq!(x.wrapping_mul(mod_inverse_u32(x)), 1);
+            let inv_x = mod_inverse_u32(x);
+            if x != inv_x {
+                // great success!
+            } else if x == 1 && inv_x == 1
+                || x == 2147483647 && inv_x == 2147483647
+                || x == 2147483649 && inv_x == 2147483649
+                || x == 4294967295 && inv_x == 4294967295
+            {
+                // There are 4 square roots of unity modulo 2^32
+            } else {
+                assert_ne!(inv_x, x);
+            }
+            assert_eq!(x.wrapping_mul(inv_x), 1);
             if x == u32::MAX {
                 break;
             }
