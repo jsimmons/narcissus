@@ -77,6 +77,7 @@ struct FloatErrors {
 }
 
 const PREC: u32 = 280;
+const COUNT: u32 = 2_139_095_040_u32;
 
 struct FloatCheck {
     reference: fn(&mut rug::Float),
@@ -124,8 +125,6 @@ impl FloatCheck {
         let ref_val = self.tmp.to_f32_round(rug::float::Round::Nearest);
 
         if our_val != ref_val && !(our_val.is_nan() && ref_val.is_nan()) {
-            println!("u: {u:#08x}, our_val: {our_val}, ref_val: {ref_val}");
-
             self.errors.num_errors += 1;
             let e = ulp_error_f32(our_val, ref_val, x, self.reference);
             if e > self.errors.max_error_ulp {
@@ -136,9 +135,12 @@ impl FloatCheck {
     }
 }
 
-fn check_exhaustive_f32(reference: fn(&mut rug::Float), ours: fn(f32) -> f32, tan_mode: bool) {
-    const COUNT: u32 = 2_139_095_040_u32;
-    const SPLIT: u32 = 256;
+fn check_exhaustive_f32(
+    reference: fn(&mut rug::Float),
+    ours: fn(f32) -> f32,
+    tan_mode: bool,
+) -> FloatErrors {
+    const SPLIT: u32 = 512;
 
     // Generate ranges.
     assert_eq!(COUNT % SPLIT, 0);
@@ -205,14 +207,7 @@ fn check_exhaustive_f32(reference: fn(&mut rug::Float), ours: fn(f32) -> f32, ta
         }
     });
 
-    println!(
-        "errors: {} ({:.2}%)",
-        errors.num_errors,
-        (errors.num_errors as f64 / (COUNT * 2) as f64) * 100.0
-    );
-    println!("max error ulps: {}", errors.max_error_ulp);
-    println!("max error error at: {:#08x}", errors.max_error_val);
-    assert_eq!(errors.num_errors, 0);
+    errors
 }
 
 fn ref_sin_pi_f32(x: &mut rug::Float) {
@@ -230,17 +225,44 @@ fn ref_tan_pi_f32(x: &mut rug::Float) {
 #[test]
 #[ignore]
 pub fn exhaustive_sin_pi() {
-    check_exhaustive_f32(ref_sin_pi_f32, |a| sin_cos_pi_f32(a).0, false)
+    let errors = check_exhaustive_f32(ref_sin_pi_f32, |a| sin_cos_pi_f32(a).0, false);
+    println!(
+        "errors: {} ({:.2}%)",
+        errors.num_errors,
+        (errors.num_errors as f64 / (COUNT * 2) as f64) * 100.0
+    );
+    println!("max error ulps: {}", errors.max_error_ulp);
+    println!("max error error at: {:#08x}", errors.max_error_val);
+    assert_eq!(errors.max_error_ulp, 1);
+    assert_eq!(errors.num_errors, 715_786_430);
 }
 
 #[test]
 #[ignore]
 pub fn exhaustive_cos_pi() {
-    check_exhaustive_f32(ref_cos_pi_f32, |a| sin_cos_pi_f32(a).1, false)
+    let errors = check_exhaustive_f32(ref_cos_pi_f32, |a| sin_cos_pi_f32(a).1, false);
+    println!(
+        "errors: {} ({:.2}%)",
+        errors.num_errors,
+        (errors.num_errors as f64 / (COUNT * 2) as f64) * 100.0
+    );
+    println!("max error ulps: {}", errors.max_error_ulp);
+    println!("max error error at: {:#08x}", errors.max_error_val);
+    assert_eq!(errors.num_errors, 33_455_772);
+    assert_eq!(errors.max_error_ulp, 1);
 }
 
 #[test]
 #[ignore]
 pub fn exhaustive_tan_pi() {
-    check_exhaustive_f32(ref_tan_pi_f32, tan_pi_f32, true)
+    let errors = check_exhaustive_f32(ref_tan_pi_f32, tan_pi_f32, true);
+    println!(
+        "errors: {} ({:.2}%)",
+        errors.num_errors,
+        (errors.num_errors as f64 / (COUNT * 2) as f64) * 100.0
+    );
+    println!("max error ulps: {}", errors.max_error_ulp);
+    println!("max error error at: {:#08x}", errors.max_error_val);
+    assert_eq!(errors.num_errors, 68_630_324);
+    assert_eq!(errors.max_error_ulp, 2);
 }

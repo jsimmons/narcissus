@@ -42,6 +42,9 @@ pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
     const S: [f32; 4] = F32_SIN_PI_7_K;
     const C: [f32; 4] = F32_COS_PI_8_K;
 
+    // cos_pi(a) = 1.0f for |a| > 2^24, but cos_pi(Inf) = NaN
+    let a = if a.abs() < 16777216.0 { a } else { a * 0.0 };
+
     // Range reduction.
     let r = (a + a).round();
     let i: u32 = unsafe { r.to_int_unchecked() };
@@ -67,11 +70,12 @@ pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
     let s = s.mul_add(r2, S[1]);
     let s = r.mul_add(S[0], r3 * s);
 
-    if i & 1 != 0 {
-        (c, s)
-    } else {
-        (s, c)
-    }
+    let (s, c) = if i & 1 != 0 { (c, s) } else { (s, c) };
+
+    // IEEE-754: sin_pi(+n) is +0 and sin_pi(-n) is -0 for positive integers n
+    let s = if a == a.floor() { a * 0.0 } else { s };
+
+    (s, c)
 }
 
 #[cfg(test)]
@@ -80,6 +84,8 @@ mod tests {
 
     #[test]
     fn basics() {
+        assert_eq!(sin_cos_pi_f32(f32::from_bits(0x7f4135c6)), (0.0, 1.0));
+
         assert_eq!(sin_cos_pi_f32(-1.5), (1.0, 0.0));
         assert_eq!(sin_cos_pi_f32(-1.0), (0.0, -1.0));
         assert_eq!(sin_cos_pi_f32(-0.5), (-1.0, 0.0));
