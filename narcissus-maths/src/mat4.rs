@@ -491,9 +491,7 @@ impl std::ops::Mul<Point2> for Mat4 {
 mod tests {
     use super::*;
 
-    const IDENTITY: Mat4 = Mat4::IDENTITY;
-    const SCALE: Mat4 = Mat4::from_scale(Vec3::splat(2.0));
-    const TRANSLATE: Mat4 = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
+    const I: Mat4 = Mat4::IDENTITY;
     const M: Mat4 = Mat4::from_rows([
         [1.0, 2.0, 3.0, 4.0],
         [5.0, 6.0, 7.0, 8.0],
@@ -507,6 +505,9 @@ mod tests {
         [4.0, 8.0, 12.0, 16.0],
     ]);
 
+    const SCALE: Mat4 = Mat4::from_scale(Vec3::splat(2.0));
+    const TRANSLATE: Mat4 = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
+
     const V2: Vec2 = Vec2::new(1.0, 2.0);
     const V3: Vec3 = Vec3::new(1.0, 2.0, 3.0);
     const V4: Vec4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
@@ -515,9 +516,10 @@ mod tests {
 
     #[test]
     fn transpose() {
-        assert_eq!(IDENTITY.transpose(), IDENTITY);
+        assert_eq!(I.transpose(), I);
         assert_eq!(M.transpose(), T);
         assert_eq!(M.transpose().transpose(), M);
+        assert_eq!(T.transpose().transpose(), T);
     }
 
     #[test]
@@ -526,43 +528,49 @@ mod tests {
         assert_eq!(rot_180_x * Vec3::X, Vec3::X);
         assert_eq!(rot_180_x * Vec3::Y, -Vec3::Y);
         assert_eq!(rot_180_x * Vec3::Z, -Vec3::Z);
+        assert_eq!(rot_180_x * Vec2::X, Vec2::X);
+        assert_eq!(rot_180_x * Vec2::Y, -Vec2::Y);
         let rot_180_y = Mat4::from_axis_rotation(Vec3::Y, HalfTurn::new(1.0));
         assert_eq!(rot_180_y * Vec3::X, -Vec3::X);
         assert_eq!(rot_180_y * Vec3::Y, Vec3::Y);
         assert_eq!(rot_180_y * Vec3::Z, -Vec3::Z);
+        assert_eq!(rot_180_y * Vec2::X, -Vec2::X);
+        assert_eq!(rot_180_y * Vec2::Y, Vec2::Y);
         let rot_180_z = Mat4::from_axis_rotation(Vec3::Z, HalfTurn::new(1.0));
         assert_eq!(rot_180_z * Vec3::X, -Vec3::X);
         assert_eq!(rot_180_z * Vec3::Y, -Vec3::Y);
         assert_eq!(rot_180_z * Vec3::Z, Vec3::Z);
+        assert_eq!(rot_180_z * Vec2::X, -Vec2::X);
+        assert_eq!(rot_180_z * Vec2::Y, -Vec2::Y);
     }
 
     #[test]
     fn mul() {
-        assert_eq!(IDENTITY * IDENTITY, IDENTITY);
-        assert_eq!(SCALE * IDENTITY, SCALE);
-        assert_eq!(M * IDENTITY, M);
+        assert_eq!(I * I, I);
+        assert_eq!(SCALE * I, SCALE);
+        assert_eq!(M * I, M);
 
-        assert_eq!(IDENTITY.mul_mat4_base(IDENTITY), IDENTITY);
-        assert_eq!(SCALE.mul_mat4_base(IDENTITY), SCALE);
-        assert_eq!(M.mul_mat4_base(IDENTITY), M);
+        assert_eq!(I.mul_mat4_base(I), I);
+        assert_eq!(SCALE.mul_mat4_base(I), SCALE);
+        assert_eq!(M.mul_mat4_base(I), M);
 
         if std::is_x86_feature_detected!("sse2") {
-            assert_eq!(unsafe { IDENTITY.mul_mat4_sse2(IDENTITY) }, IDENTITY);
-            assert_eq!(unsafe { SCALE.mul_mat4_sse2(IDENTITY) }, SCALE);
-            assert_eq!(unsafe { M.mul_mat4_sse2(IDENTITY) }, M);
+            assert_eq!(unsafe { I.mul_mat4_sse2(I) }, I);
+            assert_eq!(unsafe { SCALE.mul_mat4_sse2(I) }, SCALE);
+            assert_eq!(unsafe { M.mul_mat4_sse2(I) }, M);
         }
 
         if std::is_x86_feature_detected!("avx2") {
-            assert_eq!(unsafe { IDENTITY.mul_mat4_avx2(IDENTITY) }, IDENTITY);
-            assert_eq!(unsafe { SCALE.mul_mat4_avx2(IDENTITY) }, SCALE);
-            assert_eq!(unsafe { M.mul_mat4_avx2(IDENTITY) }, M);
+            assert_eq!(unsafe { I.mul_mat4_avx2(I) }, I);
+            assert_eq!(unsafe { SCALE.mul_mat4_avx2(I) }, SCALE);
+            assert_eq!(unsafe { M.mul_mat4_avx2(I) }, M);
         }
     }
 
     #[test]
     fn mul_vec2() {
-        assert_eq!(IDENTITY * Vec2::ZERO, Vec2::ZERO);
-        assert_eq!(IDENTITY * V2, V2);
+        assert_eq!(I * Vec2::ZERO, Vec2::ZERO);
+        assert_eq!(I * V2, V2);
         assert_eq!(SCALE * Vec2::ZERO, Vec2::ZERO);
         assert_eq!(SCALE * Vec2::ONE, Vec2::splat(2.0));
         assert_eq!(TRANSLATE * Vec2::ZERO, Vec2::ZERO);
@@ -570,8 +578,8 @@ mod tests {
 
     #[test]
     fn mul_point2() {
-        assert_eq!(IDENTITY * Point2::ZERO, Point2::ZERO);
-        assert_eq!(IDENTITY * P2, P2);
+        assert_eq!(I * Point2::ZERO, Point2::ZERO);
+        assert_eq!(I * P2, P2);
         assert_eq!(SCALE * Point2::ZERO, Point2::ZERO);
         assert_eq!(SCALE * Point2::ONE, Point2::splat(2.0));
         assert_eq!(TRANSLATE * Point2::ZERO, P2);
@@ -579,8 +587,8 @@ mod tests {
 
     #[test]
     fn mul_vec3() {
-        assert_eq!(IDENTITY * Vec3::ZERO, Vec3::ZERO);
-        assert_eq!(IDENTITY * V3, V3);
+        assert_eq!(I * Vec3::ZERO, Vec3::ZERO);
+        assert_eq!(I * V3, V3);
         assert_eq!(SCALE * Vec3::ZERO, Vec3::ZERO);
         assert_eq!(SCALE * Vec3::ONE, Vec3::splat(2.0));
         assert_eq!(TRANSLATE * Vec3::ZERO, Vec3::ZERO);
@@ -588,8 +596,8 @@ mod tests {
 
     #[test]
     fn mul_point3() {
-        assert_eq!(IDENTITY * Point3::ZERO, Point3::ZERO);
-        assert_eq!(IDENTITY * P3, P3);
+        assert_eq!(I * Point3::ZERO, Point3::ZERO);
+        assert_eq!(I * P3, P3);
         assert_eq!(SCALE * Point3::ZERO, Point3::ZERO);
         assert_eq!(SCALE * Point3::ONE, Point3::splat(2.0));
         assert_eq!(TRANSLATE * Point3::ZERO, P3);
@@ -597,8 +605,8 @@ mod tests {
 
     #[test]
     fn mul_vec4() {
-        assert_eq!(IDENTITY * Vec4::ZERO, Vec4::ZERO);
-        assert_eq!(IDENTITY * V4, V4);
+        assert_eq!(I * Vec4::ZERO, Vec4::ZERO);
+        assert_eq!(I * V4, V4);
         assert_eq!(SCALE * Vec4::ZERO, Vec4::ZERO);
         assert_eq!(SCALE * Vec4::ONE, Vec4::new(2.0, 2.0, 2.0, 1.0));
         assert_eq!(
@@ -608,8 +616,8 @@ mod tests {
 
         if std::is_x86_feature_detected!("sse4.1") {
             unsafe {
-                assert_eq!(IDENTITY.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
-                assert_eq!(IDENTITY.mul_vec4_sse41(V4), V4);
+                assert_eq!(I.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
+                assert_eq!(I.mul_vec4_sse41(V4), V4);
                 assert_eq!(SCALE.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
                 assert_eq!(
                     SCALE.mul_vec4_sse41(Vec4::ONE),

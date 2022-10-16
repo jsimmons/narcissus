@@ -1,4 +1,4 @@
-use crate::{impl_shared, impl_vector};
+use crate::{impl_shared, impl_vector, Point2};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default, Debug)]
 #[repr(C)]
@@ -18,6 +18,12 @@ impl Vec2 {
     #[inline(always)]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
+    }
+
+    /// Converts this point to the equivalent point.
+    #[inline(always)]
+    pub const fn as_point2(self) -> Point2 {
+        Point2::new(self.x, self.y)
     }
 
     /// Returns a [`Vec2`] with the function `f` applied to each component in order.
@@ -53,7 +59,7 @@ impl Vec2 {
 
 impl std::ops::Add for Vec2 {
     type Output = Vec2;
-    #[inline]
+    #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x + rhs.x,
@@ -64,7 +70,7 @@ impl std::ops::Add for Vec2 {
 
 impl std::ops::Sub for Vec2 {
     type Output = Vec2;
-    #[inline]
+    #[inline(always)]
     fn sub(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x - rhs.x,
@@ -75,7 +81,7 @@ impl std::ops::Sub for Vec2 {
 
 impl std::ops::Mul for Vec2 {
     type Output = Vec2;
-    #[inline]
+    #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x * rhs.x,
@@ -86,7 +92,7 @@ impl std::ops::Mul for Vec2 {
 
 impl std::ops::Div for Vec2 {
     type Output = Vec2;
-    #[inline]
+    #[inline(always)]
     fn div(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x / rhs.x,
@@ -96,7 +102,7 @@ impl std::ops::Div for Vec2 {
 }
 
 impl std::ops::AddAssign for Vec2 {
-    #[inline]
+    #[inline(always)]
     fn add_assign(&mut self, rhs: Self) {
         self.x += rhs.x;
         self.y += rhs.y;
@@ -104,7 +110,7 @@ impl std::ops::AddAssign for Vec2 {
 }
 
 impl std::ops::SubAssign for Vec2 {
-    #[inline]
+    #[inline(always)]
     fn sub_assign(&mut self, rhs: Self) {
         self.x -= rhs.x;
         self.y -= rhs.y;
@@ -112,7 +118,7 @@ impl std::ops::SubAssign for Vec2 {
 }
 
 impl std::ops::MulAssign for Vec2 {
-    #[inline]
+    #[inline(always)]
     fn mul_assign(&mut self, rhs: Self) {
         self.x *= rhs.x;
         self.y *= rhs.y;
@@ -120,7 +126,7 @@ impl std::ops::MulAssign for Vec2 {
 }
 
 impl std::ops::DivAssign for Vec2 {
-    #[inline]
+    #[inline(always)]
     fn div_assign(&mut self, rhs: Self) {
         self.x /= rhs.x;
         self.y /= rhs.y;

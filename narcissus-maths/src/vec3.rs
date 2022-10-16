@@ -1,4 +1,4 @@
-use crate::{impl_shared, impl_vector};
+use crate::{impl_shared, impl_vector, Point3};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default, Debug)]
 #[repr(C)]
@@ -20,6 +20,12 @@ impl Vec3 {
     #[inline(always)]
     pub const fn new(x: f32, y: f32, z: f32) -> Vec3 {
         Vec3 { x, y, z }
+    }
+
+    /// Converts this point to the equivalent point.
+    #[inline(always)]
+    pub const fn as_point3(self) -> Point3 {
+        Point3::new(self.x, self.y, self.z)
     }
 
     /// Returns a [`Vec3`] with the function `f` applied to each component in order.
@@ -92,7 +98,7 @@ impl std::ops::Sub for Vec3 {
 
 impl std::ops::Mul for Vec3 {
     type Output = Vec3;
-    #[inline]
+    #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x * rhs.x,
@@ -104,7 +110,7 @@ impl std::ops::Mul for Vec3 {
 
 impl std::ops::Div for Vec3 {
     type Output = Vec3;
-    #[inline]
+    #[inline(always)]
     fn div(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x / rhs.x,
@@ -115,7 +121,7 @@ impl std::ops::Div for Vec3 {
 }
 
 impl std::ops::AddAssign for Vec3 {
-    #[inline]
+    #[inline(always)]
     fn add_assign(&mut self, rhs: Self) {
         self.x += rhs.x;
         self.y += rhs.y;
@@ -124,7 +130,7 @@ impl std::ops::AddAssign for Vec3 {
 }
 
 impl std::ops::SubAssign for Vec3 {
-    #[inline]
+    #[inline(always)]
     fn sub_assign(&mut self, rhs: Self) {
         self.x -= rhs.x;
         self.y -= rhs.y;
@@ -142,7 +148,7 @@ impl std::ops::MulAssign for Vec3 {
 }
 
 impl std::ops::DivAssign for Vec3 {
-    #[inline]
+    #[inline(always)]
     fn div_assign(&mut self, rhs: Self) {
         self.x /= rhs.x;
         self.y /= rhs.y;
