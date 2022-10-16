@@ -20,6 +20,8 @@ const F32_TAN_PI_15_K: [f32; 7] = unsafe {
 ///
 /// Returns `tan(a * pi)`
 ///
+/// Error <= 1.60536 ulp.
+///
 /// # Examples
 ///
 /// ```

@@ -28,6 +28,9 @@ fn mulsign_f32(x: f32, s: u32) -> f32 {
 
 /// Simultaneously computes the sine and cosine of `a` expressed in multiples of *pi* radians, or half-turns.
 ///
+/// Sin error <= 0.96563 ulp.
+/// Cos error <= 0.96677 ulp.
+///
 /// Returns `(sin(a * pi), cos(a * pi))`
 ///
 /// # Examples

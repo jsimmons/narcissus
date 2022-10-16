@@ -1,7 +1,8 @@
 use narcissus_maths::next_after_f32;
 
 mod libc {
-    use std::ffi::c_float;
+    use std::os::raw::c_float;
+
     extern "C" {
         pub fn nextafterf(x: c_float, y: c_float) -> c_float;
     }

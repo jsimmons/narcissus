@@ -10,4 +10,4 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
-rug = "1.17.0"
+gmp-mpfr-sys = "1.4.10"
