@@ -10,7 +10,7 @@ use std::{
 pub enum Release<T> {
     /// There are other outstanding references to this object.
     Shared,
-    /// This was the final reference, returning the object that the container was holding.
+    /// This was the final reference, contains the object the container was previously holding.
     Unique(T),
 }
 
