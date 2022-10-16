@@ -20,10 +20,10 @@ impl Affine2 {
     };
 
     pub fn mul_vec2(&self, vec: Vec2) -> Vec2 {
-        todo!()
+        self.matrix * vec + self.translate
     }
 
     pub fn mul_point2(&self, point: Point2) -> Point2 {
-        todo!()
+        self.matrix * point + self.translate
     }
 }
