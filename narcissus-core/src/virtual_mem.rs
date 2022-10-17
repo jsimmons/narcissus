@@ -1,5 +1,18 @@
 use crate::libc;
 
+#[derive(Clone, Copy, Debug)]
+pub enum MapError {
+    MapFailed,
+}
+
+impl std::fmt::Display for MapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for MapError {}
+
 /// Reserve a virtual memory range.
 ///
 /// Size will be rounded up to align with the system's page size.
@@ -7,7 +20,7 @@ use crate::libc;
 /// The range is valid but inaccessible before calling `virtual_commit`.
 #[cold]
 #[inline(never)]
-pub fn virtual_reserve(size: usize) -> Result<*mut std::ffi::c_void, ()> {
+pub fn virtual_reserve(size: usize) -> Result<*mut std::ffi::c_void, MapError> {
     let ptr = unsafe {
         libc::mmap(
             std::ptr::null_mut(),
@@ -20,7 +33,7 @@ pub fn virtual_reserve(size: usize) -> Result<*mut std::ffi::c_void, ()> {
     };
 
     if ptr == libc::MAP_FAILED || ptr.is_null() {
-        Err(())
+        Err(MapError::MapFailed)
     } else {
         Ok(ptr)
     }
@@ -55,10 +68,10 @@ pub unsafe fn virtual_commit(ptr: *mut std::ffi::c_void, size: usize) {
 /// - `size` must be within range of that reservation.
 #[cold]
 #[inline(never)]
-pub unsafe fn virtual_free(ptr: *mut std::ffi::c_void, size: usize) -> Result<(), ()> {
+pub unsafe fn virtual_free(ptr: *mut std::ffi::c_void, size: usize) -> Result<(), MapError> {
     let result = libc::munmap(ptr, size);
     if result != 0 {
-        Err(())
+        Err(MapError::MapFailed)
     } else {
         Ok(())
     }

@@ -244,7 +244,7 @@ impl FreeSlots {
 
         // This is slightly wrong, but our freelist doesn't need correct ordering on resize and this
         // avoids moving the values around.
-        if self.len() > 0 {
+        if !self.is_empty() {
             debug_assert!(self.is_full());
             self.tail = 0;
             self.head = self.cap;

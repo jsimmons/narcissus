@@ -129,10 +129,8 @@ impl<T> Clone for ManualArc<T> {
 
 impl<T> Drop for ManualArc<T> {
     fn drop(&mut self) {
-        if self.ptr.is_some() {
-            if !std::thread::panicking() {
-                panic!("must call `ManualArc::release` before value is dropped");
-            }
+        if self.ptr.is_some() && !std::thread::panicking() {
+            panic!("must call `ManualArc::release` before value is dropped");
         }
     }
 }
