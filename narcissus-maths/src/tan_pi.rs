@@ -32,7 +32,7 @@ pub fn tan_pi_f32(a: f32) -> f32 {
 
     // Range reduction.
     let r = (a + a).round();
-    let i: u32 = unsafe { r.to_int_unchecked() };
+    let i = unsafe { r.to_int_unchecked::<i32>() } as u32;
     let r = r.mul_add(-0.5, a);
 
     let e = if i.wrapping_add(1) & 2 != 0 {
