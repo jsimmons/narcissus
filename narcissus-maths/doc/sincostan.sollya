@@ -121,6 +121,8 @@ procedure f32_data_write(name,a,f,r)
 
 // Actual start of building polynomial
 
+B = [|D,SG...|];
+
 print("sin(pi x) in binary32");
 I = [|1,3,5,7|];
 F = sin(pi*x);
@@ -128,6 +130,8 @@ P = fpminimax(F,I,B,R,T,E);
 f32_data_write("F32_SIN_PI_7", P,F,R);
 f32_write_list("F32_SIN_PI_7", list_of_odd_coeff(P));
 print("\n");
+
+B = [|SG...|];
 
 print("cos(pi x) in binary32");
 I = [|0,2,4,6,8|];

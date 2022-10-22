@@ -3,12 +3,11 @@
 // Sollya code for generating these polynomials is in `doc/sincostan.sollya`
 
 // constants for sin(pi x), cos(pi x) for x on [-1/4,1/4]
-const F32_SIN_PI_7_K: [f32; 4] = unsafe {
-    std::mem::transmute::<[u32; 4], _>([
-        0x40490fdb, // 0x1.921fb6p1
-        0xc0a55df6, // -0x1.4abbecp2
-        0x40233590, // 0x1.466b2p1
-        0xbf17acc9, // -0x1.2f5992p-1
+const F32_SIN_PI_7_K: [f32; 3] = unsafe {
+    std::mem::transmute::<[u32; 3], _>([
+        0xc0a55ddd, // -0x1.4abbbap2
+        0x40232f6e, // 0x1.465edcp1
+        0xbf16cf2d, // -0x1.2d9e5ap-1
     ])
 };
 
@@ -42,7 +41,7 @@ fn mulsign_f32(x: f32, s: u32) -> f32 {
 /// assert_eq!(cos, 1.0);
 /// ```
 pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
-    const S: [f32; 4] = F32_SIN_PI_7_K;
+    const S: [f32; 3] = F32_SIN_PI_7_K;
     const C: [f32; 4] = F32_COS_PI_8_K;
 
     // cos_pi(a) = 1.0f for |a| > 2^24, but cos_pi(Inf) = NaN
@@ -67,11 +66,10 @@ pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
     let c = c.mul_add(r2, 1.0);
     let c = mulsign_f32(c, sx);
 
-    let r3 = r2 * r;
-    let s = S[3];
-    let s = s.mul_add(r2, S[2]);
+    let s = S[2];
     let s = s.mul_add(r2, S[1]);
-    let s = r.mul_add(S[0], r3 * s);
+    let s = s.mul_add(r2, S[0]);
+    let s = r.mul_add(std::f32::consts::PI, r * r2.mul_add(s, -8.742278e-8));
 
     let (s, c) = if i & 1 != 0 { (c, s) } else { (s, c) };
 

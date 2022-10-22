@@ -424,7 +424,7 @@ pub fn exhaustive_sin_pi() {
     let errors = check_exhaustive_f32(ref_sin_pi_f32, |a| sin_cos_pi_f32(a).0, false);
     println!("SIN: {:?}", errors);
     assert_eq!(errors.max_error_ulp, 1);
-    assert_eq!(errors.num_errors, 744_496_052);
+    assert_eq!(errors.num_errors, 55_943_962);
 }
 
 #[test]
