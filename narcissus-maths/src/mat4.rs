@@ -208,6 +208,35 @@ impl Mat4 {
         ])
     }
 
+    /// Returns `true` if all elements are finite.
+    ///
+    /// If any element is `NaN`, positive infinity, or negative infinity, returns `false`.
+    pub fn is_finite(&self) -> bool {
+        let mut is_finite = true;
+        for x in self.0 {
+            is_finite &= x.is_finite();
+        }
+        is_finite
+    }
+
+    /// Returns `true` if any element is positive infinity, or negative infinity, and `false` otherwise.
+    pub fn is_infinite(&self) -> bool {
+        let mut is_infinite = false;
+        for x in self.0 {
+            is_infinite |= x.is_infinite();
+        }
+        is_infinite
+    }
+
+    /// Returns `true` if any element is `NaN`, and `false` otherwise.
+    pub fn is_nan(&self) -> bool {
+        let mut is_nan = false;
+        for x in self.0 {
+            is_nan |= x.is_nan();
+        }
+        is_nan
+    }
+
     #[allow(dead_code)]
     #[inline(always)]
     fn transpose_base(self) -> Mat4 {
@@ -247,41 +276,41 @@ impl Mat4 {
     /// Transforms the given [`Vec2`] `vec` by `self`.
     #[must_use]
     #[inline]
-    pub fn mul_vec2(&self, vec: Vec2) -> Vec2 {
+    pub fn transform_vec2(&self, vec: Vec2) -> Vec2 {
         let vec = Vec4::new(vec.x, vec.y, 0.0, 0.0);
-        let vec = self.mul_vec4(vec);
+        let vec = self.transform_vec4(vec);
         Vec2::new(vec.x, vec.y)
     }
 
     /// Transforms the given [`Point2`] `point` by `self`.
     #[must_use]
     #[inline]
-    pub fn mul_point2(&self, point: Point2) -> Point2 {
+    pub fn transform_point2(&self, point: Point2) -> Point2 {
         let vec = Vec4::new(point.x, point.y, 0.0, 1.0);
-        let vec = self.mul_vec4(vec);
+        let vec = self.transform_vec4(vec);
         Point2::new(vec.x, vec.y)
     }
 
     /// Transforms the given [`Vec3`] `vec` by `self`.
     #[must_use]
     #[inline]
-    pub fn mul_vec3(&self, vec: Vec3) -> Vec3 {
+    pub fn transform_vec3(&self, vec: Vec3) -> Vec3 {
         let vec = Vec4::new(vec.x, vec.y, vec.z, 0.0);
-        let vec = self.mul_vec4(vec);
+        let vec = self.transform_vec4(vec);
         [vec.x, vec.y, vec.z].into()
     }
 
     /// Transforms the given [`Point3`] `point` by `self`.
     #[must_use]
     #[inline]
-    pub fn mul_point3(&self, point: Point3) -> Point3 {
+    pub fn transform_point3(&self, point: Point3) -> Point3 {
         let vec = Vec4::new(point.x, point.y, point.z, 1.0);
-        let vec = self.mul_vec4(vec);
+        let vec = self.transform_vec4(vec);
         Point3::new(vec.x, vec.y, vec.z)
     }
 
     #[inline(always)]
-    fn mul_vec4_base(&self, vec: Vec4) -> Vec4 {
+    fn transform_vec4_base(&self, vec: Vec4) -> Vec4 {
         let rows = self.as_rows();
         Vec4::new(
             Vec4::dot(rows[0].into(), vec),
@@ -295,7 +324,7 @@ impl Mat4 {
     #[allow(dead_code)]
     #[inline]
     #[target_feature(enable = "sse4.1")]
-    unsafe fn mul_vec4_sse41(&self, vec: Vec4) -> Vec4 {
+    unsafe fn transform_vec4_sse41(&self, vec: Vec4) -> Vec4 {
         use std::arch::x86_64::{_mm_hadd_ps, _mm_mul_ps};
 
         let vec = vec.into();
@@ -312,10 +341,10 @@ impl Mat4 {
     /// Transforms the given [`Vec4`] `vec` by `self`.
     #[must_use]
     #[inline(always)]
-    pub fn mul_vec4(&self, vec: Vec4) -> Vec4 {
+    pub fn transform_vec4(&self, vec: Vec4) -> Vec4 {
         #[cfg(not(target_feature = "sse4.1"))]
         {
-            self.mul_vec4_base(vec)
+            self.transform_vec4_base(vec)
         }
 
         #[cfg(target_feature = "sse4.1")]
@@ -323,96 +352,91 @@ impl Mat4 {
             self.mul_vec4_sse41(vec)
         }
     }
+}
 
-    #[allow(dead_code)]
+#[allow(dead_code)]
+#[inline(always)]
+fn mul_mat4_base(lhs: Mat4, rhs: Mat4) -> Mat4 {
+    let mut result = Mat4::IDENTITY;
+    {
+        let result = result.as_rows_mut();
+        let lhs = lhs.as_rows();
+        let rhs = rhs.as_rows();
+        for i in 0..4 {
+            for j in 0..4 {
+                result[i][j] = lhs[i][0] * rhs[0][j]
+                    + lhs[i][1] * rhs[1][j]
+                    + lhs[i][2] * rhs[2][j]
+                    + lhs[i][3] * rhs[3][j];
+            }
+        }
+    }
+    result
+}
+
+// Safety: Requires SSE2.
+#[allow(dead_code)]
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn mul_mat4_sse2(lhs: Mat4, rhs: Mat4) -> Mat4 {
+    use std::arch::x86_64::{__m128, _mm_add_ps, _mm_mul_ps, _mm_shuffle_ps};
+
     #[inline(always)]
-    fn mul_mat4_base(self: &Mat4, rhs: Mat4) -> Mat4 {
-        let mut result = Mat4::IDENTITY;
-        {
-            let result = result.as_rows_mut();
-            let lhs = self.as_rows();
-            let rhs = rhs.as_rows();
-            for i in 0..4 {
-                for j in 0..4 {
-                    result[i][j] = lhs[i][0] * rhs[0][j]
-                        + lhs[i][1] * rhs[1][j]
-                        + lhs[i][2] * rhs[2][j]
-                        + lhs[i][3] * rhs[3][j];
-                }
-            }
+    fn linear_combine(a: __m128, mat: &[__m128; 4]) -> __m128 {
+        unsafe {
+            let r = _mm_mul_ps(_mm_shuffle_ps(a, a, 0x00), mat[0]);
+            let r = _mm_add_ps(r, _mm_mul_ps(_mm_shuffle_ps(a, a, 0x55), mat[1]));
+            let r = _mm_add_ps(r, _mm_mul_ps(_mm_shuffle_ps(a, a, 0xaa), mat[2]));
+            _mm_add_ps(r, _mm_mul_ps(_mm_shuffle_ps(a, a, 0xff), mat[3]))
         }
-        result
     }
 
-    // Safety: Requires SSE2.
-    #[allow(dead_code)]
-    #[inline]
-    #[target_feature(enable = "sse2")]
-    unsafe fn mul_mat4_sse2(&self, rhs: Mat4) -> Mat4 {
-        use std::arch::x86_64::{__m128, _mm_add_ps, _mm_mul_ps, _mm_shuffle_ps};
+    let lhs = lhs.as_m128_array();
+    let rhs = rhs.as_m128_array();
 
-        #[inline(always)]
-        fn linear_combine(a: __m128, mat: &[__m128; 4]) -> __m128 {
-            unsafe {
-                let r = _mm_mul_ps(_mm_shuffle_ps(a, a, 0x00), mat[0]);
-                let r = _mm_add_ps(r, _mm_mul_ps(_mm_shuffle_ps(a, a, 0x55), mat[1]));
-                let r = _mm_add_ps(r, _mm_mul_ps(_mm_shuffle_ps(a, a, 0xaa), mat[2]));
-                _mm_add_ps(r, _mm_mul_ps(_mm_shuffle_ps(a, a, 0xff), mat[3]))
-            }
-        }
+    let x0 = linear_combine(lhs[0], &rhs);
+    let x1 = linear_combine(lhs[1], &rhs);
+    let x2 = linear_combine(lhs[2], &rhs);
+    let x3 = linear_combine(lhs[3], &rhs);
 
-        let lhs = self.as_m128_array();
-        let rhs = rhs.as_m128_array();
+    Mat4::from_m128_array([x0, x1, x2, x3])
+}
 
-        let x0 = linear_combine(lhs[0], &rhs);
-        let x1 = linear_combine(lhs[1], &rhs);
-        let x2 = linear_combine(lhs[2], &rhs);
-        let x3 = linear_combine(lhs[3], &rhs);
+// Safety: Requires AVX2.
+#[allow(dead_code)]
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn mul_mat4_avx2(lhs: Mat4, rhs: Mat4) -> Mat4 {
+    use std::arch::x86_64::{
+        __m128, __m256, _mm256_add_ps, _mm256_broadcast_ps, _mm256_loadu_ps, _mm256_mul_ps,
+        _mm256_shuffle_ps, _mm256_storeu_ps, _mm256_zeroupper,
+    };
 
-        Mat4::from_m128_array([x0, x1, x2, x3])
+    #[inline(always)]
+    unsafe fn two_linear_combine(a: __m256, m: &[__m128; 4]) -> __m256 {
+        let m0 = _mm256_broadcast_ps(&m[0]);
+        let m1 = _mm256_broadcast_ps(&m[1]);
+        let m2 = _mm256_broadcast_ps(&m[2]);
+        let m3 = _mm256_broadcast_ps(&m[3]);
+        let r = _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x00), m0);
+        let r = _mm256_add_ps(r, _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x55), m1));
+        let r = _mm256_add_ps(r, _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xaa), m2));
+        _mm256_add_ps(r, _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xff), m3))
     }
 
-    // Safety: Requires AVX2.
-    #[allow(dead_code)]
-    #[inline]
-    #[target_feature(enable = "avx2")]
-    unsafe fn mul_mat4_avx2(&self, rhs: Mat4) -> Mat4 {
-        use std::arch::x86_64::{
-            __m128, __m256, _mm256_add_ps, _mm256_broadcast_ps, _mm256_loadu_ps, _mm256_mul_ps,
-            _mm256_shuffle_ps, _mm256_storeu_ps, _mm256_zeroupper,
-        };
+    _mm256_zeroupper();
 
-        #[inline(always)]
-        unsafe fn two_linear_combine(a: __m256, m: &[__m128; 4]) -> __m256 {
-            let r = _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x00), _mm256_broadcast_ps(&m[0]));
-            let r = _mm256_add_ps(
-                r,
-                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x55), _mm256_broadcast_ps(&m[1])),
-            );
-            let r = _mm256_add_ps(
-                r,
-                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xaa), _mm256_broadcast_ps(&m[2])),
-            );
-            _mm256_add_ps(
-                r,
-                _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xff), _mm256_broadcast_ps(&m[3])),
-            )
-        }
+    let a0 = _mm256_loadu_ps(&lhs.0[0]);
+    let a1 = _mm256_loadu_ps(&lhs.0[8]);
+    let rhs = rhs.as_m128_array();
 
-        _mm256_zeroupper();
+    let x0 = two_linear_combine(a0, &rhs);
+    let x1 = two_linear_combine(a1, &rhs);
 
-        let a0 = _mm256_loadu_ps(&self.0[0]);
-        let a1 = _mm256_loadu_ps(&self.0[8]);
-        let rhs = rhs.as_m128_array();
-
-        let x0 = two_linear_combine(a0, &rhs);
-        let x1 = two_linear_combine(a1, &rhs);
-
-        let mut result = Mat4::IDENTITY;
-        _mm256_storeu_ps(&mut result.0[0], x0);
-        _mm256_storeu_ps(&mut result.0[8], x1);
-        result
-    }
+    let mut result = Mat4::IDENTITY;
+    _mm256_storeu_ps(&mut result.0[0], x0);
+    _mm256_storeu_ps(&mut result.0[8], x1);
+    result
 }
 
 impl std::ops::Mul for Mat4 {
@@ -422,15 +446,15 @@ impl std::ops::Mul for Mat4 {
     fn mul(self, rhs: Self) -> Self::Output {
         #[cfg(not(target_feature = "sse2"))]
         {
-            self.mul_mat4_base(rhs)
+            mul_mat4_base(self, rhs)
         }
         #[cfg(all(target_feature = "sse2", not(target_feature = "avx2")))]
         unsafe {
-            self.mul_mat4_sse2(rhs)
+            mul_mat4_sse2(self, rhs)
         }
         #[cfg(target_feature = "avx2")]
         unsafe {
-            self.mul_mat4_avx2(rhs)
+            mul_mat4_avx2(self, rhs)
         }
     }
 }
@@ -447,7 +471,7 @@ impl std::ops::Mul<Vec4> for Mat4 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec4) -> Self::Output {
-        self.mul_vec4(rhs)
+        self.transform_vec4(rhs)
     }
 }
 
@@ -456,7 +480,7 @@ impl std::ops::Mul<Vec3> for Mat4 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec3) -> Self::Output {
-        self.mul_vec3(rhs)
+        self.transform_vec3(rhs)
     }
 }
 
@@ -465,7 +489,7 @@ impl std::ops::Mul<Point3> for Mat4 {
 
     #[inline(always)]
     fn mul(self, rhs: Point3) -> Self::Output {
-        self.mul_point3(rhs)
+        self.transform_point3(rhs)
     }
 }
 
@@ -474,7 +498,7 @@ impl std::ops::Mul<Vec2> for Mat4 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec2) -> Self::Output {
-        self.mul_vec2(rhs)
+        self.transform_vec2(rhs)
     }
 }
 
@@ -483,7 +507,7 @@ impl std::ops::Mul<Point2> for Mat4 {
 
     #[inline(always)]
     fn mul(self, rhs: Point2) -> Self::Output {
-        self.mul_point2(rhs)
+        self.transform_point2(rhs)
     }
 }
 
@@ -550,20 +574,20 @@ mod tests {
         assert_eq!(SCALE * I, SCALE);
         assert_eq!(M * I, M);
 
-        assert_eq!(I.mul_mat4_base(I), I);
-        assert_eq!(SCALE.mul_mat4_base(I), SCALE);
-        assert_eq!(M.mul_mat4_base(I), M);
+        assert_eq!(mul_mat4_base(I, I), I);
+        assert_eq!(mul_mat4_base(SCALE, I), SCALE);
+        assert_eq!(mul_mat4_base(M, I), M);
 
         if std::is_x86_feature_detected!("sse2") {
-            assert_eq!(unsafe { I.mul_mat4_sse2(I) }, I);
-            assert_eq!(unsafe { SCALE.mul_mat4_sse2(I) }, SCALE);
-            assert_eq!(unsafe { M.mul_mat4_sse2(I) }, M);
+            assert_eq!(unsafe { mul_mat4_sse2(I, I) }, I);
+            assert_eq!(unsafe { mul_mat4_sse2(SCALE, I) }, SCALE);
+            assert_eq!(unsafe { mul_mat4_sse2(M, I) }, M);
         }
 
         if std::is_x86_feature_detected!("avx2") {
-            assert_eq!(unsafe { I.mul_mat4_avx2(I) }, I);
-            assert_eq!(unsafe { SCALE.mul_mat4_avx2(I) }, SCALE);
-            assert_eq!(unsafe { M.mul_mat4_avx2(I) }, M);
+            assert_eq!(unsafe { mul_mat4_avx2(I, I) }, I);
+            assert_eq!(unsafe { mul_mat4_avx2(SCALE, I) }, SCALE);
+            assert_eq!(unsafe { mul_mat4_avx2(M, I) }, M);
         }
     }
 
@@ -616,15 +640,15 @@ mod tests {
 
         if std::is_x86_feature_detected!("sse4.1") {
             unsafe {
-                assert_eq!(I.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
-                assert_eq!(I.mul_vec4_sse41(V4), V4);
-                assert_eq!(SCALE.mul_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
+                assert_eq!(I.transform_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
+                assert_eq!(I.transform_vec4_sse41(V4), V4);
+                assert_eq!(SCALE.transform_vec4_sse41(Vec4::ZERO), Vec4::ZERO);
                 assert_eq!(
-                    SCALE.mul_vec4_sse41(Vec4::ONE),
+                    SCALE.transform_vec4_sse41(Vec4::ONE),
                     Vec4::new(2.0, 2.0, 2.0, 1.0)
                 );
                 assert_eq!(
-                    TRANSLATE.mul_vec4_sse41(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                    TRANSLATE.transform_vec4_sse41(Vec4::new(0.0, 0.0, 0.0, 1.0)),
                     Vec4::new(1.0, 2.0, 3.0, 1.0)
                 );
             }

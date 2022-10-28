@@ -52,6 +52,7 @@ impl Vec2 {
 
     /// Returns the dot product of `a` and `b`.
     #[inline]
+    #[must_use]
     pub fn dot(a: Self, b: Self) -> f32 {
         a.x * b.x + a.y * b.y
     }

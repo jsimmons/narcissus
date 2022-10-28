@@ -56,12 +56,14 @@ impl Vec3 {
 
     /// Returns the dot product of `a` and `b`.
     #[inline]
+    #[must_use]
     pub fn dot(a: Vec3, b: Vec3) -> f32 {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 
     /// Returns the cross product of `a` and `b`.
     #[inline]
+    #[must_use]
     pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
         [
             a.y * b.z - a.z * b.y,

@@ -54,6 +54,7 @@ impl Vec4 {
 
     /// Returns the dot product of `a` and `b`.
     #[inline]
+    #[must_use]
     pub fn dot(a: Vec4, b: Vec4) -> f32 {
         a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
     }

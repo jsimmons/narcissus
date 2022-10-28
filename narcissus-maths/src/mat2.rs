@@ -48,6 +48,35 @@ impl Mat2 {
         Mat2::from_diagonal(scale)
     }
 
+    /// Returns `true` if all elements are finite.
+    ///
+    /// If any element is `NaN`, positive infinity, or negative infinity, returns `false`.
+    pub fn is_finite(&self) -> bool {
+        let mut is_finite = true;
+        for x in self.0 {
+            is_finite &= x.is_finite();
+        }
+        is_finite
+    }
+
+    /// Returns `true` if any element is positive infinity, or negative infinity, and `false` otherwise.
+    pub fn is_infinite(&self) -> bool {
+        let mut is_infinite = false;
+        for x in self.0 {
+            is_infinite |= x.is_infinite();
+        }
+        is_infinite
+    }
+
+    /// Returns `true` if any element is `NaN`, and `false` otherwise.
+    pub fn is_nan(&self) -> bool {
+        let mut is_nan = false;
+        for x in self.0 {
+            is_nan |= x.is_nan();
+        }
+        is_nan
+    }
+
     /// Returns the transpose of `self`.
     #[must_use]
     #[inline(always)]
@@ -57,30 +86,14 @@ impl Mat2 {
     }
 
     #[must_use]
-    pub fn mul_mat2(self: &Mat2, rhs: Mat2) -> Mat2 {
-        let mut result = Mat2::IDENTITY;
-        {
-            let result = result.as_rows_mut();
-            let lhs = self.as_rows();
-            let rhs = rhs.as_rows();
-            for i in 0..2 {
-                for j in 0..2 {
-                    result[i][j] = lhs[i][0] * rhs[0][j] + lhs[i][1] * rhs[1][j];
-                }
-            }
-        }
-        result
+    #[inline]
+    pub fn transform_point2(self: &Mat2, point: Point2) -> Point2 {
+        self.transform_vec2(point.as_vec2()).as_point2()
     }
 
     #[must_use]
     #[inline]
-    pub fn mul_point2(self: &Mat2, point: Point2) -> Point2 {
-        self.mul_vec2(point.as_vec2()).as_point2()
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn mul_vec2(self: &Mat2, vec: Vec2) -> Vec2 {
+    pub fn transform_vec2(self: &Mat2, vec: Vec2) -> Vec2 {
         let vec = Vec2::new(vec.x, vec.y);
         let rows = self.as_rows();
         Vec2::new(
@@ -95,7 +108,18 @@ impl std::ops::Mul for Mat2 {
 
     #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
-        self.mul_mat2(rhs)
+        let mut result = Mat2::IDENTITY;
+        {
+            let result = result.as_rows_mut();
+            let lhs = self.as_rows();
+            let rhs = rhs.as_rows();
+            for i in 0..2 {
+                for j in 0..2 {
+                    result[i][j] = lhs[i][0] * rhs[0][j] + lhs[i][1] * rhs[1][j];
+                }
+            }
+        }
+        result
     }
 }
 
@@ -111,7 +135,7 @@ impl std::ops::Mul<Vec2> for Mat2 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec2) -> Self::Output {
-        self.mul_vec2(rhs)
+        self.transform_vec2(rhs)
     }
 }
 
@@ -120,7 +144,7 @@ impl std::ops::Mul<Point2> for Mat2 {
 
     #[inline(always)]
     fn mul(self, rhs: Point2) -> Self::Output {
-        self.mul_point2(rhs)
+        self.transform_point2(rhs)
     }
 }
 

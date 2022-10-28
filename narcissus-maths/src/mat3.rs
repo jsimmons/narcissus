@@ -80,6 +80,35 @@ impl Mat3 {
         ])
     }
 
+    /// Returns `true` if all elements are finite.
+    ///
+    /// If any element is `NaN`, positive infinity, or negative infinity, returns `false`.
+    pub fn is_finite(&self) -> bool {
+        let mut is_finite = true;
+        for x in self.0 {
+            is_finite &= x.is_finite();
+        }
+        is_finite
+    }
+
+    /// Returns `true` if any element is positive infinity, or negative infinity, and `false` otherwise.
+    pub fn is_infinite(&self) -> bool {
+        let mut is_infinite = false;
+        for x in self.0 {
+            is_infinite |= x.is_infinite();
+        }
+        is_infinite
+    }
+
+    /// Returns `true` if any element is `NaN`, and `false` otherwise.
+    pub fn is_nan(&self) -> bool {
+        let mut is_nan = false;
+        for x in self.0 {
+            is_nan |= x.is_nan();
+        }
+        is_nan
+    }
+
     /// Returns the transpose of `self`.
     #[must_use]
     #[inline(always)]
@@ -89,25 +118,8 @@ impl Mat3 {
     }
 
     #[must_use]
-    pub fn mul_mat3(self: &Mat3, rhs: Mat3) -> Mat3 {
-        let mut result = Mat3::IDENTITY;
-        {
-            let result = result.as_rows_mut();
-            let lhs = self.as_rows();
-            let rhs = rhs.as_rows();
-            for i in 0..3 {
-                for j in 0..3 {
-                    result[i][j] =
-                        lhs[i][0] * rhs[0][j] + lhs[i][1] * rhs[1][j] + lhs[i][2] * rhs[2][j];
-                }
-            }
-        }
-        result
-    }
-
-    #[must_use]
     #[inline]
-    pub fn mul_point2(self: &Mat3, point: Point2) -> Point2 {
+    pub fn transform_point2(self: &Mat3, point: Point2) -> Point2 {
         let vec = Vec3::new(point.x, point.y, 1.0);
         let rows = self.as_rows();
         Point2::new(
@@ -118,7 +130,7 @@ impl Mat3 {
 
     #[must_use]
     #[inline]
-    pub fn mul_vec2(self: &Mat3, vec: Vec2) -> Vec2 {
+    pub fn transform_vec2(self: &Mat3, vec: Vec2) -> Vec2 {
         let vec = Vec3::new(vec.x, vec.y, 0.0);
         let rows = self.as_rows();
         Vec2::new(
@@ -129,13 +141,13 @@ impl Mat3 {
 
     #[must_use]
     #[inline]
-    pub fn mul_point3(self: &Mat3, point: Point3) -> Point3 {
-        self.mul_vec3(point.as_vec3()).as_point3()
+    pub fn transform_point3(self: &Mat3, point: Point3) -> Point3 {
+        self.transform_vec3(point.as_vec3()).as_point3()
     }
 
     #[must_use]
     #[inline]
-    pub fn mul_vec3(self: &Mat3, vec: Vec3) -> Vec3 {
+    pub fn transform_vec3(self: &Mat3, vec: Vec3) -> Vec3 {
         let rows = self.as_rows();
         Vec3::new(
             Vec3::dot(rows[0].into(), vec),
@@ -150,7 +162,19 @@ impl std::ops::Mul for Mat3 {
 
     #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
-        self.mul_mat3(rhs)
+        let mut result = Mat3::IDENTITY;
+        {
+            let result = result.as_rows_mut();
+            let lhs = self.as_rows();
+            let rhs = rhs.as_rows();
+            for i in 0..3 {
+                for j in 0..3 {
+                    result[i][j] =
+                        lhs[i][0] * rhs[0][j] + lhs[i][1] * rhs[1][j] + lhs[i][2] * rhs[2][j];
+                }
+            }
+        }
+        result
     }
 }
 
@@ -166,7 +190,7 @@ impl std::ops::Mul<Vec3> for Mat3 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec3) -> Self::Output {
-        self.mul_vec3(rhs)
+        self.transform_vec3(rhs)
     }
 }
 
@@ -175,7 +199,7 @@ impl std::ops::Mul<Point3> for Mat3 {
 
     #[inline(always)]
     fn mul(self, rhs: Point3) -> Self::Output {
-        self.mul_point3(rhs)
+        self.transform_point3(rhs)
     }
 }
 
@@ -184,7 +208,7 @@ impl std::ops::Mul<Vec2> for Mat3 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec2) -> Self::Output {
-        self.mul_vec2(rhs)
+        self.transform_vec2(rhs)
     }
 }
 
@@ -193,7 +217,7 @@ impl std::ops::Mul<Point2> for Mat3 {
 
     #[inline(always)]
     fn mul(self, rhs: Point2) -> Self::Output {
-        self.mul_point2(rhs)
+        self.transform_point2(rhs)
     }
 }
 

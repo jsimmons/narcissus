@@ -4,8 +4,8 @@ use crate::{Mat3, Point3, Vec3};
 #[derive(Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Affine3 {
-    matrix: Mat3,
-    translate: Vec3,
+    pub matrix: Mat3,
+    pub translate: Vec3,
 }
 
 impl Affine3 {
@@ -19,20 +19,6 @@ impl Affine3 {
         translate: Vec3::ZERO,
     };
 
-    pub const fn from_scale(scale: Vec3) -> Affine3 {
-        Self {
-            matrix: Mat3::from_scale(scale),
-            translate: Vec3::ZERO,
-        }
-    }
-
-    pub const fn from_translation(translate: Vec3) -> Affine3 {
-        Self {
-            matrix: Mat3::IDENTITY,
-            translate,
-        }
-    }
-
     pub fn mul_affine3(&self, rhs: Affine3) -> Affine3 {
         Self {
             matrix: self.matrix * rhs.matrix,
@@ -40,11 +26,11 @@ impl Affine3 {
         }
     }
 
-    pub fn mul_vec3(&self, vec: Vec3) -> Vec3 {
-        self.matrix * vec + self.translate
+    pub fn transform_vec3(&self, vec: Vec3) -> Vec3 {
+        self.matrix * vec
     }
 
-    pub fn mul_point3(&self, point: Point3) -> Point3 {
+    pub fn transform_point3(&self, point: Point3) -> Point3 {
         self.matrix * point + self.translate
     }
 }
@@ -70,7 +56,7 @@ impl std::ops::Mul<Vec3> for Affine3 {
 
     #[inline(always)]
     fn mul(self, rhs: Vec3) -> Self::Output {
-        self.mul_vec3(rhs)
+        self.transform_vec3(rhs)
     }
 }
 
@@ -79,6 +65,6 @@ impl std::ops::Mul<Point3> for Affine3 {
 
     #[inline(always)]
     fn mul(self, rhs: Point3) -> Self::Output {
-        self.mul_point3(rhs)
+        self.transform_point3(rhs)
     }
 }
