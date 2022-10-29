@@ -19,7 +19,14 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libsdl2-dev clang llvm
-    - uses: rui314/setup-mold@v1
+    - name: install_mold
+      run: |
+        version=$(wget -q -O- https://api.github.com/repos/rui314/mold/releases/latest | jq -r .tag_name | sed 's/^v//'); true
+        echo "mold $version"
+        wget -q -O- https://github.com/rui314/mold/releases/download/v$version/mold-$version-$(uname -m)-linux.tar.gz | sudo tar -C /usr/ --strip-components=1 -xzf -
+      shell: bash
+      if: runner.os == 'linux'
+
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
