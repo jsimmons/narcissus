@@ -271,6 +271,20 @@ pub fn align_offset(x: usize, align: usize) -> usize {
     (x + align - 1) & !(align - 1)
 }
 
+#[must_use]
+pub fn is_aligned_to<T>(ptr: *const T, align: usize) -> bool {
+    if align == 0 || !align.is_power_of_two() {
+        panic!("is_aligned_to: align is not a power-of-two");
+    }
+
+    (ptr as usize) & (align - 1) == 0
+}
+
+#[must_use]
+pub fn is_aligned<T>(ptr: *const T) -> bool {
+    is_aligned_to(ptr, std::mem::align_of::<T>())
+}
+
 pub fn page_size() -> usize {
     4096
 }
