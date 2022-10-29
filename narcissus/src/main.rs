@@ -171,7 +171,7 @@ fn render_window(
 ) {
     let (width, height, swapchain_image) =
         device.acquire_swapchain(frame_token, window, TextureFormat::BGRA8_SRGB);
-    let mut command_buffer_token = device.request_command_buffer(frame_token, thread_token);
+    let mut command_buffer_token = device.create_command_buffer(frame_token, thread_token);
     device.cmd_begin_rendering(
         &mut command_buffer_token,
         &RenderingDesc {

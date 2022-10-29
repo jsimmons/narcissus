@@ -1688,7 +1688,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn request_command_buffer<'frame>(
+    fn create_command_buffer<'frame>(
         &'frame self,
         frame_token: &'frame FrameToken,
         thread_token: &'frame mut ThreadToken,

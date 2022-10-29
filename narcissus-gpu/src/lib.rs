@@ -241,7 +241,7 @@ pub trait Device {
     ) -> (u32, u32, Texture);
     fn destroy_window(&self, window: Window);
 
-    fn request_command_buffer<'frame>(
+    fn create_command_buffer<'frame>(
         &'frame self,
         frame_token: &'frame FrameToken,
         thread_token: &'frame mut ThreadToken,
