@@ -489,27 +489,6 @@ pub struct SwapchainCreateInfoKHR<'a> {
     pub old_swapchain: SwapchainKHR,
 }
 
-// typedef struct VkSwapchainCreateInfoKHR {
-//     VkStructureType                  sType;
-//     const void*                      pNext;
-//     VkSwapchainCreateFlagsKHR        flags;
-//     VkSurfaceKHR                     surface;
-//     uint32_t                         minImageCount;
-//     VkFormat                         imageFormat;
-//     VkColorSpaceKHR                  imageColorSpace;
-//     VkExtent2D                       imageExtent;
-//     uint32_t                         imageArrayLayers;
-//     VkImageUsageFlags                imageUsage;
-//     VkSharingMode                    imageSharingMode;
-//     uint32_t                         queueFamilyIndexCount;
-//     const uint32_t*                  pQueueFamilyIndices;
-//     VkSurfaceTransformFlagBitsKHR    preTransform;
-//     VkCompositeAlphaFlagBitsKHR      compositeAlpha;
-//     VkPresentModeKHR                 presentMode;
-//     VkBool32                         clipped;
-//     VkSwapchainKHR                   oldSwapchain;
-// } VkSwapchainCreateInfoKHR;
-
 impl<'a> Default for SwapchainCreateInfoKHR<'a> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
