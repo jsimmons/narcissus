@@ -1048,7 +1048,7 @@ pub struct DescriptorSetLayoutCreateInfo<'a> {
     pub _next: *const c_void,
     pub flags: DescriptorSetLayoutCreateFlags,
     ///  Array of descriptor set layout bindings
-    pub bindings: VulkanSlice1<'a, u32, DescriptorSetLayoutBinding, 4>,
+    pub bindings: VulkanSlice1<'a, u32, DescriptorSetLayoutBinding, 0>,
 }
 
 impl<'a> Default for DescriptorSetLayoutCreateInfo<'a> {
@@ -1072,7 +1072,7 @@ pub struct DescriptorPoolCreateInfo<'a> {
     pub _next: *const c_void,
     pub flags: DescriptorPoolCreateFlags,
     pub max_sets: u32,
-    pub pool_sizes: VulkanSlice1<'a, u32, DescriptorPoolSize, 0>,
+    pub pool_sizes: VulkanSlice1<'a, u32, DescriptorPoolSize, 4>,
 }
 
 impl<'a> Default for DescriptorPoolCreateInfo<'a> {
@@ -2575,5 +2575,284 @@ impl Default for PhysicalDeviceVulkan13Properties {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PhysicalDeviceVulkan13Properties;
         x
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[must_use]
+    fn is_aligned_to<T>(ptr: *const T, align: usize) -> bool {
+        if align == 0 || !align.is_power_of_two() {
+            panic!("is_aligned_to: align is not a power-of-two");
+        }
+
+        (ptr as usize) & (align - 1) == 0
+    }
+
+    #[must_use]
+    fn is_aligned<T>(ptr: *const T) -> bool {
+        is_aligned_to(ptr, std::mem::align_of::<T>())
+    }
+
+    #[test]
+    fn vulkan_slice_alignment() {
+        use std::ptr::addr_of;
+
+        {
+            let device_queue_create_info = DeviceQueueCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                device_queue_create_info.queue_priorities.ptr
+            )));
+        }
+
+        {
+            let device_create_info = DeviceCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                device_create_info.enabled_extension_names.ptr
+            )));
+            assert!(is_aligned(addr_of!(device_create_info.enabled_layers.ptr)));
+            assert!(is_aligned(addr_of!(
+                device_create_info.queue_create_infos.ptr
+            )));
+        }
+
+        {
+            let instance_create_info = InstanceCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                instance_create_info.enabled_extension_names.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                instance_create_info.enabled_layers.ptr
+            )));
+        }
+
+        {
+            let submit_info = SubmitInfo::default();
+            assert!(is_aligned(addr_of!(submit_info.command_buffers.ptr)));
+            assert!(is_aligned(addr_of!(submit_info.signal_semaphores.ptr)));
+            assert!(is_aligned(addr_of!(submit_info.wait_semaphores.ptr0)));
+            assert!(is_aligned(addr_of!(submit_info.wait_semaphores.ptr1)));
+        }
+
+        {
+            let submit_info_2 = SubmitInfo2::default();
+            assert!(is_aligned(addr_of!(submit_info_2.command_buffer_infos.ptr)));
+            assert!(is_aligned(addr_of!(
+                submit_info_2.signal_semaphore_infos.ptr
+            )));
+            assert!(is_aligned(addr_of!(submit_info_2.wait_semaphore_infos.ptr)));
+        }
+
+        {
+            let swapchain_create_info = SwapchainCreateInfoKHR::default();
+            assert!(is_aligned(addr_of!(
+                swapchain_create_info.queue_family_indices.ptr
+            )));
+        }
+
+        {
+            let present_info_khr = PresentInfoKHR::default();
+            assert!(is_aligned(addr_of!(present_info_khr.wait_semaphores.ptr)));
+            assert!(is_aligned(addr_of!(present_info_khr.swapchains.ptr0)));
+            assert!(is_aligned(addr_of!(present_info_khr.swapchains.ptr1)));
+        }
+
+        {
+            let image_create_info = ImageCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                image_create_info.queue_family_indices.ptr
+            )));
+        }
+
+        {
+            let rendering_info = RenderingInfo::default();
+            assert!(is_aligned(addr_of!(rendering_info.color_attachments.ptr)));
+        }
+
+        {
+            let pipeline_rendering_create_info = PipelineRenderingCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                pipeline_rendering_create_info.color_attachment_formats.ptr
+            )));
+        }
+
+        {
+            let render_pass_begin_info = RenderPassBeginInfo::default();
+            assert!(is_aligned(addr_of!(
+                render_pass_begin_info.clear_values.ptr
+            )));
+        }
+
+        {
+            let dependency_info = DependencyInfo::default();
+            assert!(is_aligned(addr_of!(dependency_info.memory_barriers.ptr)));
+            assert!(is_aligned(addr_of!(
+                dependency_info.buffer_memory_barriers.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                dependency_info.image_memory_barriers.ptr
+            )));
+        }
+
+        {
+            let subpass_description = SubpassDescription::default();
+            assert!(is_aligned(addr_of!(
+                subpass_description.input_attachments.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                subpass_description.color_attachments.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                subpass_description.preserve_attachments.ptr
+            )));
+        }
+
+        {
+            let render_pass_create_info = RenderPassCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                render_pass_create_info.attachments.ptr
+            )));
+            assert!(is_aligned(addr_of!(render_pass_create_info.subpasses.ptr)));
+            assert!(is_aligned(addr_of!(
+                render_pass_create_info.dependencies.ptr
+            )));
+        }
+
+        {
+            let shader_module_create_info = ShaderModuleCreateInfo::default();
+            assert!(is_aligned(addr_of!(shader_module_create_info.code.ptr)));
+        }
+
+        {
+            let descriptor_set_layout_create_info = DescriptorSetLayoutCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                descriptor_set_layout_create_info.bindings.ptr
+            )));
+        }
+
+        {
+            let descriptor_pool_create_info = DescriptorPoolCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                descriptor_pool_create_info.pool_sizes.ptr
+            )));
+        }
+
+        {
+            let descriptor_set_allocate_info = DescriptorSetAllocateInfo::default();
+            assert!(is_aligned(addr_of!(
+                descriptor_set_allocate_info.set_layouts.ptr
+            )));
+        }
+
+        {
+            let specialization_info = SpecializationInfo::default();
+            assert!(is_aligned(addr_of!(specialization_info.map_entries.ptr)));
+        }
+
+        {
+            let pipeline_vertex_input_state_create_info =
+                PipelineVertexInputStateCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                pipeline_vertex_input_state_create_info
+                    .vertex_attribute_descriptions
+                    .ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                pipeline_vertex_input_state_create_info
+                    .vertex_binding_descriptions
+                    .ptr
+            )));
+        }
+
+        {
+            let pipeline_viewport_state_create_info = PipelineViewportStateCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                pipeline_viewport_state_create_info.viewports.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                pipeline_viewport_state_create_info.scissors.ptr
+            )));
+        }
+
+        {
+            let pipeline_color_blend_state_create_info =
+                PipelineColorBlendStateCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                pipeline_color_blend_state_create_info.attachments.ptr
+            )));
+        }
+
+        {
+            let pipeline_dynamic_state_create_info = PipelineDynamicStateCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                pipeline_dynamic_state_create_info.dynamic_states.ptr
+            )));
+        }
+
+        {
+            let graphics_pipeline_create_info = GraphicsPipelineCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                graphics_pipeline_create_info.stages.ptr
+            )));
+        }
+
+        {
+            let pipeline_layout_create_info = PipelineLayoutCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                pipeline_layout_create_info.set_layouts.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                pipeline_layout_create_info.push_constant_ranges.ptr
+            )));
+        }
+
+        {
+            let buffer_create_info = BufferCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                buffer_create_info.queue_family_indices.ptr
+            )));
+        }
+
+        {
+            let framebuffer_create_info = FramebufferCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                framebuffer_create_info.attachments.ptr
+            )));
+        }
+
+        {
+            let framebuffer_attachment_image_create_info =
+                FramebufferAttachmentImageInfo::default();
+            assert!(is_aligned(addr_of!(
+                framebuffer_attachment_image_create_info.view_formats.ptr
+            )));
+        }
+
+        {
+            let framebuffer_attachments_create_info = FramebufferAttachmentsCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                framebuffer_attachments_create_info
+                    .attachment_image_infos
+                    .ptr
+            )));
+        }
+
+        {
+            let timeline_semaphore_submit_info = TimelineSemaphoreSubmitInfo::default();
+            assert!(is_aligned(addr_of!(
+                timeline_semaphore_submit_info.wait_semaphore_values.ptr
+            )));
+            assert!(is_aligned(addr_of!(
+                timeline_semaphore_submit_info.signal_semaphore_values.ptr
+            )));
+        }
+
+        {
+            let semaphore_wait_info = SemaphoreWaitInfo::default();
+            assert!(is_aligned(addr_of!(semaphore_wait_info.semaphores.ptr0)));
+            assert!(is_aligned(addr_of!(semaphore_wait_info.semaphores.ptr1)));
+        }
     }
 }
