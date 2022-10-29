@@ -1,10 +1,11 @@
 use narcissus_app::{create_app, Event, Window, WindowDesc};
 use narcissus_core::{cstr, obj, slice, Image};
 use narcissus_gpu::{
-    create_vulkan_device, ClearValue, Device, FrameToken, GraphicsPipelineDesc,
-    GraphicsPipelineLayout, LoadOp, MemoryLocation, Pipeline, RenderingAttachment, RenderingDesc,
-    Scissor, ShaderDesc, StoreOp, TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags,
-    TextureViewDesc, ThreadToken, Viewport,
+    create_vulkan_device, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, ClearValue,
+    Device, FrameToken, GraphicsPipelineDesc, GraphicsPipelineLayout, LoadOp, MemoryLocation,
+    Pipeline, RenderingAttachment, RenderingDesc, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
+    TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
+    Viewport,
 };
 use narcissus_maths::{Vec2, Vec3};
 
@@ -83,6 +84,49 @@ pub fn main() {
     let vert_shader_spv = Spirv(*include_bytes!("shaders/triangle.vert.spv"));
     let frag_shader_spv = Spirv(*include_bytes!("shaders/triangle.frag.spv"));
 
+    let global_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        entries: &[
+            // Global uniforms.
+            BindGroupLayoutEntryDesc {
+                slot: 0,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::UniformBuffer,
+                count: 1,
+            },
+        ],
+    });
+
+    let per_material_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        entries: &[
+            // Per-material uniforms.
+            BindGroupLayoutEntryDesc {
+                slot: 0,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::UniformBuffer,
+                count: 1,
+            },
+            // Per-material textures.
+            BindGroupLayoutEntryDesc {
+                slot: 1,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::Texture,
+                count: 1,
+            },
+        ],
+    });
+
+    let per_draw_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        entries: &[
+            // Per-draw Uniforms
+            BindGroupLayoutEntryDesc {
+                slot: 0,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::DynamicUniformBuffer,
+                count: 1,
+            },
+        ],
+    });
+
     let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
         vertex_shader: ShaderDesc {
             entrypoint_name: cstr!("main"),
@@ -92,6 +136,14 @@ pub fn main() {
             entrypoint_name: cstr!("main"),
             code: &frag_shader_spv.0,
         },
+        bind_group_layouts: &[
+            // Set 0
+            global_layout,
+            // Set 1
+            per_material_layout,
+            // Set 2
+            per_draw_layout,
+        ],
         layout: GraphicsPipelineLayout {
             color_attachment_formats: &[TextureFormat::BGRA8_SRGB],
             depth_attachment_format: None,

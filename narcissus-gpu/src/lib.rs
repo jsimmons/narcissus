@@ -15,6 +15,12 @@ pub struct Buffer(Handle);
 pub struct Sampler(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BindGroupLayout(Handle);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BindGroup(Handle);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pipeline(Handle);
 
 #[derive(Clone, Copy, Debug)]
@@ -151,6 +157,27 @@ pub struct SamplerDesc {
     pub max_lod: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingType {
+    Sampler,
+    Texture,
+    UniformBuffer,
+    StorageBuffer,
+    DynamicUniformBuffer,
+    DynamicStorageBuffer,
+}
+
+pub struct BindGroupLayoutEntryDesc {
+    pub slot: u32,
+    pub stages: ShaderStageFlags,
+    pub binding_type: BindingType,
+    pub count: u32,
+}
+
+pub struct BindGroupLayoutDesc<'a> {
+    pub entries: &'a [BindGroupLayoutEntryDesc],
+}
+
 pub struct GraphicsPipelineLayout<'a> {
     pub color_attachment_formats: &'a [TextureFormat],
     pub depth_attachment_format: Option<TextureFormat>,
@@ -160,6 +187,7 @@ pub struct GraphicsPipelineLayout<'a> {
 pub struct GraphicsPipelineDesc<'a> {
     pub vertex_shader: ShaderDesc<'a>,
     pub fragment_shader: ShaderDesc<'a>,
+    pub bind_group_layouts: &'a [BindGroupLayout],
     pub layout: GraphicsPipelineLayout<'a>,
 }
 
@@ -225,12 +253,18 @@ pub trait Device {
     fn create_texture(&self, texture_desc: &TextureDesc) -> Texture;
     fn create_texture_view(&self, desc: &TextureViewDesc) -> Texture;
     fn create_sampler(&self, desc: &SamplerDesc) -> Sampler;
+    fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> BindGroupLayout;
     fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline;
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline;
 
     fn destroy_buffer(&self, frame_token: &FrameToken, buffer: Buffer);
     fn destroy_texture(&self, frame_token: &FrameToken, texture: Texture);
     fn destroy_sampler(&self, frame_token: &FrameToken, sampler: Sampler);
+    fn destroy_bind_group_layout(
+        &self,
+        frame_token: &FrameToken,
+        bind_group_layout: BindGroupLayout,
+    );
     fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline);
 
     fn acquire_swapchain(

@@ -16,10 +16,11 @@ use vk::DeviceFunctions;
 use vulkan_sys as vk;
 
 use crate::{
-    Buffer, BufferDesc, BufferUsageFlags, ClearValue, CommandBufferToken, ComputePipelineDesc,
-    Device, FrameToken, GpuConcurrent, GraphicsPipelineDesc, LoadOp, MemoryLocation, Pipeline,
-    Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter, Texture,
-    TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
+    BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferUsageFlags,
+    ClearValue, CommandBufferToken, ComputePipelineDesc, Device, FrameToken, GpuConcurrent,
+    GraphicsPipelineDesc, LoadOp, MemoryLocation, Pipeline, Sampler, SamplerAddressMode,
+    SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, Texture, TextureDesc,
+    TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -86,6 +87,33 @@ fn vulkan_clear_value(clear_value: ClearValue) -> vk::ClearValue {
         ClearValue::DepthStencil { depth, stencil } => vk::ClearValue {
             depth_stencil: vk::ClearDepthStencilValue { depth, stencil },
         },
+    }
+}
+
+#[must_use]
+fn vulkan_shader_stage_flags(stage_flags: ShaderStageFlags) -> vk::ShaderStageFlags {
+    let mut flags = vk::ShaderStageFlags::default();
+    if stage_flags.contains(ShaderStageFlags::COMPUTE) {
+        flags |= vk::ShaderStageFlags::COMPUTE;
+    }
+    if stage_flags.contains(ShaderStageFlags::FRAGMENT) {
+        flags |= vk::ShaderStageFlags::FRAGMENT;
+    }
+    if stage_flags.contains(ShaderStageFlags::VERTEX) {
+        flags |= vk::ShaderStageFlags::VERTEX;
+    }
+    flags
+}
+
+#[must_use]
+fn vulkan_descriptor_type(binding_type: BindingType) -> vk::DescriptorType {
+    match binding_type {
+        BindingType::Sampler => vk::DescriptorType::Sampler,
+        BindingType::Texture => vk::DescriptorType::SampledImage,
+        BindingType::UniformBuffer => vk::DescriptorType::UniformBuffer,
+        BindingType::StorageBuffer => vk::DescriptorType::StorageBuffer,
+        BindingType::DynamicUniformBuffer => vk::DescriptorType::UniformBufferDynamic,
+        BindingType::DynamicStorageBuffer => vk::DescriptorType::StorageBufferDynamic,
     }
 }
 
@@ -165,6 +193,8 @@ enum VulkanTextureHolder {
 
 struct VulkanSampler(vk::Sampler);
 
+struct VulkanBindGroupLayout(vk::DescriptorSetLayout);
+
 struct VulkanPipeline {
     pipeline: vk::Pipeline,
     pipeline_bind_point: vk::PipelineBindPoint,
@@ -218,6 +248,7 @@ struct VulkanPools {
     textures: Pool<VulkanTextureHolder>,
     buffers: Pool<VulkanBuffer>,
     samplers: Pool<VulkanSampler>,
+    bind_group_layouts: Pool<VulkanBindGroupLayout>,
     pipelines: Pool<VulkanPipeline>,
 }
 
@@ -303,6 +334,7 @@ struct VulkanFrame {
     destroyed_images: Mutex<VecDeque<vk::Image>>,
     destroyed_image_views: Mutex<VecDeque<vk::ImageView>>,
     destroyed_samplers: Mutex<VecDeque<vk::Sampler>>,
+    destroyed_descriptor_set_layouts: Mutex<VecDeque<vk::DescriptorSetLayout>>,
     destroyed_pipelines: Mutex<VecDeque<vk::Pipeline>>,
 
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
@@ -581,15 +613,16 @@ impl<'app> VulkanDevice<'app> {
             UnsafeCell::new(VulkanFrame {
                 command_buffer_pools: cmd_buffer_pools,
                 universal_queue_fence: AtomicU64::new(universal_queue_fence),
-                present_swapchains: Mutex::new(HashMap::new()),
-                destroyed_buffers: Mutex::new(VecDeque::new()),
-                destroyed_buffer_views: Mutex::new(VecDeque::new()),
-                destroyed_images: Mutex::new(VecDeque::new()),
-                destroyed_image_views: Mutex::new(VecDeque::new()),
-                destroyed_samplers: Mutex::new(VecDeque::new()),
-                destroyed_allocations: Mutex::new(VecDeque::new()),
-                destroyed_pipelines: Mutex::new(VecDeque::new()),
-                recycled_semaphores: Mutex::new(VecDeque::new()),
+                present_swapchains: Default::default(),
+                destroyed_allocations: Default::default(),
+                destroyed_buffers: Default::default(),
+                destroyed_buffer_views: Default::default(),
+                destroyed_images: Default::default(),
+                destroyed_image_views: Default::default(),
+                destroyed_samplers: Default::default(),
+                destroyed_descriptor_set_layouts: Default::default(),
+                destroyed_pipelines: Default::default(),
+                recycled_semaphores: Default::default(),
             })
         }));
 
@@ -616,6 +649,7 @@ impl<'app> VulkanDevice<'app> {
                 textures: Pool::new(),
                 buffers: Pool::new(),
                 samplers: Pool::new(),
+                bind_group_layouts: Pool::new(),
                 pipelines: Pool::new(),
             }),
 
@@ -769,6 +803,9 @@ impl<'app> VulkanDevice<'app> {
     fn destroy_deferred(device_fn: &DeviceFunctions, device: vk::Device, frame: &mut VulkanFrame) {
         for pipeline in frame.destroyed_pipelines.get_mut().drain(..) {
             unsafe { device_fn.destroy_pipeline(device, pipeline, None) }
+        }
+        for descriptor_set_layout in frame.destroyed_descriptor_set_layouts.get_mut().drain(..) {
+            unsafe { device_fn.destroy_descriptor_set_layout(device, descriptor_set_layout, None) }
         }
         for sampler in frame.destroyed_samplers.get_mut().drain(..) {
             unsafe { device_fn.destroy_sampler(device, sampler, None) }
@@ -1139,9 +1176,46 @@ impl<'driver> Device for VulkanDevice<'driver> {
         Sampler(handle)
     }
 
+    fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> BindGroupLayout {
+        let layout_bindings = desc
+            .entries
+            .iter()
+            .map(|x| vk::DescriptorSetLayoutBinding {
+                binding: x.slot,
+                descriptor_type: vulkan_descriptor_type(x.binding_type),
+                descriptor_count: x.count,
+                stage_flags: vulkan_shader_stage_flags(x.stages),
+                immutable_samplers: std::ptr::null(),
+            })
+            .collect::<Vec<_>>();
+
+        let create_info = &vk::DescriptorSetLayoutCreateInfo {
+            bindings: layout_bindings.as_slice().into(),
+            ..default()
+        };
+        let mut set_layout = vk::DescriptorSetLayout::null();
+        vk_check!(self.device_fn.create_descriptor_set_layout(
+            self.device,
+            create_info,
+            None,
+            &mut set_layout,
+        ));
+
+        let bind_group_layout = self
+            .pools
+            .lock()
+            .bind_group_layouts
+            .insert(VulkanBindGroupLayout(set_layout));
+
+        BindGroupLayout(bind_group_layout)
+    }
+
     fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline {
         let layout = {
-            let create_info = vk::PipelineLayoutCreateInfo::default();
+            let create_info = vk::PipelineLayoutCreateInfo {
+                //set_layouts: set_layouts.as_slice().into(),
+                ..default()
+            };
             let mut pipeline_layout = vk::PipelineLayout::null();
             vk_check!(self.device_fn.create_pipeline_layout(
                 self.device,
@@ -1340,6 +1414,24 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
+    fn destroy_bind_group_layout(
+        &self,
+        frame_token: &FrameToken,
+        bind_group_layout: BindGroupLayout,
+    ) {
+        if let Some(bind_group_layout) = self
+            .pools
+            .lock()
+            .bind_group_layouts
+            .remove(bind_group_layout.0)
+        {
+            self.frame(frame_token)
+                .destroyed_descriptor_set_layouts
+                .lock()
+                .push_back(bind_group_layout.0)
+        }
+    }
+
     fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline) {
         if let Some(pipeline) = self.pools.lock().pipelines.remove(pipeline.0) {
             self.frame(frame_token)
@@ -1365,6 +1457,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 textures,
                 buffers: _,
                 samplers: _,
+                bind_group_layouts: _,
                 pipelines: _,
             } = pools.deref_mut();
 
@@ -1477,6 +1570,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             textures,
             buffers: _,
             samplers: _,
+            bind_group_layouts: _,
             pipelines: _,
         } = pools.deref_mut();
 
@@ -2227,6 +2321,12 @@ impl<'app> Drop for VulkanDevice<'app> {
 
         for pipeline in self.pools.get_mut().pipelines.values() {
             unsafe { device_fn.destroy_pipeline(device, pipeline.pipeline, None) }
+        }
+
+        for descriptor_set_layout in self.pools.get_mut().bind_group_layouts.values() {
+            unsafe {
+                device_fn.destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
+            }
         }
 
         unsafe { device_fn.destroy_device(device, None) }
