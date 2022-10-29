@@ -353,8 +353,8 @@ fn check_exhaustive_f32(
         })
         .collect::<Vec<_>>();
 
-    // The larger numbers towards the end of the test range are more costly to evaluate. So improve scheduling by
-    // running those long jobs first.
+    // The larger numbers towards the end of the test range are more costly to evaluate. So improve
+    // scheduling by running those long jobs first.
     work.reverse();
 
     let mut errors = FloatErrors::default();
