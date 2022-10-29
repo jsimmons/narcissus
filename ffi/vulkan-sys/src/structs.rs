@@ -1051,6 +1051,14 @@ pub struct DescriptorSetLayoutCreateInfo<'a> {
     pub bindings: VulkanSlice1<'a, u32, DescriptorSetLayoutBinding, 4>,
 }
 
+impl<'a> Default for DescriptorSetLayoutCreateInfo<'a> {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::DescriptorSetLayoutCreateInfo;
+        x
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct DescriptorPoolSize {
@@ -1067,12 +1075,28 @@ pub struct DescriptorPoolCreateInfo<'a> {
     pub pool_sizes: VulkanSlice1<'a, u32, DescriptorPoolSize, 0>,
 }
 
+impl<'a> Default for DescriptorPoolCreateInfo<'a> {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::DescriptorPoolCreateInfo;
+        x
+    }
+}
+
 #[repr(C)]
 pub struct DescriptorSetAllocateInfo<'a> {
     pub _type: StructureType,
     pub _next: *const c_void,
     pub descriptor_pool: DescriptorPool,
     pub set_layouts: VulkanSlice1<'a, u32, DescriptorSetLayout, 4>,
+}
+
+impl<'a> Default for DescriptorSetAllocateInfo<'a> {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::DescriptorSetAllocateInfo;
+        x
+    }
 }
 
 #[repr(C)]
@@ -1093,6 +1117,12 @@ pub struct SpecializationInfo<'a> {
     pub data_size: usize,
     ///  Pointer to SpecConstant data
     pub data: *const c_void,
+}
+
+impl<'a> Default for SpecializationInfo<'a> {
+    fn default() -> Self {
+        unsafe { MaybeUninit::<Self>::zeroed().assume_init() }
+    }
 }
 
 #[repr(C)]
