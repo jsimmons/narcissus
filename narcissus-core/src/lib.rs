@@ -1,3 +1,4 @@
+mod arena;
 mod bitset;
 mod fixed_vec;
 mod image;
@@ -13,6 +14,7 @@ mod virtual_mem;
 mod virtual_vec;
 mod waiter;
 
+pub use arena::{Arena, HybridArena};
 pub use bitset::BitIter;
 pub use fixed_vec::FixedVec;
 pub use image::Image;
@@ -207,6 +209,12 @@ macro_rules! flags_def {
 #[inline(always)]
 pub fn default<T: Default>() -> T {
     T::default()
+}
+
+#[inline(never)]
+#[cold]
+pub fn oom() -> ! {
+    panic!("out of memory")
 }
 
 #[allow(unconditional_panic)]
