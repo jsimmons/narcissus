@@ -537,6 +537,12 @@ pub struct DeviceFunctions {
     destroy_sampler: FnDestroySampler,
     create_descriptor_set_layout: FnCreateDescriptorSetLayout,
     destroy_descriptor_set_layout: FnDestroyDescriptorSetLayout,
+    create_descriptor_pool: FnCreateDescriptorPool,
+    destroy_descriptor_pool: FnDestroyDescriptorPool,
+    reset_descriptor_pool: FnResetDescriptorPool,
+    allocate_descriptor_sets: FnAllocateDescriptorSets,
+    free_descriptor_sets: FnFreeDescriptorSets,
+    update_descriptor_sets: FnUpdateDescriptorSets,
     create_pipeline_layout: FnCreatePipelineLayout,
     destroy_pipeline_layout: FnDestroyPipelineLayout,
     create_graphics_pipelines: FnCreateGraphicsPipelines,
@@ -732,6 +738,30 @@ impl DeviceFunctions {
                 )),
                 destroy_descriptor_set_layout: transmute::<_, _>(load(
                     cstr!("vkDestroyDescriptorSetLayout"),
+                    VERSION_1_0,
+                )),
+                create_descriptor_pool: transmute::<_, _>(load(
+                    cstr!("vkCreateDescriptorPool"),
+                    VERSION_1_0,
+                )),
+                destroy_descriptor_pool: transmute::<_, _>(load(
+                    cstr!("vkDestroyDescriptorPool"),
+                    VERSION_1_0,
+                )),
+                reset_descriptor_pool: transmute::<_, _>(load(
+                    cstr!("vkResetDescriptorPool"),
+                    VERSION_1_0,
+                )),
+                allocate_descriptor_sets: transmute::<_, _>(load(
+                    cstr!("vkAllocateDescriptorSets"),
+                    VERSION_1_0,
+                )),
+                free_descriptor_sets: transmute::<_, _>(load(
+                    cstr!("vkFreeDescriptorSets"),
+                    VERSION_1_0,
+                )),
+                update_descriptor_sets: transmute::<_, _>(load(
+                    cstr!("vkUpdateDescriptorSets"),
                     VERSION_1_0,
                 )),
                 create_pipeline_layout: transmute::<_, _>(load(
@@ -1379,6 +1409,79 @@ impl DeviceFunctions {
         allocator: Option<&AllocationCallbacks>,
     ) {
         (self.destroy_descriptor_set_layout)(device, descriptor_set_layout, allocator)
+    }
+
+    #[inline]
+    pub unsafe fn create_descriptor_pool(
+        &self,
+        device: Device,
+        create_info: &DescriptorPoolCreateInfo,
+        allocator: Option<&AllocationCallbacks>,
+        descriptor_pool: &mut DescriptorPool,
+    ) -> Result {
+        (self.create_descriptor_pool)(device, create_info, allocator, descriptor_pool)
+    }
+
+    #[inline]
+    pub unsafe fn destroy_descriptor_pool(
+        &self,
+        device: Device,
+        descriptor_pool: DescriptorPool,
+        allocator: Option<&AllocationCallbacks>,
+    ) {
+        (self.destroy_descriptor_pool)(device, descriptor_pool, allocator)
+    }
+
+    #[inline]
+    pub unsafe fn reset_descriptor_pool(
+        &self,
+        device: Device,
+        descriptor_pool: DescriptorPool,
+        flags: DescriptorPoolResetFlags,
+    ) -> Result {
+        (self.reset_descriptor_pool)(device, descriptor_pool, flags)
+    }
+
+    #[inline]
+    pub unsafe fn allocate_descriptor_sets(
+        &self,
+        device: Device,
+        allocate_info: &DescriptorSetAllocateInfo,
+        descriptor_sets: *mut DescriptorSet,
+    ) -> Result {
+        (self.allocate_descriptor_sets)(device, allocate_info, descriptor_sets)
+    }
+
+    #[inline]
+    pub unsafe fn free_descriptor_sets(
+        &self,
+        device: Device,
+        descriptor_pool: DescriptorPool,
+        descriptor_set_count: u32,
+        descriptor_sets: *const DescriptorSet,
+    ) -> Result {
+        (self.free_descriptor_sets)(
+            device,
+            descriptor_pool,
+            descriptor_set_count,
+            descriptor_sets,
+        )
+    }
+
+    #[inline]
+    pub unsafe fn update_descriptor_sets(
+        &self,
+        device: Device,
+        descriptor_writes: &[WriteDescriptorSet],
+        descriptor_copies: &[CopyDescriptorSet],
+    ) {
+        (self.update_descriptor_sets)(
+            device,
+            descriptor_writes.len() as u32,
+            descriptor_writes.as_ptr(),
+            descriptor_copies.len() as u32,
+            descriptor_copies.as_ptr(),
+        )
     }
 
     #[inline]

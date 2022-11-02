@@ -1062,7 +1062,7 @@ impl<'a> Default for DescriptorSetLayoutCreateInfo<'a> {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct DescriptorPoolSize {
-    pub r#type: DescriptorType,
+    pub descriptor_type: DescriptorType,
     pub descriptor_count: u32,
 }
 
@@ -1536,7 +1536,7 @@ pub struct DescriptorImageInfo {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct WriteDescriptorSet<'a> {
+pub struct WriteDescriptorSet {
     pub _type: StructureType,
     pub _next: *const c_void,
     /// Destination descriptor set
@@ -1550,14 +1550,14 @@ pub struct WriteDescriptorSet<'a> {
     /// Descriptor type to write (determines which members of the array pointed by pDescriptors are going to be used)
     pub descriptor_type: DescriptorType,
     /// Sampler, image view, and layout for SAMPLER, COMBINED_IMAGE_SAMPLER, {SAMPLED,STORAGE}_IMAGE, and INPUT_ATTACHMENT descriptor types.
-    pub image_info: Option<&'a DescriptorImageInfo>,
+    pub image_info: *const DescriptorImageInfo,
     /// Raw buffer, size, and offset for {UNIFORM,STORAGE}_BUFFER\[_DYNAMIC\] descriptor types.
-    pub buffer_info: Option<&'a DescriptorBufferInfo>,
+    pub buffer_info: *const DescriptorBufferInfo,
     /// Buffer view to write to the descriptor for {UNIFORM,STORAGE}_TEXEL_BUFFER descriptor types.
-    pub texel_buffer_view: Option<&'a BufferView>,
+    pub texel_buffer_view: *const BufferView,
 }
 
-impl<'a> Default for WriteDescriptorSet<'a> {
+impl Default for WriteDescriptorSet {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::WriteDescriptorSet;

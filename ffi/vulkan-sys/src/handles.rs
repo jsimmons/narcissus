@@ -20,7 +20,7 @@ pub struct CommandBuffer(u64);
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
-pub struct DeviceMemory(u64);
+pub struct DeviceMemory(pub u64);
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
