@@ -310,6 +310,7 @@ impl Mat4 {
     }
 
     #[inline(always)]
+    #[allow(dead_code)]
     fn transform_vec4_base(&self, vec: Vec4) -> Vec4 {
         let rows = self.as_rows();
         Vec4::new(
