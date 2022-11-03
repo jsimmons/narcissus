@@ -166,6 +166,25 @@ where
     }
 }
 
+impl<'a, I, T, const PAD: usize> From<&'a mut [T]> for VulkanSlice1<'a, I, T, PAD>
+where
+    I: TryFrom<usize>,
+{
+    fn from(x: &'a mut [T]) -> Self {
+        (x as &[_]).into()
+    }
+}
+
+impl<'a, I, T, const N: usize, const PAD: usize> From<&'a mut [T; N]>
+    for VulkanSlice1<'a, I, T, PAD>
+where
+    I: TryFrom<usize>,
+{
+    fn from(x: &'a mut [T; N]) -> Self {
+        (x as &[T; N]).into()
+    }
+}
+
 #[repr(C)]
 #[repr(packed(4))]
 pub struct VulkanSlice2<'a, I, T0, T1, const PAD: usize> {
