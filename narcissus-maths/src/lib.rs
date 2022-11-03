@@ -172,6 +172,23 @@ pub fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
     max(min(x, hi), lo)
 }
 
+/// Returns the nearest integer to a given `f32`.
+///
+/// Respects IEEE-754 tiesToEven
+#[inline(always)]
+fn round_ties_to_even(x: f32) -> f32 {
+    #[cfg(target_feature = "sse4.1")]
+    unsafe {
+        use std::arch::x86_64::{
+            _mm_load_ss, _mm_round_ss, _MM_FROUND_NO_EXC, _MM_FROUND_TO_NEAREST_INT,
+        };
+        const ROUNDING: i32 = (_MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC) as i32;
+        let x = _mm_load_ss(&x);
+        let x = _mm_round_ss::<ROUNDING>(x, x);
+        std::arch::x86_64::_mm_cvtss_f32(x)
+    }
+}
+
 #[macro_export]
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
