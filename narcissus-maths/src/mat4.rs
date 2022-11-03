@@ -349,7 +349,7 @@ impl Mat4 {
 
         #[cfg(target_feature = "sse4.1")]
         unsafe {
-            self.mul_vec4_sse41(vec)
+            self.transform_vec4_sse41(vec)
         }
     }
 }
