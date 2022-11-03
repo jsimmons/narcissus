@@ -18,9 +18,6 @@ pub struct Sampler(Handle);
 pub struct BindGroupLayout(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BindGroup(Handle);
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pipeline(Handle);
 
 #[derive(Clone, Copy, Debug)]
@@ -157,27 +154,6 @@ pub struct SamplerDesc {
     pub max_lod: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BindingType {
-    Sampler,
-    Texture,
-    UniformBuffer,
-    StorageBuffer,
-    DynamicUniformBuffer,
-    DynamicStorageBuffer,
-}
-
-pub struct BindGroupLayoutEntryDesc {
-    pub slot: u32,
-    pub stages: ShaderStageFlags,
-    pub binding_type: BindingType,
-    pub count: u32,
-}
-
-pub struct BindGroupLayoutDesc<'a> {
-    pub entries: &'a [BindGroupLayoutEntryDesc],
-}
-
 pub struct GraphicsPipelineLayout<'a> {
     pub color_attachment_formats: &'a [TextureFormat],
     pub depth_attachment_format: Option<TextureFormat>,
@@ -232,6 +208,39 @@ pub struct RenderingDesc<'a> {
     pub stencil_attachment: Option<RenderingAttachment>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingType {
+    Sampler,
+    Texture,
+    UniformBuffer,
+    StorageBuffer,
+    DynamicUniformBuffer,
+    DynamicStorageBuffer,
+}
+
+pub struct BindGroupLayoutEntryDesc {
+    pub slot: u32,
+    pub stages: ShaderStageFlags,
+    pub binding_type: BindingType,
+    pub count: u32,
+}
+
+pub struct BindGroupLayoutDesc<'a> {
+    pub entries: &'a [BindGroupLayoutEntryDesc],
+}
+
+pub struct Bind<'a> {
+    pub binding: u32,
+    pub array_element: u32,
+    pub typed: TypedBind<'a>,
+}
+
+pub enum TypedBind<'a> {
+    Sampler(&'a [Sampler]),
+    Texture(&'a [Texture]),
+    Buffer(&'a [Buffer]),
+}
+
 thread_token_def!(ThreadToken, GpuConcurrent, 8);
 
 pub struct FrameToken<'device> {
@@ -240,12 +249,10 @@ pub struct FrameToken<'device> {
     phantom: PhantomData<&'device dyn Device>,
 }
 
-pub struct CommandBufferToken<'frame, 'thread> {
-    frame_token: &'frame FrameToken<'frame>,
-    thread_token: &'thread mut ThreadToken,
+pub struct CommandBufferToken {
     index: usize,
     raw: u64,
-    phantom: PhantomUnsend,
+    phantom_unsend: PhantomUnsend,
 }
 
 pub trait Device {
@@ -267,6 +274,9 @@ pub trait Device {
     );
     fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline);
 
+    unsafe fn map_buffer(&self, buffer: Buffer) -> *mut u8;
+    unsafe fn unmap_buffer(&self, buffer: Buffer);
+
     fn acquire_swapchain(
         &self,
         frame_token: &FrameToken,
@@ -275,25 +285,43 @@ pub trait Device {
     ) -> (u32, u32, Texture);
     fn destroy_window(&self, window: Window);
 
-    fn create_command_buffer<'frame>(
-        &'frame self,
-        frame_token: &'frame FrameToken,
-        thread_token: &'frame mut ThreadToken,
+    fn create_command_buffer(
+        &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
     ) -> CommandBufferToken;
 
-    fn cmd_bind_pipeline(&self, command_buffer_token: &mut CommandBufferToken, pipeline: Pipeline);
+    fn cmd_set_bind_group(
+        &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
+        command_buffer_token: &mut CommandBufferToken,
+        pipeline: Pipeline,
+        layout: BindGroupLayout,
+        bind_group_index: u32,
+        bindings: &[Bind],
+    );
+
+    fn cmd_set_pipeline(&self, command_buffer_token: &mut CommandBufferToken, pipeline: Pipeline);
+
     fn cmd_begin_rendering(
         &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
         command_buffer_token: &mut CommandBufferToken,
         desc: &RenderingDesc,
     );
+
     fn cmd_end_rendering(&self, command_buffer_token: &mut CommandBufferToken);
+
     fn cmd_set_viewports(
         &self,
         command_buffer_token: &mut CommandBufferToken,
         viewports: &[Viewport],
     );
+
     fn cmd_set_scissors(&self, command_buffer_token: &mut CommandBufferToken, scissors: &[Scissor]);
+
     fn cmd_draw(
         &self,
         command_buffer_token: &mut CommandBufferToken,
@@ -303,9 +331,15 @@ pub trait Device {
         first_instance: u32,
     );
 
-    fn submit(&self, command_buffer_token: CommandBufferToken);
+    fn submit(
+        &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
+        command_buffer_token: CommandBufferToken,
+    );
 
     fn begin_frame(&self) -> FrameToken;
+
     fn end_frame<'device>(&'device self, frame_token: FrameToken<'device>);
 }
 

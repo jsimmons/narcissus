@@ -9,18 +9,17 @@ use std::{
 
 use narcissus_app::{App, Window};
 use narcissus_core::{
-    cstr, default, manual_arc, manual_arc::ManualArc, Mutex, PhantomUnsend, Pool,
+    cstr, default, manual_arc, manual_arc::ManualArc, HybridArena, Mutex, PhantomUnsend, Pool,
 };
 
-use vk::DeviceFunctions;
 use vulkan_sys as vk;
 
 use crate::{
-    BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferUsageFlags,
+    Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferUsageFlags,
     ClearValue, CommandBufferToken, ComputePipelineDesc, Device, FrameToken, GpuConcurrent,
     GraphicsPipelineDesc, LoadOp, MemoryLocation, Pipeline, Sampler, SamplerAddressMode,
     SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, Texture, TextureDesc,
-    TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
+    TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken, TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -191,12 +190,23 @@ enum VulkanTextureHolder {
     Swapchain(VulkanTextureSwapchain),
 }
 
+impl VulkanTextureHolder {
+    fn image_view(&self) -> vk::ImageView {
+        match self {
+            VulkanTextureHolder::Unique(x) => x.view,
+            VulkanTextureHolder::Shared(x) => x.view,
+            VulkanTextureHolder::Swapchain(x) => x.view,
+        }
+    }
+}
+
 struct VulkanSampler(vk::Sampler);
 
 struct VulkanBindGroupLayout(vk::DescriptorSetLayout);
 
 struct VulkanPipeline {
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
     pipeline_bind_point: vk::PipelineBindPoint,
 }
 
@@ -241,9 +251,10 @@ struct VulkanMemoryDesc {
 struct VulkanMemory {
     memory: vk::DeviceMemory,
     offset: u64,
-    _size: u64,
+    size: u64,
 }
 
+#[derive(Default)]
 struct VulkanPools {
     textures: Pool<VulkanTextureHolder>,
     buffers: Pool<VulkanBuffer>,
@@ -325,6 +336,7 @@ struct VulkanFrame {
     universal_queue_fence: AtomicU64,
 
     command_buffer_pools: GpuConcurrent<VulkanCommandBufferPool>,
+    descriptor_pool_pools: GpuConcurrent<vk::DescriptorPool>,
 
     present_swapchains: Mutex<HashMap<Window, VulkanPresentInfo>>,
 
@@ -335,9 +347,32 @@ struct VulkanFrame {
     destroyed_image_views: Mutex<VecDeque<vk::ImageView>>,
     destroyed_samplers: Mutex<VecDeque<vk::Sampler>>,
     destroyed_descriptor_set_layouts: Mutex<VecDeque<vk::DescriptorSetLayout>>,
+    destroyed_pipeline_layouts: Mutex<VecDeque<vk::PipelineLayout>>,
     destroyed_pipelines: Mutex<VecDeque<vk::Pipeline>>,
 
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
+    recycled_descriptor_pools: Mutex<VecDeque<vk::DescriptorPool>>,
+}
+
+impl VulkanFrame {
+    fn command_buffer_mut<'token>(
+        &self,
+        thread_token: &'token mut ThreadToken,
+        command_buffer_token: &CommandBufferToken,
+    ) -> &'token mut VulkanCommandBuffer {
+        let command_buffer_pool = self.command_buffer_pools.get_mut(thread_token);
+        &mut command_buffer_pool.command_buffers[command_buffer_token.index]
+    }
+
+    fn recycle_semaphore(&self, semaphore: vk::Semaphore) {
+        self.recycled_semaphores.lock().push_back(semaphore);
+    }
+
+    fn recycle_descriptor_pool(&self, descriptor_pool: vk::DescriptorPool) {
+        self.recycled_descriptor_pools
+            .lock()
+            .push_back(descriptor_pool)
+    }
 }
 
 type SwapchainDestroyQueue = DelayQueue<(
@@ -368,6 +403,7 @@ pub(crate) struct VulkanDevice<'app> {
 
     pools: Mutex<VulkanPools>,
     semaphores: Mutex<VecDeque<vk::Semaphore>>,
+    descriptor_pools: Mutex<VecDeque<vk::DescriptorPool>>,
 
     _global_fn: vk::GlobalFunctions,
     instance_fn: vk::InstanceFunctions,
@@ -593,7 +629,7 @@ impl<'app> VulkanDevice<'app> {
         };
 
         let frames = Box::new(std::array::from_fn(|_| {
-            let cmd_buffer_pools = GpuConcurrent::new(|| {
+            let command_buffer_pools = GpuConcurrent::new(|| {
                 let pool = {
                     let create_info = vk::CommandPoolCreateInfo {
                         flags: vk::CommandPoolCreateFlags::TRANSIENT,
@@ -610,8 +646,12 @@ impl<'app> VulkanDevice<'app> {
                     next_free_index: 0,
                 }
             });
+
+            let descriptor_pool_pools = GpuConcurrent::new(|| vk::DescriptorPool::null());
+
             UnsafeCell::new(VulkanFrame {
-                command_buffer_pools: cmd_buffer_pools,
+                command_buffer_pools,
+                descriptor_pool_pools,
                 universal_queue_fence: AtomicU64::new(universal_queue_fence),
                 present_swapchains: Default::default(),
                 destroyed_allocations: Default::default(),
@@ -621,8 +661,10 @@ impl<'app> VulkanDevice<'app> {
                 destroyed_image_views: Default::default(),
                 destroyed_samplers: Default::default(),
                 destroyed_descriptor_set_layouts: Default::default(),
+                destroyed_pipeline_layouts: Default::default(),
                 destroyed_pipelines: Default::default(),
                 recycled_semaphores: Default::default(),
+                recycled_descriptor_pools: Default::default(),
             })
         }));
 
@@ -645,15 +687,10 @@ impl<'app> VulkanDevice<'app> {
             swapchains: Mutex::new(HashMap::new()),
             destroyed_swapchains: Mutex::new(DelayQueue::new(8)),
 
-            pools: Mutex::new(VulkanPools {
-                textures: Pool::new(),
-                buffers: Pool::new(),
-                samplers: Pool::new(),
-                bind_group_layouts: Pool::new(),
-                pipelines: Pool::new(),
-            }),
+            pools: Default::default(),
 
-            semaphores: Mutex::new(VecDeque::new()),
+            semaphores: Default::default(),
+            descriptor_pools: Default::default(),
 
             _global_fn: global_fn,
             instance_fn,
@@ -671,26 +708,12 @@ impl<'app> VulkanDevice<'app> {
         unsafe { &*self.frames[frame_token.frame_index % NUM_FRAMES].get() }
     }
 
-    fn frame_mut<'token>(
-        &'token self,
-        frame_token: &'token mut FrameToken,
-    ) -> &'token mut VulkanFrame {
+    fn frame_mut<'token>(&self, frame_token: &'token mut FrameToken) -> &'token mut VulkanFrame {
         frame_token.check_device(self);
         frame_token.check_frame_counter(self.frame_counter.load());
         // SAFETY: mutable reference is bound to the frame token exposed by the API. only one frame token can be valid at a time.
         // The returned frame is only valid so long as we have a mut ref on the token.
         unsafe { &mut *self.frames[frame_token.frame_index % NUM_FRAMES].get() }
-    }
-
-    fn command_buffer_mut<'token>(
-        &'token self,
-        command_buffer_token: &'token mut CommandBufferToken,
-    ) -> &'token mut VulkanCommandBuffer {
-        let frame = self.frame(command_buffer_token.frame_token);
-        let command_buffer_pool = frame
-            .command_buffer_pools
-            .get_mut(command_buffer_token.thread_token);
-        &mut command_buffer_pool.command_buffers[command_buffer_token.index]
     }
 
     fn find_memory_type_index(&self, filter: u32, flags: vk::MemoryPropertyFlags) -> u32 {
@@ -730,7 +753,7 @@ impl<'app> VulkanDevice<'app> {
         VulkanMemory {
             memory,
             offset: 0,
-            _size: desc.requirements.size,
+            size: desc.requirements.size,
         }
     }
 
@@ -774,6 +797,54 @@ impl<'app> VulkanDevice<'app> {
         })
     }
 
+    fn request_descriptor_pool(&self) -> vk::DescriptorPool {
+        if let Some(descriptor_pool) = self.descriptor_pools.lock().pop_front() {
+            descriptor_pool
+        } else {
+            let descriptor_count = 500;
+            let pool_sizes = &[
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::Sampler,
+                    descriptor_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::UniformBuffer,
+                    descriptor_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::UniformBufferDynamic,
+                    descriptor_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::StorageBuffer,
+                    descriptor_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::StorageBufferDynamic,
+                    descriptor_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::SampledImage,
+                    descriptor_count: 500,
+                },
+            ];
+
+            let mut descriptor_pool = vk::DescriptorPool::null();
+            let create_info = vk::DescriptorPoolCreateInfo {
+                max_sets: 500,
+                pool_sizes: pool_sizes.into(),
+                ..default()
+            };
+            vk_check!(self.device_fn.create_descriptor_pool(
+                self.device,
+                &create_info,
+                None,
+                &mut descriptor_pool
+            ));
+            descriptor_pool
+        }
+    }
+
     fn request_semaphore(&self) -> vk::Semaphore {
         if let Some(semaphore) = self.semaphores.lock().pop_front() {
             semaphore
@@ -790,17 +861,20 @@ impl<'app> VulkanDevice<'app> {
         }
     }
 
-    fn recycle_semaphore(&self, frame: &VulkanFrame, semaphore: vk::Semaphore) {
-        frame.recycled_semaphores.lock().push_back(semaphore)
-    }
-
     fn request_transient_semaphore(&self, frame: &VulkanFrame) -> vk::Semaphore {
         let semaphore = self.request_semaphore();
-        self.recycle_semaphore(frame, semaphore);
+        frame.recycle_semaphore(semaphore);
         semaphore
     }
 
-    fn destroy_deferred(device_fn: &DeviceFunctions, device: vk::Device, frame: &mut VulkanFrame) {
+    fn destroy_deferred(
+        device_fn: &vk::DeviceFunctions,
+        device: vk::Device,
+        frame: &mut VulkanFrame,
+    ) {
+        for pipeline_layout in frame.destroyed_pipeline_layouts.get_mut().drain(..) {
+            unsafe { device_fn.destroy_pipeline_layout(device, pipeline_layout, None) }
+        }
         for pipeline in frame.destroyed_pipelines.get_mut().drain(..) {
             unsafe { device_fn.destroy_pipeline(device, pipeline, None) }
         }
@@ -1211,9 +1285,20 @@ impl<'driver> Device for VulkanDevice<'driver> {
     }
 
     fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline {
+        let arena = HybridArena::<1024>::new();
+        let set_layouts_iter = desc.bind_group_layouts.iter().map(|bind_group_layout| {
+            self.pools
+                .lock()
+                .bind_group_layouts
+                .get(bind_group_layout.0)
+                .unwrap()
+                .0
+        });
+        let set_layouts = arena.alloc_slice_fill_iter(set_layouts_iter);
+
         let layout = {
             let create_info = vk::PipelineLayoutCreateInfo {
-                //set_layouts: set_layouts.as_slice().into(),
+                set_layouts: set_layouts.into(),
                 ..default()
             };
             let mut pipeline_layout = vk::PipelineLayout::null();
@@ -1347,13 +1432,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
             self.device_fn
                 .destroy_shader_module(self.device, fragment_module, None)
         };
-        unsafe {
-            self.device_fn
-                .destroy_pipeline_layout(self.device, layout, None)
-        };
 
         let handle = self.pools.lock().pipelines.insert(VulkanPipeline {
             pipeline: pipelines[0],
+            pipeline_layout: layout,
             pipeline_bind_point: vk::PipelineBindPoint::Graphics,
         });
 
@@ -1434,10 +1516,15 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline) {
         if let Some(pipeline) = self.pools.lock().pipelines.remove(pipeline.0) {
-            self.frame(frame_token)
+            let frame = self.frame(frame_token);
+            frame
+                .destroyed_pipeline_layouts
+                .lock()
+                .push_back(pipeline.pipeline_layout);
+            frame
                 .destroyed_pipelines
                 .lock()
-                .push_back(pipeline.pipeline)
+                .push_back(pipeline.pipeline);
         }
     }
 
@@ -1782,10 +1869,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn create_command_buffer<'frame>(
-        &'frame self,
-        frame_token: &'frame FrameToken,
-        thread_token: &'frame mut ThreadToken,
+    fn create_command_buffer(
+        &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
     ) -> CommandBufferToken {
         let command_buffer_pool = self
             .frame(frame_token)
@@ -1830,18 +1917,151 @@ impl<'driver> Device for VulkanDevice<'driver> {
         ));
 
         CommandBufferToken {
-            frame_token,
-            thread_token,
             index,
             raw: command_buffer.as_raw(),
-            phantom: PhantomUnsend {},
+            phantom_unsend: PhantomUnsend {},
         }
     }
 
-    fn cmd_bind_pipeline(&self, command_buffer_token: &mut CommandBufferToken, pipeline: Pipeline) {
+    fn cmd_set_bind_group(
+        &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
+        command_buffer_token: &mut CommandBufferToken,
+        pipeline: Pipeline,
+        layout: BindGroupLayout,
+        bind_group_index: u32,
+        bindings: &[Bind],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let frame = self.frame(frame_token);
+        let pools = self.pools.lock();
+
+        let descriptor_set_layout = pools.bind_group_layouts.get(layout.0).unwrap().0;
+
+        let mut descriptor_pool = *frame.descriptor_pool_pools.get(thread_token);
+        let mut allocated_pool = false;
+        let descriptor_set = loop {
+            if descriptor_pool.is_null() {
+                // Need to fetch a new descriptor pool
+                descriptor_pool = self.request_descriptor_pool();
+                frame.recycle_descriptor_pool(descriptor_pool);
+                *frame.descriptor_pool_pools.get_mut(thread_token) = descriptor_pool;
+                allocated_pool = true;
+            }
+            let allocate_info = vk::DescriptorSetAllocateInfo {
+                descriptor_pool,
+                set_layouts: std::slice::from_ref(&descriptor_set_layout).into(),
+                ..default()
+            };
+            let mut descriptor_set = vk::DescriptorSet::null();
+            match unsafe {
+                self.device_fn.allocate_descriptor_sets(
+                    self.device,
+                    &allocate_info,
+                    &mut descriptor_set,
+                )
+            } {
+                vk::Result::Success => break descriptor_set,
+                _ => {
+                    // If we fail to allocate after just creating a new descriptor set, then we'll
+                    // never be able to allocate one. :'(
+                    if allocated_pool {
+                        panic!("failed to allocate descriptor set")
+                    }
+                }
+            }
+        };
+
+        let write_descriptors_iter = bindings.iter().map(|bind| match bind.typed {
+            TypedBind::Sampler(samplers) => {
+                let sampler_infos_iter = samplers.iter().map(|sampler| {
+                    let sampler = pools.samplers.get(sampler.0).unwrap();
+                    vk::DescriptorImageInfo {
+                        image_layout: vk::ImageLayout::Undefined,
+                        image_view: vk::ImageView::null(),
+                        sampler: sampler.0,
+                    }
+                });
+                let image_infos = arena.alloc_slice_fill_iter(sampler_infos_iter);
+                vk::WriteDescriptorSet {
+                    dst_set: descriptor_set,
+                    dst_binding: bind.binding,
+                    dst_array_element: bind.array_element,
+                    descriptor_count: image_infos.len() as u32,
+                    descriptor_type: vk::DescriptorType::Sampler,
+                    image_info: image_infos.as_ptr(),
+                    ..default()
+                }
+            }
+            TypedBind::Texture(textures) => {
+                let image_infos_iter = textures.iter().map(|texture| {
+                    let texture = pools.textures.get(texture.0).unwrap();
+                    vk::DescriptorImageInfo {
+                        image_layout: vk::ImageLayout::ColorAttachmentOptimal,
+                        image_view: texture.image_view(),
+                        sampler: vk::Sampler::null(),
+                    }
+                });
+                let image_infos = arena.alloc_slice_fill_iter(image_infos_iter);
+                vk::WriteDescriptorSet {
+                    dst_set: descriptor_set,
+                    dst_binding: bind.binding,
+                    dst_array_element: bind.array_element,
+                    descriptor_count: image_infos.len() as u32,
+                    descriptor_type: vk::DescriptorType::SampledImage,
+                    image_info: image_infos.as_ptr(),
+                    ..default()
+                }
+            }
+            TypedBind::Buffer(buffers) => {
+                let buffer_infos_iter = buffers.iter().map(|buffer| {
+                    let buffer = pools.buffers.get(buffer.0).unwrap();
+                    vk::DescriptorBufferInfo {
+                        buffer: buffer.buffer,
+                        offset: 0,
+                        range: !0,
+                    }
+                });
+                let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
+                vk::WriteDescriptorSet {
+                    dst_set: descriptor_set,
+                    dst_binding: bind.binding,
+                    dst_array_element: bind.array_element,
+                    descriptor_count: buffer_infos.len() as u32,
+                    descriptor_type: vk::DescriptorType::UniformBuffer,
+                    buffer_info: buffer_infos.as_ptr(),
+                    ..default()
+                }
+            }
+        });
+        let write_descriptors = arena.alloc_slice_fill_iter(write_descriptors_iter);
+
+        unsafe {
+            self.device_fn
+                .update_descriptor_sets(self.device, write_descriptors, &[])
+        };
+
+        let pipeline = pools.pipelines.get(pipeline.0).unwrap();
+        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        unsafe {
+            self.device_fn.cmd_bind_descriptor_sets(
+                command_buffer,
+                pipeline.pipeline_bind_point,
+                pipeline.pipeline_layout,
+                bind_group_index,
+                &[descriptor_set],
+                &[],
+            )
+        }
+    }
+
+    fn cmd_set_pipeline(&self, command_buffer_token: &mut CommandBufferToken, pipeline: Pipeline) {
         let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
         let VulkanPipeline {
             pipeline,
+            pipeline_layout: _,
             pipeline_bind_point,
         } = *self.pools.lock().pipelines.get(pipeline.0).unwrap();
         unsafe {
@@ -1852,10 +2072,13 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_begin_rendering(
         &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
         command_buffer_token: &mut CommandBufferToken,
         desc: &crate::RenderingDesc,
     ) {
-        let command_buffer = self.command_buffer_mut(command_buffer_token);
+        let frame = self.frame(frame_token);
+        let command_buffer = frame.command_buffer_mut(thread_token, command_buffer_token);
         let pools = self.pools.lock();
 
         let color_attachments = desc
@@ -2019,13 +2242,18 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn submit(&self, mut command_buffer_token: CommandBufferToken) {
+    fn submit(
+        &self,
+        frame_token: &FrameToken,
+        thread_token: &mut ThreadToken,
+        mut command_buffer_token: CommandBufferToken,
+    ) {
         let fence = self.universal_queue_fence.fetch_add(1, Ordering::SeqCst) + 1;
 
-        let frame = self.frame(command_buffer_token.frame_token);
+        let frame = self.frame(frame_token);
         frame.universal_queue_fence.store(fence, Ordering::Relaxed);
 
-        let command_buffer = self.command_buffer_mut(&mut command_buffer_token);
+        let command_buffer = frame.command_buffer_mut(thread_token, &mut command_buffer_token);
 
         for &(image, _) in command_buffer.swapchains_touched.values() {
             // transition swapchain image from attachment optimal to present src
@@ -2132,6 +2360,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
             vk_check!(device_fn.wait_semaphores(device, &wait_info, !0));
         }
 
+        for pool in frame.descriptor_pool_pools.slots_mut() {
+            *pool = vk::DescriptorPool::null()
+        }
+
         for pool in frame.command_buffer_pools.slots_mut() {
             if pool.next_free_index == 0 {
                 continue;
@@ -2149,6 +2381,18 @@ impl<'driver> Device for VulkanDevice<'driver> {
         self.semaphores
             .lock()
             .extend(frame.recycled_semaphores.get_mut().drain(..));
+
+        for descriptor_pool in frame.recycled_descriptor_pools.get_mut() {
+            vk_check!(device_fn.reset_descriptor_pool(
+                device,
+                *descriptor_pool,
+                vk::DescriptorPoolResetFlags::default()
+            ))
+        }
+
+        self.descriptor_pools
+            .lock()
+            .extend(frame.recycled_descriptor_pools.get_mut().drain(..));
 
         Self::destroy_deferred(device_fn, device, frame);
 
@@ -2218,6 +2462,28 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
         self.frame_counter.release(frame_token);
     }
+
+    unsafe fn map_buffer(&self, buffer: Buffer) -> *mut u8 {
+        let mut ptr = std::ptr::null_mut();
+        if let Some(buffer) = self.pools.lock().buffers.get(buffer.0) {
+            vk_check!(self.device_fn.map_memory(
+                self.device,
+                buffer.memory.memory,
+                buffer.memory.offset,
+                buffer.memory.size,
+                vk::MemoryMapFlags::default(),
+                &mut ptr
+            ))
+        }
+        std::mem::transmute::<*mut c_void, *mut u8>(ptr)
+    }
+
+    unsafe fn unmap_buffer(&self, buffer: Buffer) {
+        if let Some(buffer) = self.pools.lock().buffers.get(buffer.0) {
+            self.device_fn
+                .unmap_memory(self.device, buffer.memory.memory)
+        }
+    }
 }
 
 impl<'app> Drop for VulkanDevice<'app> {
@@ -2233,6 +2499,10 @@ impl<'app> Drop for VulkanDevice<'app> {
 
             for semaphore in frame.recycled_semaphores.get_mut() {
                 unsafe { device_fn.destroy_semaphore(device, *semaphore, None) }
+            }
+
+            for descriptor_pool in frame.recycled_descriptor_pools.get_mut() {
+                unsafe { device_fn.destroy_descriptor_pool(device, *descriptor_pool, None) }
             }
 
             Self::destroy_deferred(device_fn, device, frame);
@@ -2257,29 +2527,62 @@ impl<'app> Drop for VulkanDevice<'app> {
             }
         }
 
-        let mut image_views = Vec::new();
-        let mut images = Vec::new();
-        for texture in self.pools.get_mut().textures.values() {
-            match texture {
-                VulkanTextureHolder::Unique(texture) => {
-                    image_views.push(texture.view);
-                    images.push(texture.texture.image)
+        let VulkanPools {
+            textures,
+            buffers,
+            samplers,
+            bind_group_layouts,
+            pipelines,
+        } = self.pools.get_mut();
+
+        for buffer in buffers.values() {
+            unsafe { device_fn.destroy_buffer(device, buffer.buffer, None) }
+            unsafe { device_fn.free_memory(device, buffer.memory.memory, None) }
+        }
+
+        {
+            let mut image_views = Vec::new();
+            let mut images = Vec::new();
+            for texture in textures.values() {
+                match texture {
+                    VulkanTextureHolder::Unique(texture) => {
+                        image_views.push(texture.view);
+                        images.push(texture.texture.image)
+                    }
+                    VulkanTextureHolder::Shared(texture) => {
+                        image_views.push(texture.view);
+                    }
+                    VulkanTextureHolder::Swapchain(texture) => {
+                        image_views.push(texture.view);
+                    }
                 }
-                VulkanTextureHolder::Shared(texture) => {
-                    image_views.push(texture.view);
-                }
-                VulkanTextureHolder::Swapchain(texture) => {
-                    image_views.push(texture.view);
-                }
+            }
+
+            for image_view in image_views {
+                unsafe { device_fn.destroy_image_view(device, image_view, None) }
+            }
+
+            for image in images {
+                unsafe { device_fn.destroy_image(device, image, None) }
             }
         }
 
-        for image_view in image_views {
-            unsafe { device_fn.destroy_image_view(device, image_view, None) }
+        for sampler in samplers.values() {
+            unsafe { device_fn.destroy_sampler(device, sampler.0, None) }
         }
 
-        for image in images {
-            unsafe { device_fn.destroy_image(device, image, None) }
+        for pipeline in pipelines.values() {
+            unsafe {
+                self.device_fn
+                    .destroy_pipeline_layout(self.device, pipeline.pipeline_layout, None)
+            };
+            unsafe { device_fn.destroy_pipeline(device, pipeline.pipeline, None) }
+        }
+
+        for descriptor_set_layout in bind_group_layouts.values() {
+            unsafe {
+                device_fn.destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
+            }
         }
 
         for semaphore in self
@@ -2289,6 +2592,10 @@ impl<'app> Drop for VulkanDevice<'app> {
             .chain(std::iter::once(&self.universal_queue_semaphore))
         {
             unsafe { device_fn.destroy_semaphore(device, *semaphore, None) }
+        }
+
+        for descriptor_pool in self.descriptor_pools.get_mut() {
+            unsafe { device_fn.destroy_descriptor_pool(device, *descriptor_pool, None) }
         }
 
         {
@@ -2316,16 +2623,6 @@ impl<'app> Drop for VulkanDevice<'app> {
             unsafe {
                 self.surface_fn
                     .destroy_surface(instance, swapchain.surface, None)
-            }
-        }
-
-        for pipeline in self.pools.get_mut().pipelines.values() {
-            unsafe { device_fn.destroy_pipeline(device, pipeline.pipeline, None) }
-        }
-
-        for descriptor_set_layout in self.pools.get_mut().bind_group_layouts.values() {
-            unsafe {
-                device_fn.destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
             }
         }
 
