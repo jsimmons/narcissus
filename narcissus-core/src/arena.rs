@@ -389,6 +389,54 @@ impl Arena {
         // Safety: We've just copied this string from a valid `&str`, so it must be valid too.
         unsafe { std::str::from_utf8_unchecked_mut(str) }
     }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_with<T, F>(&self, len: usize, mut f: F) -> &mut [T]
+    where
+        F: FnMut(usize) -> T,
+    {
+        let layout = Layout::array::<T>(len).unwrap_or_else(|_| oom());
+        let dst = self.alloc_layout(layout).cast::<T>();
+
+        // Safety: We allocated an array of len elements of T above.
+        unsafe {
+            for i in 0..len {
+                std::ptr::write(dst.as_ptr().add(i), f(i))
+            }
+
+            std::slice::from_raw_parts_mut(dst.as_ptr(), len)
+        }
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_copy<T>(&self, len: usize, value: T) -> &mut [T]
+    where
+        T: Copy,
+    {
+        self.alloc_slice_fill_with(len, |_| value)
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_clone<T>(&self, len: usize, value: T) -> &mut [T]
+    where
+        T: Clone,
+    {
+        self.alloc_slice_fill_with(len, |_| value.clone())
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_iter<T, I>(&self, iter: I) -> &mut [T]
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let mut iter = iter.into_iter();
+        self.alloc_slice_fill_with(iter.len(), |_| iter.next().unwrap())
+    }
 }
 
 impl Default for Arena {
@@ -620,6 +668,54 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         let str = self.alloc_slice_copy(src.as_bytes());
         // Safety: We've just copied this string from a valid `&str`, so it must be valid too.
         unsafe { std::str::from_utf8_unchecked_mut(str) }
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_with<T, F>(&self, len: usize, mut f: F) -> &mut [T]
+    where
+        F: FnMut(usize) -> T,
+    {
+        let layout = Layout::array::<T>(len).unwrap_or_else(|_| oom());
+        let dst = self.alloc_layout(layout).cast::<T>();
+
+        // Safety: We allocated an array of len elements of T above.
+        unsafe {
+            for i in 0..len {
+                std::ptr::write(dst.as_ptr().add(i), f(i))
+            }
+
+            std::slice::from_raw_parts_mut(dst.as_ptr(), len)
+        }
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_copy<T>(&self, len: usize, value: T) -> &mut [T]
+    where
+        T: Copy,
+    {
+        self.alloc_slice_fill_with(len, |_| value)
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_clone<T>(&self, len: usize, value: T) -> &mut [T]
+    where
+        T: Clone,
+    {
+        self.alloc_slice_fill_with(len, |_| value.clone())
+    }
+
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_slice_fill_iter<T, I>(&self, iter: I) -> &mut [T]
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let mut iter = iter.into_iter();
+        self.alloc_slice_fill_with(iter.len(), |_| iter.next().unwrap())
     }
 }
 
