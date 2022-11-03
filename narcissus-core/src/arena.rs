@@ -266,6 +266,7 @@ impl Arena {
     }
 
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     pub fn alloc<T>(&self, value: T) -> &mut T {
         // Safety: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
@@ -278,6 +279,7 @@ impl Arena {
     }
 
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     pub fn alloc_with<T, F>(&self, f: F) -> &mut T
     where
         F: FnOnce() -> T,
@@ -293,6 +295,7 @@ impl Arena {
     }
 
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     pub fn try_alloc_with<T, F>(&self, f: F) -> Result<&mut T, AllocError>
     where
         F: FnOnce() -> T,
@@ -492,6 +495,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     }
 
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     pub fn alloc<T>(&self, value: T) -> &mut T {
         // Safety: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
@@ -504,6 +508,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     }
 
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     pub fn alloc_with<T, F>(&self, f: F) -> &mut T
     where
         F: FnOnce() -> T,
@@ -519,6 +524,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     }
 
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     pub fn try_alloc_with<T, F>(&self, f: F) -> Result<&mut T, AllocError>
     where
         F: FnOnce() -> T,
