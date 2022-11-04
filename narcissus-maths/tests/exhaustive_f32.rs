@@ -432,7 +432,7 @@ pub fn exhaustive_sin_pi() {
 pub fn exhaustive_cos_pi() {
     let errors = check_exhaustive_f32(ref_cos_pi_f32, |a| sin_cos_pi_f32(a).1, false);
     println!("COS: {:?}", errors);
-    assert_eq!(errors.num_errors, 62_426_004);
+    assert_eq!(errors.num_errors, 45_896_848);
     assert_eq!(errors.max_error_ulp, 1);
 }
 
