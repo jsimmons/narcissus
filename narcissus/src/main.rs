@@ -154,7 +154,7 @@ pub fn main() {
     impl<'a> UniformBufferMap<'a> {
         pub fn new(device: &'a dyn Device, len: usize) -> Self {
             let buffer = device.create_buffer(&BufferDesc {
-                memory_location: MemoryLocation::PreferDevice,
+                memory_location: MemoryLocation::PreferHost,
                 usage: BufferUsageFlags::UNIFORM,
                 size: len,
             });
