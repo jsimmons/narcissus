@@ -428,7 +428,6 @@ pub const SYS_epoll_pwait2: c_long = 441;
 pub const SYS_mount_setattr: c_long = 442;
 
 extern "C" {
-    pub fn gettid() -> pid_t;
     pub fn syscall(num: c_long, ...) -> c_long;
 
     pub fn mmap(
@@ -440,6 +439,5 @@ extern "C" {
         offset: off_t,
     ) -> *mut c_void;
     pub fn munmap(addr: *mut c_void, len: size_t) -> c_int;
-
     pub fn mprotect(addr: *mut c_void, len: size_t, prot: c_int) -> c_int;
 }

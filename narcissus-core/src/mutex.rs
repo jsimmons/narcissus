@@ -4,19 +4,22 @@ use std::{
     sync::atomic::{AtomicI32, Ordering},
 };
 
-#[cfg(debug_assertions)]
-use crate::get_thread_id;
-
 use crate::{waiter, PhantomUnsend};
+
+#[cfg(debug_assertions)]
+#[inline(always)]
+fn thread_id() -> std::thread::ThreadId {
+    std::thread::current().id()
+}
 
 const UNLOCKED: i32 = 0;
 const LOCKED: i32 = 1;
 const LOCKED_WAIT: i32 = 2;
 
 pub struct Mutex<T: ?Sized> {
-    control: AtomicI32,
     #[cfg(debug_assertions)]
-    thread_id: AtomicI32,
+    thread_id: std::cell::Cell<Option<std::thread::ThreadId>>,
+    control: AtomicI32,
     data: UnsafeCell<T>,
 }
 
@@ -64,7 +67,7 @@ impl<T> Mutex<T> {
         Self {
             control: AtomicI32::new(UNLOCKED),
             #[cfg(debug_assertions)]
-            thread_id: AtomicI32::new(0),
+            thread_id: std::cell::Cell::new(None),
             data: UnsafeCell::new(value),
         }
     }
@@ -108,7 +111,7 @@ impl<T: ?Sized> Mutex<T> {
 
     unsafe fn raw_lock(&self) {
         #[cfg(debug_assertions)]
-        if self.thread_id.load(Ordering::Relaxed) == get_thread_id() {
+        if self.thread_id.get() == Some(std::thread::current().id()) {
             panic!("recursion not supported")
         }
 
@@ -122,7 +125,7 @@ impl<T: ?Sized> Mutex<T> {
             ) {
                 Ok(_) => {
                     #[cfg(debug_assertions)]
-                    self.thread_id.store(get_thread_id(), Ordering::Relaxed);
+                    self.thread_id.set(Some(thread_id()));
                     return;
                 }
                 Err(x) => c = x,
@@ -156,7 +159,7 @@ impl<T: ?Sized> Mutex<T> {
                 ) {
                     Ok(_) => {
                         #[cfg(debug_assertions)]
-                        self.thread_id.store(get_thread_id(), Ordering::Relaxed);
+                        self.thread_id.set(Some(thread_id()));
                         return;
                     }
                     Err(x) => c = x,
@@ -167,7 +170,7 @@ impl<T: ?Sized> Mutex<T> {
 
     unsafe fn raw_try_lock(&self) -> bool {
         #[cfg(debug_assertions)]
-        if self.thread_id.load(Ordering::Relaxed) == get_thread_id() {
+        if self.thread_id.get() == Some(thread_id()) {
             panic!("recursion not supported")
         }
 
@@ -178,7 +181,7 @@ impl<T: ?Sized> Mutex<T> {
                 .is_ok()
         {
             #[cfg(debug_assertions)]
-            self.thread_id.store(get_thread_id(), Ordering::Relaxed);
+            self.thread_id.set(Some(thread_id()));
             true
         } else {
             false
@@ -187,7 +190,7 @@ impl<T: ?Sized> Mutex<T> {
 
     unsafe fn raw_unlock(&self) {
         #[cfg(debug_assertions)]
-        self.thread_id.store(0, Ordering::Relaxed);
+        self.thread_id.set(None);
 
         if self.control.fetch_sub(1, Ordering::Release) != LOCKED {
             self.control.store(UNLOCKED, Ordering::Release);

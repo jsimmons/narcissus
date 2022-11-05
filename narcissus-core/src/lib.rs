@@ -250,10 +250,6 @@ pub fn string_from_c_str(c_str: &[i8]) -> String {
     String::from_utf8_lossy(s).into_owned()
 }
 
-pub fn get_thread_id() -> i32 {
-    unsafe { libc::gettid() }
-}
-
 pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
     let layout = std::alloc::Layout::new::<MaybeUninit<T>>();
     unsafe {
