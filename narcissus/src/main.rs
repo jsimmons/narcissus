@@ -216,13 +216,12 @@ pub fn main() {
         let (width, height, swapchain_image) =
             device.acquire_swapchain(&frame_token, window, TextureFormat::BGRA8_SRGB);
 
-        let mut command_buffer_token =
-            device.create_command_buffer(&frame_token, &mut thread_token);
+        let command_buffer_token = device.create_command_buffer(&frame_token, &mut thread_token);
 
         device.cmd_begin_rendering(
             &frame_token,
             &mut thread_token,
-            &mut command_buffer_token,
+            &command_buffer_token,
             &RenderingDesc {
                 x: 0,
                 y: 0,
@@ -240,11 +239,11 @@ pub fn main() {
             },
         );
 
-        device.cmd_set_pipeline(&mut command_buffer_token, pipeline);
+        device.cmd_set_pipeline(&command_buffer_token, pipeline);
         device.cmd_set_bind_group(
             &frame_token,
             &mut thread_token,
-            &mut command_buffer_token,
+            &command_buffer_token,
             pipeline,
             bind_group_layout,
             0,
@@ -256,7 +255,7 @@ pub fn main() {
         );
 
         device.cmd_set_scissors(
-            &mut command_buffer_token,
+            &command_buffer_token,
             &[Scissor {
                 x: 0,
                 y: 0,
@@ -265,7 +264,7 @@ pub fn main() {
             }],
         );
         device.cmd_set_viewports(
-            &mut command_buffer_token,
+            &command_buffer_token,
             &[Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -275,8 +274,8 @@ pub fn main() {
                 max_depth: 1.0,
             }],
         );
-        device.cmd_draw(&mut command_buffer_token, 3, 1, 0, 0);
-        device.cmd_end_rendering(&mut command_buffer_token);
+        device.cmd_draw(&command_buffer_token, 3, 1, 0, 0);
+        device.cmd_end_rendering(&command_buffer_token);
 
         device.submit(&frame_token, &mut thread_token, command_buffer_token);
 

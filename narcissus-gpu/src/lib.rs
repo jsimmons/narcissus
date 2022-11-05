@@ -295,36 +295,31 @@ pub trait Device {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         pipeline: Pipeline,
         layout: BindGroupLayout,
         bind_group_index: u32,
         bindings: &[Bind],
     );
 
-    fn cmd_set_pipeline(&self, command_buffer_token: &mut CommandBufferToken, pipeline: Pipeline);
+    fn cmd_set_pipeline(&self, command_buffer_token: &CommandBufferToken, pipeline: Pipeline);
 
     fn cmd_begin_rendering(
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         desc: &RenderingDesc,
     );
 
-    fn cmd_end_rendering(&self, command_buffer_token: &mut CommandBufferToken);
+    fn cmd_end_rendering(&self, command_buffer_token: &CommandBufferToken);
 
-    fn cmd_set_viewports(
-        &self,
-        command_buffer_token: &mut CommandBufferToken,
-        viewports: &[Viewport],
-    );
-
-    fn cmd_set_scissors(&self, command_buffer_token: &mut CommandBufferToken, scissors: &[Scissor]);
+    fn cmd_set_viewports(&self, command_buffer_token: &CommandBufferToken, viewports: &[Viewport]);
+    fn cmd_set_scissors(&self, command_buffer_token: &CommandBufferToken, scissors: &[Scissor]);
 
     fn cmd_draw(
         &self,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,

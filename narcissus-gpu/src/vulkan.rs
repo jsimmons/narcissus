@@ -355,11 +355,11 @@ struct VulkanFrame {
 }
 
 impl VulkanFrame {
-    fn command_buffer_mut<'token>(
+    fn command_buffer_mut<'a>(
         &self,
-        thread_token: &'token mut ThreadToken,
-        command_buffer_token: &CommandBufferToken,
-    ) -> &'token mut VulkanCommandBuffer {
+        thread_token: &'a mut ThreadToken,
+        command_buffer_token: &'a CommandBufferToken,
+    ) -> &'a mut VulkanCommandBuffer {
         let command_buffer_pool = self.command_buffer_pools.get_mut(thread_token);
         &mut command_buffer_pool.command_buffers[command_buffer_token.index]
     }
@@ -1927,7 +1927,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         pipeline: Pipeline,
         layout: BindGroupLayout,
         bind_group_index: u32,
@@ -2057,7 +2057,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn cmd_set_pipeline(&self, command_buffer_token: &mut CommandBufferToken, pipeline: Pipeline) {
+    fn cmd_set_pipeline(&self, command_buffer_token: &CommandBufferToken, pipeline: Pipeline) {
         let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
         let VulkanPipeline {
             pipeline,
@@ -2074,7 +2074,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         desc: &crate::RenderingDesc,
     ) {
         let frame = self.frame(frame_token);
@@ -2189,14 +2189,14 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn cmd_end_rendering(&self, command_buffer_token: &mut CommandBufferToken) {
+    fn cmd_end_rendering(&self, command_buffer_token: &CommandBufferToken) {
         let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
         unsafe { self.device_fn.cmd_end_rendering(command_buffer) }
     }
 
     fn cmd_set_viewports(
         &self,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         viewports: &[crate::Viewport],
     ) {
         let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
@@ -2210,7 +2210,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_set_scissors(
         &self,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         scissors: &[crate::Scissor],
     ) {
         let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
@@ -2224,7 +2224,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_draw(
         &self,
-        command_buffer_token: &mut CommandBufferToken,
+        command_buffer_token: &CommandBufferToken,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
@@ -2246,14 +2246,14 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        mut command_buffer_token: CommandBufferToken,
+        command_buffer_token: CommandBufferToken,
     ) {
         let fence = self.universal_queue_fence.fetch_add(1, Ordering::SeqCst) + 1;
 
         let frame = self.frame(frame_token);
         frame.universal_queue_fence.store(fence, Ordering::Relaxed);
 
-        let command_buffer = frame.command_buffer_mut(thread_token, &mut command_buffer_token);
+        let command_buffer = frame.command_buffer_mut(thread_token, &command_buffer_token);
 
         for &(image, _) in command_buffer.swapchains_touched.values() {
             // transition swapchain image from attachment optimal to present src
