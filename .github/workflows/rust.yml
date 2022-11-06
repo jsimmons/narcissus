@@ -19,6 +19,28 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libsdl2-dev clang llvm
+    - name: install_rustup
+      run: |
+        : install rustup if needed
+        if ! command -v rustup &> /dev/null ; then
+          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -fsSL "https://sh.rustup.rs" | sh -s -- --default-toolchain none -y
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> $GITHUB_PATH
+        fi
+      shell: bash
+      if: runner.os != 'Windows'
+      
+    - name: update_rust
+      run: |
+        rustup update
+
+    - name: setup_rust
+      run: |
+        : disable incremental compilation
+        echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV
+        : enable colors in Cargo output
+        echo CARGO_TERM_COLOR=always >> $GITHUB_ENV
+      shell: bash
+
     - name: install_mold
       run: |
         version=$(wget -q -O- https://api.github.com/repos/rui314/mold/releases/latest | jq -r .tag_name | sed 's/^v//'); true
