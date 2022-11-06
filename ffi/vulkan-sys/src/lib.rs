@@ -133,9 +133,8 @@ where
     I: TryFrom<usize>,
 {
     fn from(x: &'a [T]) -> Self {
-        let len = match I::try_from(x.len()) {
-            Ok(x) => x,
-            Err(_) => panic!("invalid slice length"),
+        let Ok(len) = I::try_from(x.len()) else {
+            panic!("invalid slice length")
         };
         let ptr = x.as_ptr();
         Self {
@@ -152,9 +151,8 @@ where
     I: TryFrom<usize>,
 {
     fn from(x: &'a [T; N]) -> Self {
-        let len = match I::try_from(N) {
-            Ok(x) => x,
-            Err(_) => panic!("invalid slice length"),
+        let Ok(len) = I::try_from(N) else {
+            panic!("invalid slice length")
         };
         let ptr = x.as_ptr();
         Self {
@@ -170,6 +168,7 @@ impl<'a, I, T, const PAD: usize> From<&'a mut [T]> for VulkanSlice1<'a, I, T, PA
 where
     I: TryFrom<usize>,
 {
+    #[inline(always)]
     fn from(x: &'a mut [T]) -> Self {
         (x as &[_]).into()
     }
@@ -180,6 +179,7 @@ impl<'a, I, T, const N: usize, const PAD: usize> From<&'a mut [T; N]>
 where
     I: TryFrom<usize>,
 {
+    #[inline(always)]
     fn from(x: &'a mut [T; N]) -> Self {
         (x as &[T; N]).into()
     }
@@ -231,10 +231,9 @@ where
     I: TryFrom<usize>,
 {
     fn from(x: (&'a [T0], &'a [T1])) -> Self {
-        debug_assert!(x.0.len() == x.1.len());
-        let len = match I::try_from(x.0.len()) {
-            Ok(x) => x,
-            Err(_) => panic!("invalid slice length"),
+        assert_eq!(x.0.len(), x.1.len());
+        let Ok(len) = I::try_from(x.0.len()) else {
+            panic!("invalid slice length")
         };
         let ptr0 = x.0.as_ptr();
         let ptr1 = x.1.as_ptr();
@@ -255,9 +254,8 @@ where
     I: TryFrom<usize>,
 {
     fn from(x: (&'a [T0; N], &'a [T1; N])) -> Self {
-        let len = match I::try_from(N) {
-            Ok(x) => x,
-            Err(_) => panic!("invalid slice length"),
+        let Ok(len) = I::try_from(N) else {
+            panic!("invalid slice length")
         };
         let ptr0 = x.0.as_ptr();
         let ptr1 = x.1.as_ptr();
@@ -269,6 +267,28 @@ where
             phantom0: PhantomData,
             phantom1: PhantomData,
         }
+    }
+}
+
+impl<'a, I, T0, T1, const PAD: usize> From<(&'a mut [T0], &'a mut [T1])>
+    for VulkanSlice2<'a, I, T0, T1, PAD>
+where
+    I: TryFrom<usize>,
+{
+    #[inline(always)]
+    fn from(x: (&'a mut [T0], &'a mut [T1])) -> Self {
+        (x.0 as &[T0], x.1 as &[T1]).into()
+    }
+}
+
+impl<'a, I, T0, T1, const N: usize, const PAD: usize> From<(&'a mut [T0; N], &'a mut [T1; N])>
+    for VulkanSlice2<'a, I, T0, T1, PAD>
+where
+    I: TryFrom<usize>,
+{
+    #[inline(always)]
+    fn from(x: (&'a mut [T0; N], &'a mut [T1; N])) -> Self {
+        (x.0 as &[T0; N], x.1 as &[T1; N]).into()
     }
 }
 
