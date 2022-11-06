@@ -1246,20 +1246,18 @@ impl<'driver> Device for VulkanDevice<'driver> {
     }
 
     fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> BindGroupLayout {
-        let layout_bindings = desc
-            .entries
-            .iter()
-            .map(|x| vk::DescriptorSetLayoutBinding {
+        let arena = HybridArena::<256>::new();
+        let layout_bindings = arena.alloc_slice_fill_iter(desc.entries.iter().map(|x| {
+            vk::DescriptorSetLayoutBinding {
                 binding: x.slot,
                 descriptor_type: vulkan_descriptor_type(x.binding_type),
                 descriptor_count: x.count,
                 stage_flags: vulkan_shader_stage_flags(x.stages),
                 immutable_samplers: std::ptr::null(),
-            })
-            .collect::<Vec<_>>();
-
+            }
+        }));
         let create_info = &vk::DescriptorSetLayoutCreateInfo {
-            bindings: layout_bindings.as_slice().into(),
+            bindings: layout_bindings.into(),
             ..default()
         };
         let mut set_layout = vk::DescriptorSetLayout::null();
@@ -1269,7 +1267,6 @@ impl<'driver> Device for VulkanDevice<'driver> {
             None,
             &mut set_layout,
         ));
-
         let bind_group_layout = self
             .bind_group_layout_pool
             .lock()
@@ -1368,17 +1365,17 @@ impl<'driver> Device for VulkanDevice<'driver> {
             dynamic_states: dynamic_states.into(),
             ..default()
         };
-        let color_attachment_formats = desc
-            .layout
-            .color_attachment_formats
-            .iter()
-            .copied()
-            .map(vulkan_format)
-            .collect::<Vec<_>>();
+        let color_attachment_formats = arena.alloc_slice_fill_iter(
+            desc.layout
+                .color_attachment_formats
+                .iter()
+                .copied()
+                .map(vulkan_format),
+        );
 
         let pipeline_rendering_create_info = vk::PipelineRenderingCreateInfo {
             view_mask: 0,
-            color_attachment_formats: color_attachment_formats.as_slice().into(),
+            color_attachment_formats: color_attachment_formats.into(),
             depth_attachment_format: desc
                 .layout
                 .depth_attachment_format
@@ -2391,28 +2388,27 @@ impl<'driver> Device for VulkanDevice<'driver> {
     }
 
     fn end_frame(&self, mut frame_token: FrameToken) {
+        let arena = HybridArena::<512>::new();
+
         let frame = self.frame_mut(&mut frame_token);
 
         let present_swapchains = frame.present_swapchains.get_mut();
         if !present_swapchains.is_empty() {
-            let mut windows = Vec::new();
-            let mut wait_semaphores = Vec::new();
-            let mut swapchains = Vec::new();
-            let mut swapchain_image_indices = Vec::new();
-            let mut results = Vec::new();
+            let windows = arena.alloc_slice_fill_iter(present_swapchains.keys().copied());
+            let wait_semaphores =
+                arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.release));
+            let swapchains =
+                arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.swapchain));
+            let swapchain_image_indices =
+                arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.image_index));
 
-            for (window, present_info) in present_swapchains.drain() {
-                windows.push(window);
-                wait_semaphores.push(present_info.release);
-                swapchains.push(present_info.swapchain);
-                swapchain_image_indices.push(present_info.image_index);
-            }
+            present_swapchains.clear();
 
-            results.resize_with(swapchains.len(), || vk::Result::Success);
+            let results = arena.alloc_slice_fill_copy(swapchains.len(), vk::Result::Success);
 
             let present_info = vk::PresentInfoKHR {
-                wait_semaphores: wait_semaphores.as_slice().into(),
-                swapchains: (swapchains.as_slice(), swapchain_image_indices.as_slice()).into(),
+                wait_semaphores: wait_semaphores.into(),
+                swapchains: (swapchains, swapchain_image_indices).into(),
                 results: results.as_mut_ptr(),
                 ..default()
             };
@@ -2492,19 +2488,15 @@ impl<'app> Drop for VulkanDevice<'app> {
 
             Self::destroy_deferred(device_fn, device, frame);
 
+            let mut arena = HybridArena::<512>::new();
             for pool in frame.command_buffer_pools.slots_mut() {
                 if !pool.command_buffers.is_empty() {
-                    let command_buffers = pool
-                        .command_buffers
-                        .iter()
-                        .map(|x| x.command_buffer)
-                        .collect::<Vec<_>>();
+                    arena.reset();
+                    let command_buffers = arena.alloc_slice_fill_iter(
+                        pool.command_buffers.iter().map(|x| x.command_buffer),
+                    );
                     unsafe {
-                        device_fn.free_command_buffers(
-                            device,
-                            pool.command_pool,
-                            command_buffers.as_slice(),
-                        )
+                        device_fn.free_command_buffers(device, pool.command_pool, command_buffers)
                     };
                 }
 
