@@ -7,6 +7,7 @@ pub mod manual_arc;
 mod mutex;
 pub mod obj;
 mod pool;
+pub mod rand;
 mod ref_count;
 pub mod slice;
 mod uuid;
