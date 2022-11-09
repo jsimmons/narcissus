@@ -326,7 +326,8 @@ pub fn log2_usize(value: usize) -> u32 {
 
 /// Returns the multiplicative inverse of the number.
 ///
-/// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any **odd** x.
+/// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any
+/// **odd** x.
 ///
 /// # Panics
 ///
@@ -348,7 +349,8 @@ pub fn mod_inverse_u64(value: u64) -> u64 {
 
 /// Returns the multiplicative inverse of the number.
 ///
-/// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any **odd** x.
+/// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any
+/// **odd** x.
 ///
 /// # Panics
 ///
@@ -364,6 +366,82 @@ pub fn mod_inverse_u32(value: u32) -> u32 {
     let x = x.wrapping_mul(y.wrapping_add(1));
     let y = y.wrapping_mul(y);
     x.wrapping_mul(y.wrapping_add(1))
+}
+
+/// Calculates the full result of a product that would otherwise overflow.
+///
+/// Returns a tuple containing the high and low parts of the result of `x * y`
+///
+/// # Example
+/// ```
+/// use narcissus_core::mul_full_width_u64;
+/// let x = 1_000_000_000_000;
+/// let y = 2_000_000_000;
+/// let (hi, lo) = mul_full_width_u64(x, y);
+/// let result = (hi as u128) << 64 | lo as u128;
+/// assert_eq!(result, 2_000_000_000_000_000_000_000);
+/// ```
+#[inline(always)]
+pub fn mul_full_width_u64(x: u64, y: u64) -> (u64, u64) {
+    let result = x as u128 * y as u128;
+    ((result >> 64) as u64, result as u64)
+}
+
+/// Calculates the full result of a product that would otherwise overflow.
+///
+/// Returns a tuple containing the high and low parts of the result of `x * y`
+///
+/// # Example
+/// ```
+/// use narcissus_core::mul_full_width_u32;
+/// let x = 2_500_000;
+/// let y = 2_000;
+/// let (hi, lo) = mul_full_width_u32(x, y);
+/// let result = (hi as u64) << 32 | lo as u64;
+/// assert_eq!(result, 5_000_000_000);
+/// ```
+#[inline(always)]
+pub fn mul_full_width_u32(x: u32, y: u32) -> (u32, u32) {
+    let result = x as u64 * y as u64;
+    ((result >> 32) as u32, result as u32)
+}
+
+/// Calculates the full result of a product that would otherwise overflow.
+///
+/// Returns a tuple containing the high and low parts of the result of `x * y`
+///
+/// # Example
+/// ```
+/// use narcissus_core::mul_full_width_u16;
+/// let x = 5_000;
+/// let y = 20;
+/// let (hi, lo) = mul_full_width_u16(x, y);
+/// let result = (hi as u32) << 16 | lo as u32;
+/// assert_eq!(result, 100_000);
+/// ```
+#[inline(always)]
+pub fn mul_full_width_u16(x: u16, y: u16) -> (u16, u16) {
+    let result = x as u32 * y as u32;
+    ((result >> 16) as u16, result as u16)
+}
+
+/// Calculates the full result of a product that would otherwise overflow.
+///
+/// Returns a tuple containing the high and low parts of the result of `x * y`
+///
+/// # Example
+/// ```
+/// use narcissus_core::mul_full_width_u8;
+/// let x = 100;
+/// let y = 10;
+/// let (hi, lo) = mul_full_width_u8(x, y);
+/// let result = (hi as u16) << 8 | lo as u16;
+/// assert_eq!(result, 1_000);
+/// ```
+#[inline(always)]
+pub fn mul_full_width_u8(x: u8, y: u8) -> (u8, u8) {
+    let result = x as u16 * y as u16;
+    ((result >> 8) as u8, result as u8)
 }
 
 #[cfg(test)]
