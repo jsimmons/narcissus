@@ -1,41 +1,4 @@
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Pcg32 {
-    state: u64,
-}
-
-impl Pcg32 {
-    pub const fn new() -> Self {
-        Self {
-            state: 0x853c49e6748fea9b,
-        }
-    }
-
-    pub fn with_seed(seed: u64) -> Self {
-        let mut rng = Self { state: 0 };
-        let _ = rng.next();
-        rng.state += seed;
-        let _ = rng.next();
-        rng
-    }
-
-    /// Generates a uniformly distributed random number in the range `0..2^32`.
-    #[inline]
-    #[must_use]
-    pub fn next(&mut self) -> u32 {
-        let old_state = self.state;
-        self.state = old_state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        let xorshift = (((old_state >> 18) ^ old_state) >> 27) as u32;
-        xorshift.rotate_right((old_state >> 59) as u32)
-    }
-}
-
-impl Default for Pcg32 {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use crate::mul_full_width_u64;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Pcg64 {
@@ -51,21 +14,33 @@ impl Pcg64 {
 
     pub fn with_seed(seed: u128) -> Self {
         let mut rng = Self { state: 0 };
-        let _ = rng.next();
+        let _ = rng.next_u64();
         rng.state += seed;
-        let _ = rng.next();
+        let _ = rng.next_u64();
         rng
     }
 
     /// Generates a uniformly distributed random number in the range `0..2^64`.
     #[inline]
     #[must_use]
-    pub fn next(&mut self) -> u64 {
+    pub fn next_u64(&mut self) -> u64 {
         let old_state = self.state;
         self.state = old_state
             .wrapping_mul(25492979953554139244865540595714422341)
             .wrapping_add(63641362238467930051442695040888963407);
         ((old_state >> 64) ^ old_state).rotate_right((old_state >> 122) as u32) as u64
+    }
+
+    /// Generates a uniformly distributed random number in the range `0..upper_bound`
+    ///
+    /// Based on https://github.com/apple/swift/pull/39143/commits/87b3f607042e653a42b505442cc803ec20319c1c
+    #[inline]
+    #[must_use]
+    pub fn next_bound_u64(&mut self, upper_bound: u64) -> u64 {
+        let (result, fraction) = mul_full_width_u64(upper_bound, self.next_u64());
+        let (hi, _) = mul_full_width_u64(upper_bound, self.next_u64());
+        let (_, carry) = fraction.overflowing_add(hi);
+        result + carry as u64
     }
 }
 
@@ -80,22 +55,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pcg32_default_sequence() {
-        let mut rng = Pcg32::new();
-        assert_eq!(rng.next(), 355248013);
-        assert_eq!(rng.next(), 1055580183);
-        assert_eq!(rng.next(), 3222338950);
-        assert_eq!(rng.next(), 2908720768);
-        assert_eq!(rng.next(), 1758754096);
+    fn pcg64_default_sequence() {
+        let mut rng = Pcg64::new();
+        assert_eq!(rng.next_u64(), 14322063641855463473);
+        assert_eq!(rng.next_u64(), 14211086133763074855);
+        assert_eq!(rng.next_u64(), 2051302165745047857);
+        assert_eq!(rng.next_u64(), 11538586989805838516);
+        assert_eq!(rng.next_u64(), 486667062142511543);
     }
 
     #[test]
-    fn pcg64_default_sequence() {
+    fn pcg64_bounded_random() {
         let mut rng = Pcg64::new();
-        assert_eq!(rng.next(), 14322063641855463473);
-        assert_eq!(rng.next(), 14211086133763074855);
-        assert_eq!(rng.next(), 2051302165745047857);
-        assert_eq!(rng.next(), 11538586989805838516);
-        assert_eq!(rng.next(), 486667062142511543);
+        assert_eq!(rng.next_bound_u64(1_000), 776);
+        assert_eq!(rng.next_bound_u64(1_000), 111);
+        assert_eq!(rng.next_bound_u64(1_000), 26);
+        assert_eq!(rng.next_bound_u64(1_000), 197);
+        assert_eq!(rng.next_bound_u64(10), 1);
+        assert_eq!(rng.next_bound_u64(10), 0);
+        assert_eq!(rng.next_bound_u64(10), 2);
+        assert_eq!(rng.next_bound_u64(10), 9);
+        assert_eq!(rng.next_bound_u64(999_999), 254_235);
+        assert_eq!(rng.next_bound_u64(999_999), 504_115);
+        assert_eq!(rng.next_bound_u64(0), 0);
+        assert_eq!(rng.next_bound_u64(0), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(1), 0);
+        assert_eq!(rng.next_bound_u64(2), 1);
+        assert_eq!(rng.next_bound_u64(2), 1);
+        assert_eq!(rng.next_bound_u64(2), 1);
+        assert_eq!(rng.next_bound_u64(2), 0);
     }
 }
