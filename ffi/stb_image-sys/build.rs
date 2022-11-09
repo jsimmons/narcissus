@@ -5,7 +5,7 @@ fn main() {
     let opt_level = std::env::var("OPT_LEVEL").unwrap();
 
     Command::new("clang")
-        .args(&[
+        .args([
             "src/stb_image.c",
             "-c",
             &format!("-O{opt_level}"),
@@ -17,8 +17,8 @@ fn main() {
         .unwrap();
 
     Command::new("llvm-ar")
-        .args(&["crus", "libstb_image.a", "stb_image.o"])
-        .current_dir(&Path::new(&out_dir))
+        .args(["crus", "libstb_image.a", "stb_image.o"])
+        .current_dir(Path::new(&out_dir))
         .status()
         .unwrap();
 
