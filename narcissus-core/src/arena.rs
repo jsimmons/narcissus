@@ -205,11 +205,11 @@ unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePoin
 #[cold]
 unsafe fn deallocate_page_list(mut page: PagePointer) {
     // Walk the linked list of pages and deallocate each one that originates from the heap.
-    // Only the second last page can be a stack page, and it links to the empty page.
-    while !page.is_empty() && !page.is_stack() {
+    // The last page is either the empty page, or the hybrid page, both of which are marked as stack
+    // page pointers.
+    while !page.is_stack() {
         let p = page;
         page = page.as_ref().next.get();
-
         let layout = layout_from_size_align(p.as_ref().size, std::mem::align_of::<PageFooter>());
         std::alloc::dealloc(p.as_ref().base.as_ptr(), layout);
     }
@@ -480,15 +480,20 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     ///
     /// Does not call destructors on any objects allocated by the pool.
     pub fn reset(&mut self) {
-        // We don't want to write to the static empty page, so abandon here if we haven't allocated
-        // any pages.
-        if self.page_list_head.get().is_empty() {
-            return;
-        }
+        let page_list_head = self.page_list_head.get();
 
         unsafe {
-            let page = self.page_list_head.get().as_ref();
-            // Clear the current page.
+            // SAFETY: We're either pointing to an empty page, or a hybrid page, but the hybrid page
+            // pointer might not be up to date if the object has moved, so we must call setup in
+            // that case. Since setup also resets the page, handles the empty page, and is
+            // idempotent, we can always call it here when we see a stack page, then return.
+            if page_list_head.is_stack() {
+                self.setup_hybrid_page();
+                return;
+            }
+
+            // Otherwise we're pointing to a heap allocated page which must be reset.
+            let page = page_list_head.as_ref();
             page.reset();
             // Truncate the linked list by appending the empty page, then free the rest.
             let page_after_head = page.next.replace(PagePointer::empty());
@@ -785,9 +790,9 @@ mod tests {
 
         // move it move it
         let mut arena = HybridArena::<16>::new();
+        arena.reset();
         let x = arena.alloc(1);
         assert_eq!(*x, 1);
-        arena.reset();
 
         fn take_arena(arena: HybridArena<16>) -> HybridArena<16> {
             let y = arena.alloc(2);
@@ -795,7 +800,8 @@ mod tests {
             arena
         }
 
-        let arena = take_arena(arena);
+        let mut arena = take_arena(arena);
+        arena.reset();
         let z = arena.alloc(3);
         assert_eq!(*z, 3);
     }
