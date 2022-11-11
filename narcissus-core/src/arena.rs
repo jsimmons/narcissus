@@ -33,7 +33,9 @@ struct PagePointer(*mut PageFooter);
 impl PagePointer {
     #[inline(always)]
     fn empty() -> PagePointer {
-        PagePointer(&EMPTY_PAGE as *const PageFooterSync as *mut PageFooter)
+        // We pretend the empty page is a "stack" pointer, as it allows us to remove a branch from
+        // the hybrid array setup.
+        PagePointer::new_stack(&EMPTY_PAGE as *const PageFooterSync as *mut PageFooter)
     }
 
     #[inline(always)]
@@ -48,7 +50,7 @@ impl PagePointer {
 
     #[inline(always)]
     fn is_empty(self) -> bool {
-        self.0 == &EMPTY_PAGE as *const PageFooterSync as *mut PageFooter
+        self.as_ptr() == &EMPTY_PAGE as *const PageFooterSync as *mut PageFooter
     }
 
     #[inline(always)]
@@ -579,7 +581,9 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         // It's safe to reset the page in this case, becuase it's only possible to move the arena
         // while there are no references pinning it in place.
         let page = self.page_list_head.get();
-        if page.is_empty() || (page.is_stack() && page.as_ptr() != self.footer.as_ptr()) {
+        // We initially point to the empty page, but mark it as a stack page so this branch is
+        // sufficient to handle both empty and moved cases.
+        if page.is_stack() && page.as_ptr() != self.footer.as_ptr() {
             unsafe { self.setup_hybrid_page() }
         }
 
