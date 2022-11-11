@@ -187,6 +187,10 @@ fn round_ties_to_even(x: f32) -> f32 {
         let x = _mm_round_ss::<ROUNDING>(x, x);
         std::arch::x86_64::_mm_cvtss_f32(x)
     }
+
+    // Incorrect if the rounding mode is changed.
+    #[cfg(not(target_feature = "sse4.1"))]
+    x.round()
 }
 
 #[macro_export]
