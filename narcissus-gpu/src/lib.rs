@@ -274,7 +274,19 @@ pub trait Device {
     );
     fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline);
 
+    /// Map the given buffer in its entirety to system memory and return a pointer to it.
+    ///
+    /// # Safety
+    ///
+    /// `buffer` must be host mappable.
     unsafe fn map_buffer(&self, buffer: Buffer) -> *mut u8;
+
+    /// Unmap from system memory a buffer previously mapped.
+    ///
+    /// # Safety
+    ///
+    /// This will invalidate the pointer returned previously from `map_buffer`, so there must not be
+    /// any remaining references derived from that address.
     unsafe fn unmap_buffer(&self, buffer: Buffer);
 
     fn acquire_swapchain(

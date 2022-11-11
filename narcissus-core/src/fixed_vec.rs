@@ -96,7 +96,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
     ///
     /// # Safety
     ///
-    /// - `new_len` must be less than or equal to [`capacity()`].
+    /// - `new_len` must be less than or equal to [`Self::capacity()`].
     /// - The elements at `old_len..new_len` must be initialized.
     #[inline]
     pub unsafe fn set_len(&mut self, new_len: usize) {

@@ -43,13 +43,14 @@ impl<T> Inner<T> {
 
 /// A thread-safe reference-counting pointer with manual management.
 ///
-/// The type [`ManualArc<T>`] provides shared ownership of a value of type T, allocated in the heap. Invoking clone on
-/// [`ManualArc`] produces a new [`ManualArc`] instance, which points to the same allocation on the heap as the source
-/// [`ManualArc`], while increasing a reference count.
+/// The type [`ManualArc<T>`] provides shared ownership of a value of type T, allocated in the heap.
+/// Invoking clone on [`ManualArc`] produces a new [`ManualArc`] instance, which points to the same
+/// allocation as the source, while increasing a reference count.
 ///
-/// Before a [`ManualArc`] is dropped, the [`ManualArc::release`] method must be called. [`ManualArc::release`] will
-/// return the variant [`Release::Shared`] if there are other references outstanding, or [`Release::Unique`] with the
-/// object being released if the release operation removes the last reference.
+/// Before a [`ManualArc`] is dropped, the [`ManualArc::release`] method must be called.
+/// [`ManualArc::release`] will return the variant [`Release::Shared`] if there are other references
+/// outstanding, or [`Release::Unique`] with the contained object if the release operation removes
+/// the final reference.
 pub struct ManualArc<T> {
     ptr: Option<NonNull<Inner<T>>>,
     phantom: PhantomData<Inner<T>>,
@@ -68,21 +69,24 @@ impl<T> ManualArc<T> {
         }
     }
 
-    /// Returns the variant [`Release::Shared`] if there are other [`ManualArc`] objects alive that reference the
-    /// object that this instance does, or [`Release::Unique`] with the previously contained object if the release
-    /// operation removes the last reference.
+    /// Consumes `self`, decrementing the reference count.
     ///
-    /// Must be explicitly called to drop [`ManualArc`] instances. Dropping implicitly or explicitly without calling
-    /// this function will panic.
+    /// Returns the variant [`Release::Shared`] if there are other [`ManualArc`] instances still
+    /// holding references to the same object, or [`Release::Unique`] with the previously contained
+    /// object if the release operation removes the last reference.
+    ///
+    /// Must be explicitly called to drop [`ManualArc`] instances. Dropping implicitly or explicitly
+    /// without calling this function will panic.
     pub fn release(mut self) -> Release<T> {
         #[cold]
         #[inline(never)]
         unsafe fn release_slow<T>(ptr: NonNull<Inner<T>>) -> T {
-            // Ref-counting operations imply a full memory barrier on x86, but not in general. So insert an acquire
-            // barrier on the slow path here to ensure all modifications to inner are visible before we call drop.
+            // Ref-counting operations imply a full memory barrier on x86, but not in general. So
+            // insert an acquire barrier on the slow path to ensure all modifications to inner are
+            // visible before we call drop.
             std::sync::atomic::fence(Ordering::Acquire);
 
-            // Safety: Was created by Box::leak in the constructor, so it's valid to re-create a box here.
+            // Safety: Was created by Box::leak in the constructor, so it's valid to recreate a box.
             let mut inner = Box::from_raw(ptr.as_ptr());
             // extract the value from the container so we can return it.
             let value = ManuallyDrop::take(&mut inner.value);
@@ -92,8 +96,9 @@ impl<T> ManualArc<T> {
             value
         }
 
-        // Safety: `release` consumes self, so it's impossible to call twice. Therefore ptr is always valid since
-        // `release` is the only thing which invalidates it.
+        // Safety: `release` consumes `self` so it's impossible to call twice on the same instance,
+        // release is also the only function able to invalidate the pointer. Hence the pointer is
+        // always valid here.
         unsafe {
             // Replace ptr with None so that the drop function doesn't panic
             let ptr = std::mem::replace(&mut self.ptr, None);
@@ -102,8 +107,8 @@ impl<T> ManualArc<T> {
             if inner.decr_strong() {
                 Release::Shared
             } else {
-                // We have released the last reference to this inner, so we need to free it and return the contained
-                // value.
+                // We have released the last reference to this inner, so we need to free it and
+                // return the contained value.
                 let value = release_slow(ptr);
                 Release::Unique(value)
             }
@@ -119,11 +124,13 @@ impl<T: Default> Default for ManualArc<T> {
 
 impl<T> Clone for ManualArc<T> {
     fn clone(&self) -> Self {
-        // Safety: Inner is valid whilever we have a valid [`ManualArc`] outside of the [`ManualArc::release`] function.
-        let ptr = unsafe { self.ptr.unwrap_unchecked() };
-        let inner = unsafe { ptr.as_ref() };
-        inner.incr_strong();
-        Self::from_inner(ptr)
+        // Safety: Inner is valid whilever we have a valid `ManualArc`, and so long as we are outside
+        // the `release` function.
+        unsafe {
+            let ptr = self.ptr.unwrap_unchecked();
+            ptr.as_ref().incr_strong();
+            Self::from_inner(ptr)
+        }
     }
 }
 
@@ -138,7 +145,8 @@ impl<T> Drop for ManualArc<T> {
 impl<T> Deref for ManualArc<T> {
     type Target = T;
 
-    // Safety: Inner is valid whilever we have a valid [`ManualArc`] outside of the [`ManualArc::release`] function.
+    // Safety: Inner is valid whilever we have a valid `ManualArc`, and so long as we are outside
+    // the `release` function.
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         unsafe { self.ptr.unwrap_unchecked().as_ref() }

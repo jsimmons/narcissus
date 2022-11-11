@@ -642,7 +642,7 @@ impl<'app> VulkanDevice<'app> {
                 }
             });
 
-            let descriptor_pool_pools = GpuConcurrent::new(|| vk::DescriptorPool::null());
+            let descriptor_pool_pools = GpuConcurrent::new(vk::DescriptorPool::null);
 
             UnsafeCell::new(VulkanFrame {
                 command_buffer_pools,

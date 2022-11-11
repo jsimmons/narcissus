@@ -33,7 +33,7 @@ impl Pcg64 {
 
     /// Generates a uniformly distributed random number in the range `0..upper_bound`
     ///
-    /// Based on https://github.com/apple/swift/pull/39143/commits/87b3f607042e653a42b505442cc803ec20319c1c
+    /// Based on <https://github.com/apple/swift/pull/39143/commits/87b3f607042e653a42b505442cc803ec20319c1c>
     #[inline]
     #[must_use]
     pub fn next_bound_u64(&mut self, upper_bound: u64) -> u64 {
