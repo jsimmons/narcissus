@@ -21,6 +21,14 @@ impl<T> Inner<T> {
             value,
         }
     }
+
+    #[inline]
+    fn new_atomic(value: T) -> Self {
+        Self {
+            strong: AtomicI32::new(1),
+            value,
+        }
+    }
 }
 
 impl<T: ?Sized> Inner<T> {
@@ -188,7 +196,7 @@ unsafe impl<T: ?Sized + Sync + Send> Sync for Arc<T> {}
 
 impl<T> Arc<T> {
     pub fn new(value: T) -> Self {
-        Self::from_inner(Box::leak(Box::new(Inner::new(value))).into())
+        Self::from_inner(Box::leak(Box::new(Inner::new_atomic(value))).into())
     }
 }
 
@@ -300,6 +308,28 @@ impl<T: ?Sized> Deref for Arc<T> {
 #[cfg(test)]
 mod tests {
     use crate::*;
+
+    #[test]
+    fn rc_drop() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        struct A<'a>(&'a AtomicU32);
+        impl<'a> Drop for A<'a> {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let counter = AtomicU32::new(0);
+        let a = Arc::new(A(&counter));
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+        let b = a.clone();
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+        drop(a);
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+        drop(b);
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
 
     #[test]
     fn rc_double_upgrade() {
