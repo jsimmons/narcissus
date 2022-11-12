@@ -3,6 +3,7 @@ use std::{ffi::CStr, marker::PhantomData};
 use narcissus_app::{App, Window};
 use narcissus_core::{flags_def, thread_token_def, Handle, PhantomUnsend};
 
+mod delay_queue;
 mod vulkan;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -104,7 +105,7 @@ pub struct TextureDesc {
     pub width: u32,
     pub height: u32,
     pub depth: u32,
-    pub layers: u32,
+    pub layer_count: u32,
     pub mip_levels: u32,
 }
 
@@ -119,7 +120,7 @@ pub struct TextureViewDesc {
 }
 
 pub struct ShaderDesc<'a> {
-    pub entrypoint_name: &'a CStr,
+    pub entry: &'a CStr,
     pub code: &'a [u8],
 }
 
@@ -233,6 +234,12 @@ impl Default for StencilOpState {
     }
 }
 
+pub struct DepthBias {
+    pub constant_factor: f32,
+    pub clamp: f32,
+    pub slope_factor: f32,
+}
+
 pub struct GraphicsPipelineLayout<'a> {
     pub color_attachment_formats: &'a [TextureFormat],
     pub depth_attachment_format: Option<TextureFormat>,
@@ -248,6 +255,7 @@ pub struct GraphicsPipelineDesc<'a> {
     pub polygon_mode: PolygonMode,
     pub culling_mode: CullingMode,
     pub front_face: FrontFace,
+    pub depth_bias: Option<DepthBias>,
     pub depth_compare_op: CompareOp,
     pub depth_test_enable: bool,
     pub depth_write_enable: bool,
@@ -345,7 +353,7 @@ pub struct FrameToken<'device> {
     phantom: PhantomData<&'device dyn Device>,
 }
 
-pub struct CommandBufferToken {
+pub struct CmdBufferToken {
     index: usize,
     raw: u64,
     phantom_unsend: PhantomUnsend,
@@ -393,17 +401,17 @@ pub trait Device {
     ) -> (u32, u32, Texture);
     fn destroy_window(&self, window: Window);
 
-    fn create_command_buffer(
+    fn create_cmd_buffer(
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-    ) -> CommandBufferToken;
+    ) -> CmdBufferToken;
 
     fn cmd_set_bind_group(
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         pipeline: Pipeline,
         layout: BindGroupLayout,
         bind_group_index: u32,
@@ -412,31 +420,31 @@ pub trait Device {
 
     fn cmd_set_index_buffer(
         &self,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         buffer: Buffer,
         offset: u64,
         index_type: IndexType,
     );
 
-    fn cmd_set_pipeline(&self, command_buffer_token: &CommandBufferToken, pipeline: Pipeline);
+    fn cmd_set_pipeline(&self, cmd_buffer_token: &CmdBufferToken, pipeline: Pipeline);
 
     fn cmd_begin_rendering(
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         desc: &RenderingDesc,
     );
 
-    fn cmd_end_rendering(&self, command_buffer_token: &CommandBufferToken);
+    fn cmd_end_rendering(&self, cmd_buffer_token: &CmdBufferToken);
 
-    fn cmd_set_viewports(&self, command_buffer_token: &CommandBufferToken, viewports: &[Viewport]);
+    fn cmd_set_viewports(&self, cmd_buffer_token: &CmdBufferToken, viewports: &[Viewport]);
 
-    fn cmd_set_scissors(&self, command_buffer_token: &CommandBufferToken, scissors: &[Scissor]);
+    fn cmd_set_scissors(&self, cmd_buffer_token: &CmdBufferToken, scissors: &[Scissor]);
 
     fn cmd_draw(
         &self,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
@@ -445,7 +453,7 @@ pub trait Device {
 
     fn cmd_draw_indexed(
         &self,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         index_count: u32,
         instance_count: u32,
         first_index: u32,
@@ -457,7 +465,7 @@ pub trait Device {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: CommandBufferToken,
+        cmd_buffer_token: CmdBufferToken,
     );
 
     fn begin_frame(&self) -> FrameToken;

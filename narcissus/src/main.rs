@@ -205,8 +205,8 @@ pub fn main() {
     #[repr(align(4))]
     struct Spirv<const LEN: usize>([u8; LEN]);
 
-    let vert_shader_spv = Spirv(*include_bytes!("shaders/basic.vert.spv"));
-    let frag_shader_spv = Spirv(*include_bytes!("shaders/basic.frag.spv"));
+    let vert_spv = Spirv(*include_bytes!("shaders/basic.vert.spv"));
+    let frag_spv = Spirv(*include_bytes!("shaders/basic.frag.spv"));
 
     let uniform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
         entries: &[BindGroupLayoutEntryDesc {
@@ -228,12 +228,12 @@ pub fn main() {
 
     let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
         vertex_shader: ShaderDesc {
-            entrypoint_name: cstr!("main"),
-            code: &vert_shader_spv.0,
+            entry: cstr!("main"),
+            code: &vert_spv.0,
         },
         fragment_shader: ShaderDesc {
-            entrypoint_name: cstr!("main"),
-            code: &frag_shader_spv.0,
+            entry: cstr!("main"),
+            code: &frag_spv.0,
         },
         bind_group_layouts: &[uniform_bind_group_layout, storage_bind_group_layout],
         layout: GraphicsPipelineLayout {
@@ -245,6 +245,7 @@ pub fn main() {
         polygon_mode: PolygonMode::Fill,
         culling_mode: CullingMode::Back,
         front_face: FrontFace::Clockwise,
+        depth_bias: None,
         depth_compare_op: CompareOp::GreaterOrEqual,
         depth_test_enable: true,
         depth_write_enable: true,
@@ -275,19 +276,6 @@ pub fn main() {
     'main: loop {
         let frame_token = device.begin_frame();
 
-        let frame_start = Instant::now() - start_time;
-        let frame_start = frame_start.as_secs_f32() * 0.5;
-
-        let (s, c) = sin_cos_pi_f32(frame_start);
-        let camera_from_model =
-            Mat4::look_at(Point3::new(s * 5.0, 1.0, c * 5.0), Point3::ZERO, -Vec3::Y);
-        let clip_from_camera =
-            Mat4::perspective_rev_inf_zo(Deg::new(90.0).into(), 800.0 / 600.0, 0.01);
-
-        let clip_from_model = clip_from_camera * camera_from_model;
-
-        uniforms.write(Uniform { clip_from_model });
-
         while let Some(event) = app.poll_event() {
             use Event::*;
             match event {
@@ -306,6 +294,18 @@ pub fn main() {
         let (width, height, swapchain_image) =
             device.acquire_swapchain(&frame_token, window, TextureFormat::BGRA8_SRGB);
 
+        let frame_start = Instant::now() - start_time;
+        let frame_start = frame_start.as_secs_f32() * 0.5;
+
+        let (s, c) = sin_cos_pi_f32(frame_start);
+        let camera_from_model =
+            Mat4::look_at(Point3::new(s * 5.0, 1.0, c * 5.0), Point3::ZERO, -Vec3::Y);
+        let clip_from_camera =
+            Mat4::perspective_rev_inf_zo(Deg::new(90.0).into(), width as f32 / height as f32, 0.01);
+        let clip_from_model = clip_from_camera * camera_from_model;
+
+        uniforms.write(Uniform { clip_from_model });
+
         if width != depth_width || height != depth_height {
             device.destroy_texture(&frame_token, depth_image);
             depth_image = device.create_texture(&TextureDesc {
@@ -316,19 +316,19 @@ pub fn main() {
                 width,
                 height,
                 depth: 1,
-                layers: 1,
+                layer_count: 1,
                 mip_levels: 1,
             });
             depth_width = width;
             depth_height = height;
         }
 
-        let command_buffer_token = device.create_command_buffer(&frame_token, &mut thread_token);
+        let cmd_buffer_token = device.create_cmd_buffer(&frame_token, &mut thread_token);
 
         device.cmd_set_bind_group(
             &frame_token,
             &mut thread_token,
-            &command_buffer_token,
+            &cmd_buffer_token,
             pipeline,
             uniform_bind_group_layout,
             0,
@@ -342,7 +342,7 @@ pub fn main() {
         device.cmd_set_bind_group(
             &frame_token,
             &mut thread_token,
-            &command_buffer_token,
+            &cmd_buffer_token,
             pipeline,
             storage_bind_group_layout,
             1,
@@ -353,17 +353,12 @@ pub fn main() {
             }],
         );
 
-        device.cmd_set_index_buffer(
-            &command_buffer_token,
-            blåhaj_index_buffer,
-            0,
-            IndexType::U16,
-        );
+        device.cmd_set_index_buffer(&cmd_buffer_token, blåhaj_index_buffer, 0, IndexType::U16);
 
         device.cmd_begin_rendering(
             &frame_token,
             &mut thread_token,
-            &command_buffer_token,
+            &cmd_buffer_token,
             &RenderingDesc {
                 x: 0,
                 y: 0,
@@ -388,10 +383,10 @@ pub fn main() {
             },
         );
 
-        device.cmd_set_pipeline(&command_buffer_token, pipeline);
+        device.cmd_set_pipeline(&cmd_buffer_token, pipeline);
 
         device.cmd_set_scissors(
-            &command_buffer_token,
+            &cmd_buffer_token,
             &[Scissor {
                 x: 0,
                 y: 0,
@@ -401,7 +396,7 @@ pub fn main() {
         );
 
         device.cmd_set_viewports(
-            &command_buffer_token,
+            &cmd_buffer_token,
             &[Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -412,18 +407,11 @@ pub fn main() {
             }],
         );
 
-        device.cmd_draw_indexed(
-            &command_buffer_token,
-            blåhaj_indices.len() as u32,
-            1,
-            0,
-            0,
-            0,
-        );
+        device.cmd_draw_indexed(&cmd_buffer_token, blåhaj_indices.len() as u32, 1, 0, 0, 0);
 
-        device.cmd_end_rendering(&command_buffer_token);
+        device.cmd_end_rendering(&cmd_buffer_token);
 
-        device.submit(&frame_token, &mut thread_token, command_buffer_token);
+        device.submit(&frame_token, &mut thread_token, cmd_buffer_token);
 
         device.end_frame(frame_token);
     }

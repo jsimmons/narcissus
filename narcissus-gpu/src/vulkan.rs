@@ -14,13 +14,13 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferUsageFlags,
-    ClearValue, CommandBufferToken, CompareOp, ComputePipelineDesc, CullingMode, Device,
-    FrameToken, FrontFace, GpuConcurrent, GraphicsPipelineDesc, IndexType, LoadOp, MemoryLocation,
-    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
-    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, Texture, TextureDesc,
-    TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken, Topology,
-    TypedBind,
+    delay_queue::DelayQueue, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer,
+    BufferDesc, BufferUsageFlags, ClearValue, CmdBufferToken, CompareOp, ComputePipelineDesc,
+    CullingMode, Device, FrameToken, FrontFace, GpuConcurrent, GraphicsPipelineDesc, IndexType,
+    LoadOp, MemoryLocation, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
+    SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Texture,
+    TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
+    Topology, TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -95,6 +95,25 @@ fn vulkan_clear_value(clear_value: ClearValue) -> vk::ClearValue {
         ClearValue::DepthStencil { depth, stencil } => vk::ClearValue {
             depth_stencil: vk::ClearDepthStencilValue { depth, stencil },
         },
+    }
+}
+
+#[must_use]
+fn vulkan_load_op(load_op: LoadOp) -> (vk::AttachmentLoadOp, vk::ClearValue) {
+    match load_op {
+        LoadOp::Load => (vk::AttachmentLoadOp::Load, vk::ClearValue::default()),
+        LoadOp::Clear(clear_value) => {
+            (vk::AttachmentLoadOp::Clear, vulkan_clear_value(clear_value))
+        }
+        LoadOp::DontCare => (vk::AttachmentLoadOp::DontCare, vk::ClearValue::default()),
+    }
+}
+
+#[must_use]
+fn vulkan_store_op(store_op: StoreOp) -> vk::AttachmentStoreOp {
+    match store_op {
+        StoreOp::Store => vk::AttachmentStoreOp::Store,
+        StoreOp::DontCare => vk::AttachmentStoreOp::DontCare,
     }
 }
 
@@ -211,44 +230,20 @@ fn vulkan_stencil_op_state(stencil_op_state: StencilOpState) -> vk::StencilOpSta
     }
 }
 
-struct DelayQueue<T> {
-    delay: u64,
-    counter: u64,
-    values: VecDeque<(u64, T)>,
-}
-
-impl<T> DelayQueue<T> {
-    fn new(delay: u64) -> Self {
-        Self {
-            delay,
-            counter: 0,
-            values: VecDeque::new(),
-        }
-    }
-
-    fn push(&mut self, value: T) {
-        self.values.push_back((self.counter + self.delay, value))
-    }
-
-    fn expire<F: FnMut(T)>(&mut self, mut f: F) {
-        self.counter += 1;
-
-        let to_remove = self
-            .values
-            .iter()
-            .take_while(|(expiry, _)| *expiry == self.counter)
-            .count();
-
-        for _ in 0..to_remove {
-            f(self.values.pop_front().unwrap().1);
-        }
-    }
-
-    pub fn drain<R>(&mut self, range: R) -> std::collections::vec_deque::Drain<'_, (u64, T)>
-    where
-        R: std::ops::RangeBounds<usize>,
-    {
-        self.values.drain(range)
+#[must_use]
+fn vulkan_image_view_type(
+    layer_count: u32,
+    texture_dimension: TextureDimension,
+) -> vk::ImageViewType {
+    match (layer_count, texture_dimension) {
+        (1, TextureDimension::Type1d) => vk::ImageViewType::Type1d,
+        (1, TextureDimension::Type2d) => vk::ImageViewType::Type2d,
+        (1, TextureDimension::Type3d) => vk::ImageViewType::Type3d,
+        (6, TextureDimension::TypeCube) => vk::ImageViewType::TypeCube,
+        (_, TextureDimension::Type1d) => vk::ImageViewType::Type1dArray,
+        (_, TextureDimension::Type2d) => vk::ImageViewType::Type2dArray,
+        (_, TextureDimension::TypeCube) => vk::ImageViewType::TypeCubeArray,
+        _ => panic!("unsupported view type"),
     }
 }
 
@@ -349,15 +344,15 @@ struct VulkanMemory {
     size: u64,
 }
 
-struct VulkanCommandBuffer {
+struct VulkanCmdBuffer {
     command_buffer: vk::CommandBuffer,
     swapchains_touched: HashMap<Window, (vk::Image, vk::PipelineStageFlags2)>,
 }
 
-struct VulkanCommandBufferPool {
+struct VulkanCmdBufferPool {
     command_pool: vk::CommandPool,
     next_free_index: usize,
-    command_buffers: Vec<VulkanCommandBuffer>,
+    cmd_buffers: Vec<VulkanCmdBuffer>,
 }
 
 impl<'device> FrameToken<'device> {
@@ -421,7 +416,7 @@ impl FrameCounter {
 struct VulkanFrame {
     universal_queue_fence: AtomicU64,
 
-    command_buffer_pools: GpuConcurrent<VulkanCommandBufferPool>,
+    cmd_buffer_pools: GpuConcurrent<VulkanCmdBufferPool>,
     descriptor_pool_pools: GpuConcurrent<vk::DescriptorPool>,
 
     present_swapchains: Mutex<HashMap<Window, VulkanPresentInfo>>,
@@ -441,13 +436,13 @@ struct VulkanFrame {
 }
 
 impl VulkanFrame {
-    fn command_buffer_mut<'a>(
+    fn cmd_buffer_mut<'a>(
         &self,
         thread_token: &'a mut ThreadToken,
-        command_buffer_token: &'a CommandBufferToken,
-    ) -> &'a mut VulkanCommandBuffer {
-        let command_buffer_pool = self.command_buffer_pools.get_mut(thread_token);
-        &mut command_buffer_pool.command_buffers[command_buffer_token.index]
+        cmd_buffer_token: &'a CmdBufferToken,
+    ) -> &'a mut VulkanCmdBuffer {
+        let cmd_buffer_pool = self.cmd_buffer_pools.get_mut(thread_token);
+        &mut cmd_buffer_pool.cmd_buffers[cmd_buffer_token.index]
     }
 
     fn recycle_semaphore(&self, semaphore: vk::Semaphore) {
@@ -720,7 +715,7 @@ impl<'app> VulkanDevice<'app> {
         };
 
         let frames = Box::new(std::array::from_fn(|_| {
-            let command_buffer_pools = GpuConcurrent::new(|| {
+            let cmd_buffer_pools = GpuConcurrent::new(|| {
                 let pool = {
                     let create_info = vk::CommandPoolCreateInfo {
                         flags: vk::CommandPoolCreateFlags::TRANSIENT,
@@ -731,9 +726,9 @@ impl<'app> VulkanDevice<'app> {
                     vk_check!(device_fn.create_command_pool(device, &create_info, None, &mut pool));
                     pool
                 };
-                VulkanCommandBufferPool {
+                VulkanCmdBufferPool {
                     command_pool: pool,
-                    command_buffers: Vec::new(),
+                    cmd_buffers: Vec::new(),
                     next_free_index: 0,
                 }
             });
@@ -741,7 +736,7 @@ impl<'app> VulkanDevice<'app> {
             let descriptor_pool_pools = GpuConcurrent::new(vk::DescriptorPool::null);
 
             UnsafeCell::new(VulkanFrame {
-                command_buffer_pools,
+                cmd_buffer_pools,
                 descriptor_pool_pools,
                 universal_queue_fence: AtomicU64::new(universal_queue_fence),
                 present_swapchains: default(),
@@ -896,38 +891,22 @@ impl<'app> VulkanDevice<'app> {
         if let Some(descriptor_pool) = self.recycled_descriptor_pools.lock().pop_front() {
             descriptor_pool
         } else {
-            let descriptor_count = 500;
-            let pool_sizes = &[
-                vk::DescriptorPoolSize {
-                    descriptor_type: vk::DescriptorType::Sampler,
-                    descriptor_count,
-                },
-                vk::DescriptorPoolSize {
-                    descriptor_type: vk::DescriptorType::UniformBuffer,
-                    descriptor_count,
-                },
-                vk::DescriptorPoolSize {
-                    descriptor_type: vk::DescriptorType::UniformBufferDynamic,
-                    descriptor_count,
-                },
-                vk::DescriptorPoolSize {
-                    descriptor_type: vk::DescriptorType::StorageBuffer,
-                    descriptor_count,
-                },
-                vk::DescriptorPoolSize {
-                    descriptor_type: vk::DescriptorType::StorageBufferDynamic,
-                    descriptor_count,
-                },
-                vk::DescriptorPoolSize {
-                    descriptor_type: vk::DescriptorType::SampledImage,
-                    descriptor_count: 500,
-                },
-            ];
-
+            let pool_sizes: [vk::DescriptorPoolSize; 6] = [
+                vk::DescriptorType::Sampler,
+                vk::DescriptorType::UniformBuffer,
+                vk::DescriptorType::UniformBufferDynamic,
+                vk::DescriptorType::StorageBuffer,
+                vk::DescriptorType::StorageBufferDynamic,
+                vk::DescriptorType::SampledImage,
+            ]
+            .map(|descriptor_type| vk::DescriptorPoolSize {
+                descriptor_type,
+                descriptor_count: 500,
+            });
             let mut descriptor_pool = vk::DescriptorPool::null();
             let create_info = vk::DescriptorPoolCreateInfo {
                 max_sets: 500,
-                pool_sizes: pool_sizes.into(),
+                pool_sizes: pool_sizes.as_ref().into(),
                 ..default()
             };
             vk_check!(self.device_fn.create_descriptor_pool(
@@ -1083,17 +1062,20 @@ impl<'driver> Device for VulkanDevice<'driver> {
     }
 
     fn create_texture(&self, desc: &TextureDesc) -> Texture {
-        debug_assert_ne!(desc.layers, 0, "layers must be at least one");
+        debug_assert_ne!(desc.layer_count, 0, "layers must be at least one");
         debug_assert_ne!(desc.width, 0, "width must be at least one");
         debug_assert_ne!(desc.height, 0, "height must be at least one");
         debug_assert_ne!(desc.depth, 0, "depth must be at least one");
 
         if desc.dimension == TextureDimension::Type3d {
-            debug_assert_eq!(desc.layers, 1, "3d image arrays are illegal");
+            debug_assert_eq!(desc.layer_count, 1, "3d image arrays are illegal");
         }
 
         if desc.dimension == TextureDimension::TypeCube {
-            debug_assert!(desc.layers % 6 == 0, "cubemaps must have 6 layers each");
+            debug_assert!(
+                desc.layer_count % 6 == 0,
+                "cubemaps must have 6 layers each"
+            );
             debug_assert_eq!(desc.depth, 1, "cubemap faces must be 2d");
         }
 
@@ -1142,7 +1124,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             format,
             extent,
             mip_levels: desc.mip_levels,
-            array_layers: desc.layers,
+            array_layers: desc.layer_count,
             samples: vk::SampleCountFlags::SAMPLE_COUNT_1,
             tiling: vk::ImageTiling::OPTIMAL,
             usage,
@@ -1171,17 +1153,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             )
         };
 
-        let view_type = match (desc.layers, desc.dimension) {
-            (1, TextureDimension::Type1d) => vk::ImageViewType::Type1d,
-            (1, TextureDimension::Type2d) => vk::ImageViewType::Type2d,
-            (1, TextureDimension::Type3d) => vk::ImageViewType::Type3d,
-            (6, TextureDimension::TypeCube) => vk::ImageViewType::TypeCube,
-            (_, TextureDimension::Type1d) => vk::ImageViewType::Type1dArray,
-            (_, TextureDimension::Type2d) => vk::ImageViewType::Type2dArray,
-            (_, TextureDimension::TypeCube) => vk::ImageViewType::TypeCubeArray,
-            _ => panic!("unsupported view type"),
-        };
-
+        let view_type = vulkan_image_view_type(desc.layer_count, desc.dimension);
         let aspect_mask = vulkan_aspect(desc.format);
         let create_info = vk::ImageViewCreateInfo {
             image,
@@ -1192,7 +1164,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 base_mip_level: 0,
                 level_count: desc.mip_levels,
                 base_array_layer: 0,
-                layer_count: desc.layers,
+                layer_count: desc.layer_count,
             },
             ..default()
         };
@@ -1236,19 +1208,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
             }
         }
 
-        let view_type = match (desc.layer_count, desc.dimension) {
-            (1, TextureDimension::Type1d) => vk::ImageViewType::Type1d,
-            (1, TextureDimension::Type2d) => vk::ImageViewType::Type2d,
-            (1, TextureDimension::Type3d) => vk::ImageViewType::Type3d,
-            (6, TextureDimension::TypeCube) => vk::ImageViewType::TypeCube,
-            (_, TextureDimension::Type1d) => vk::ImageViewType::Type1dArray,
-            (_, TextureDimension::Type2d) => vk::ImageViewType::Type2dArray,
-            (_, TextureDimension::TypeCube) => vk::ImageViewType::TypeCubeArray,
-            _ => panic!("unsupported view type"),
-        };
-
-        let format = vulkan_format(desc.format);
+        let view_type = vulkan_image_view_type(desc.layer_count, desc.dimension);
         let aspect_mask = vulkan_aspect(desc.format);
+        let format = vulkan_format(desc.format);
 
         let create_info = vk::ImageViewCreateInfo {
             image: arc_texture.image,
@@ -1416,13 +1378,13 @@ impl<'driver> Device for VulkanDevice<'driver> {
         let stages = &[
             vk::PipelineShaderStageCreateInfo {
                 stage: vk::ShaderStageFlags::VERTEX,
-                name: desc.vertex_shader.entrypoint_name.as_ptr(),
+                name: desc.vertex_shader.entry.as_ptr(),
                 module: vertex_module,
                 ..default()
             },
             vk::PipelineShaderStageCreateInfo {
                 stage: vk::ShaderStageFlags::FRAGMENT,
-                name: desc.fragment_shader.entrypoint_name.as_ptr(),
+                name: desc.fragment_shader.entry.as_ptr(),
                 module: fragment_module,
                 ..default()
             },
@@ -1432,6 +1394,21 @@ impl<'driver> Device for VulkanDevice<'driver> {
         let polygon_mode = vulkan_polygon_mode(desc.polygon_mode);
         let cull_mode = vulkan_cull_mode(desc.culling_mode);
         let front_face = vulkan_front_face(desc.front_face);
+        let (
+            depth_bias_enable,
+            depth_bias_constant_factor,
+            depth_bias_clamp,
+            depth_bias_slope_factor,
+        ) = if let Some(depth_bias) = &desc.depth_bias {
+            (
+                vk::Bool32::True,
+                depth_bias.constant_factor,
+                depth_bias.clamp,
+                depth_bias.slope_factor,
+            )
+        } else {
+            (vk::Bool32::False, 0.0, 0.0, 0.0)
+        };
         let depth_compare_op = vulkan_compare_op(desc.depth_compare_op);
         let depth_test_enable = vulkan_bool32(desc.depth_test_enable);
         let depth_write_enable = vulkan_bool32(desc.depth_write_enable);
@@ -1446,10 +1423,14 @@ impl<'driver> Device for VulkanDevice<'driver> {
         };
         let viewport_state = vk::PipelineViewportStateCreateInfo::default();
         let rasterization_state = vk::PipelineRasterizationStateCreateInfo {
-            line_width: 1.0,
             polygon_mode,
             cull_mode,
             front_face,
+            line_width: 1.0,
+            depth_bias_enable,
+            depth_bias_constant_factor,
+            depth_bias_clamp,
+            depth_bias_slope_factor,
             ..default()
         };
         let multisample_state = vk::PipelineMultisampleStateCreateInfo {
@@ -1963,56 +1944,59 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn create_command_buffer(
+    fn create_cmd_buffer(
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-    ) -> CommandBufferToken {
-        let command_buffer_pool = self
+    ) -> CmdBufferToken {
+        let cmd_buffer_pool = self
             .frame(frame_token)
-            .command_buffer_pools
+            .cmd_buffer_pools
             .get_mut(thread_token);
 
         // We have consumed all available command buffers, need to allocate a new one.
-        if command_buffer_pool.next_free_index >= command_buffer_pool.command_buffers.len() {
-            let mut command_buffers = [vk::CommandBuffer::null(); 4];
+        if cmd_buffer_pool.next_free_index >= cmd_buffer_pool.cmd_buffers.len() {
+            let mut cmd_buffers = [vk::CommandBuffer::null(); 4];
             let allocate_info = vk::CommandBufferAllocateInfo {
-                command_pool: command_buffer_pool.command_pool,
+                command_pool: cmd_buffer_pool.command_pool,
                 level: vk::CommandBufferLevel::Primary,
-                command_buffer_count: command_buffers.len() as u32,
+                command_buffer_count: cmd_buffers.len() as u32,
                 ..default()
             };
             vk_check!(self.device_fn.allocate_command_buffers(
                 self.device,
                 &allocate_info,
-                command_buffers.as_mut_ptr()
+                cmd_buffers.as_mut_ptr()
             ));
-            command_buffer_pool
-                .command_buffers
-                .extend(command_buffers.iter().copied().map(|command_buffer| {
-                    VulkanCommandBuffer {
-                        command_buffer,
-                        swapchains_touched: HashMap::new(),
-                    }
-                }));
+            cmd_buffer_pool
+                .cmd_buffers
+                .extend(
+                    cmd_buffers
+                        .iter()
+                        .copied()
+                        .map(|cmd_buffer| VulkanCmdBuffer {
+                            command_buffer: cmd_buffer,
+                            swapchains_touched: HashMap::new(),
+                        }),
+                );
         }
 
-        let index = command_buffer_pool.next_free_index;
-        command_buffer_pool.next_free_index += 1;
+        let index = cmd_buffer_pool.next_free_index;
+        cmd_buffer_pool.next_free_index += 1;
 
-        let command_buffer = command_buffer_pool.command_buffers[index].command_buffer;
+        let cmd_buffer = cmd_buffer_pool.cmd_buffers[index].command_buffer;
 
         vk_check!(self.device_fn.begin_command_buffer(
-            command_buffer,
+            cmd_buffer,
             &vk::CommandBufferBeginInfo {
                 flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
                 ..default()
             }
         ));
 
-        CommandBufferToken {
+        CmdBufferToken {
             index,
-            raw: command_buffer.as_raw(),
+            raw: cmd_buffer.as_raw(),
             phantom_unsend: PhantomUnsend {},
         }
     }
@@ -2021,7 +2005,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         pipeline: Pipeline,
         layout: BindGroupLayout,
         bind_group_index: u32,
@@ -2161,7 +2145,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 .update_descriptor_sets(self.device, write_descriptors, &[])
         };
 
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
 
         let VulkanPipeline {
             pipeline: _,
@@ -2171,7 +2155,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
         unsafe {
             self.device_fn.cmd_bind_descriptor_sets(
-                command_buffer,
+                cmd_buffer,
                 pipeline_bind_point,
                 pipeline_layout,
                 bind_group_index,
@@ -2183,22 +2167,22 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_set_index_buffer(
         &self,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         buffer: Buffer,
         offset: u64,
         index_type: IndexType,
     ) {
         let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
         let index_type = vulkan_index_type(index_type);
         unsafe {
             self.device_fn
-                .cmd_bind_index_buffer(command_buffer, buffer, offset, index_type)
+                .cmd_bind_index_buffer(cmd_buffer, buffer, offset, index_type)
         }
     }
 
-    fn cmd_set_pipeline(&self, command_buffer_token: &CommandBufferToken, pipeline: Pipeline) {
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+    fn cmd_set_pipeline(&self, cmd_buffer_token: &CmdBufferToken, pipeline: Pipeline) {
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
         let VulkanPipeline {
             pipeline,
             pipeline_layout: _,
@@ -2206,7 +2190,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         } = *self.pipeline_pool.lock().get(pipeline.0).unwrap();
         unsafe {
             self.device_fn
-                .cmd_bind_pipeline(command_buffer, pipeline_bind_point, pipeline)
+                .cmd_bind_pipeline(cmd_buffer, pipeline_bind_point, pipeline)
         };
     }
 
@@ -2214,11 +2198,11 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         desc: &crate::RenderingDesc,
     ) {
         let frame = self.frame(frame_token);
-        let command_buffer = frame.command_buffer_mut(thread_token, command_buffer_token);
+        let cmd_buffer = frame.cmd_buffer_mut(thread_token, cmd_buffer_token);
 
         let color_attachments = desc
             .color_attachments
@@ -2229,12 +2213,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     VulkanTextureHolder::Shared(texture) => texture.view,
                     VulkanTextureHolder::Swapchain(texture) => {
                         assert!(
-                            !command_buffer
-                                .swapchains_touched
-                                .contains_key(&texture.window),
+                            !cmd_buffer.swapchains_touched.contains_key(&texture.window),
                             "swapchain attached multiple times in a command buffer"
                         );
-                        command_buffer.swapchains_touched.insert(
+                        cmd_buffer.swapchains_touched.insert(
                             texture.window,
                             (
                                 texture.image,
@@ -2269,28 +2251,16 @@ impl<'driver> Device for VulkanDevice<'driver> {
                         };
 
                         unsafe {
-                            self.device_fn.cmd_pipeline_barrier2(
-                                command_buffer.command_buffer,
-                                &dependency_info,
-                            )
+                            self.device_fn
+                                .cmd_pipeline_barrier2(cmd_buffer.command_buffer, &dependency_info)
                         };
 
                         texture.view
                     }
                 };
 
-                let (load_op, clear_value) = match attachment.load_op {
-                    LoadOp::Load => (vk::AttachmentLoadOp::Load, vk::ClearValue::default()),
-                    LoadOp::Clear(clear_value) => {
-                        (vk::AttachmentLoadOp::Clear, vulkan_clear_value(clear_value))
-                    }
-                    LoadOp::DontCare => (vk::AttachmentLoadOp::DontCare, vk::ClearValue::default()),
-                };
-
-                let store_op = match attachment.store_op {
-                    crate::StoreOp::Store => vk::AttachmentStoreOp::Store,
-                    crate::StoreOp::DontCare => vk::AttachmentStoreOp::DontCare,
-                };
+                let (load_op, clear_value) = vulkan_load_op(attachment.load_op);
+                let store_op = vulkan_store_op(attachment.store_op);
 
                 vk::RenderingAttachmentInfo {
                     image_view,
@@ -2310,18 +2280,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 VulkanTextureHolder::Swapchain(_) => panic!(),
             };
 
-            let (load_op, clear_value) = match attachment.load_op {
-                LoadOp::Load => (vk::AttachmentLoadOp::Load, vk::ClearValue::default()),
-                LoadOp::Clear(clear_value) => {
-                    (vk::AttachmentLoadOp::Clear, vulkan_clear_value(clear_value))
-                }
-                LoadOp::DontCare => (vk::AttachmentLoadOp::DontCare, vk::ClearValue::default()),
-            };
+            let (load_op, clear_value) = vulkan_load_op(attachment.load_op);
+            let store_op = vulkan_store_op(attachment.store_op);
 
-            let store_op = match attachment.store_op {
-                crate::StoreOp::Store => vk::AttachmentStoreOp::Store,
-                crate::StoreOp::DontCare => vk::AttachmentStoreOp::DontCare,
-            };
             vk::RenderingAttachmentInfo {
                 image_view,
                 image_layout: vk::ImageLayout::DepthAttachmentOptimal,
@@ -2353,38 +2314,30 @@ impl<'driver> Device for VulkanDevice<'driver> {
         };
         unsafe {
             self.device_fn
-                .cmd_begin_rendering(command_buffer.command_buffer, &rendering_info)
+                .cmd_begin_rendering(cmd_buffer.command_buffer, &rendering_info)
         }
     }
 
-    fn cmd_end_rendering(&self, command_buffer_token: &CommandBufferToken) {
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
-        unsafe { self.device_fn.cmd_end_rendering(command_buffer) }
+    fn cmd_end_rendering(&self, cmd_buffer_token: &CmdBufferToken) {
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
+        unsafe { self.device_fn.cmd_end_rendering(cmd_buffer) }
     }
 
-    fn cmd_set_viewports(
-        &self,
-        command_buffer_token: &CommandBufferToken,
-        viewports: &[crate::Viewport],
-    ) {
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+    fn cmd_set_viewports(&self, cmd_buffer_token: &CmdBufferToken, viewports: &[crate::Viewport]) {
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
         unsafe {
             self.device_fn.cmd_set_viewport_with_count(
-                command_buffer,
+                cmd_buffer,
                 std::mem::transmute::<_, &[vk::Viewport]>(viewports), // yolo
             );
         }
     }
 
-    fn cmd_set_scissors(
-        &self,
-        command_buffer_token: &CommandBufferToken,
-        scissors: &[crate::Scissor],
-    ) {
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+    fn cmd_set_scissors(&self, cmd_buffer_token: &CmdBufferToken, scissors: &[crate::Scissor]) {
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
         unsafe {
             self.device_fn.cmd_set_scissor_with_count(
-                command_buffer,
+                cmd_buffer,
                 std::mem::transmute::<_, &[vk::Rect2d]>(scissors), // yolo
             );
         }
@@ -2392,16 +2345,16 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_draw(
         &self,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
         first_instance: u32,
     ) {
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
         unsafe {
             self.device_fn.cmd_draw(
-                command_buffer,
+                cmd_buffer,
                 vertex_count,
                 instance_count,
                 first_vertex,
@@ -2412,17 +2365,17 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_draw_indexed(
         &self,
-        command_buffer_token: &CommandBufferToken,
+        cmd_buffer_token: &CmdBufferToken,
         index_count: u32,
         instance_count: u32,
         first_index: u32,
         vertex_offset: i32,
         first_instance: u32,
     ) {
-        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        let cmd_buffer = vk::CommandBuffer::from_raw(cmd_buffer_token.raw);
         unsafe {
             self.device_fn.cmd_draw_indexed(
-                command_buffer,
+                cmd_buffer,
                 index_count,
                 instance_count,
                 first_index,
@@ -2436,16 +2389,16 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        command_buffer_token: CommandBufferToken,
+        cmd_buffer_token: CmdBufferToken,
     ) {
         let fence = self.universal_queue_fence.fetch_add(1, Ordering::SeqCst) + 1;
 
         let frame = self.frame(frame_token);
         frame.universal_queue_fence.store(fence, Ordering::Relaxed);
 
-        let command_buffer = frame.command_buffer_mut(thread_token, &command_buffer_token);
+        let cmd_buffer = frame.cmd_buffer_mut(thread_token, &cmd_buffer_token);
 
-        for &(image, _) in command_buffer.swapchains_touched.values() {
+        for &(image, _) in cmd_buffer.swapchains_touched.values() {
             // transition swapchain image from attachment optimal to present src
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
                 src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -2472,21 +2425,19 @@ impl<'driver> Device for VulkanDevice<'driver> {
             };
             unsafe {
                 self.device_fn
-                    .cmd_pipeline_barrier2(command_buffer.command_buffer, &dependency_info)
+                    .cmd_pipeline_barrier2(cmd_buffer.command_buffer, &dependency_info)
             };
         }
 
-        vk_check!(self
-            .device_fn
-            .end_command_buffer(command_buffer.command_buffer));
+        vk_check!(self.device_fn.end_command_buffer(cmd_buffer.command_buffer));
 
         let mut wait_semaphores = Vec::new();
         let mut signal_semaphores = Vec::new();
 
-        if !command_buffer.swapchains_touched.is_empty() {
+        if !cmd_buffer.swapchains_touched.is_empty() {
             let mut present_swapchains = frame.present_swapchains.lock();
 
-            for (swapchain, (_, stage_mask)) in command_buffer.swapchains_touched.drain() {
+            for (swapchain, (_, stage_mask)) in cmd_buffer.swapchains_touched.drain() {
                 let present_swapchain = present_swapchains
                     .get_mut(&swapchain)
                     .expect("presenting a swapchain that hasn't been acquired this frame");
@@ -2513,8 +2464,8 @@ impl<'driver> Device for VulkanDevice<'driver> {
             ..default()
         });
 
-        let command_buffer_infos = &[vk::CommandBufferSubmitInfo {
-            command_buffer: command_buffer.command_buffer,
+        let cmd_buffer_infos = &[vk::CommandBufferSubmitInfo {
+            command_buffer: cmd_buffer.command_buffer,
             device_mask: 1,
             ..default()
         }];
@@ -2523,7 +2474,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             self.universal_queue,
             &[vk::SubmitInfo2 {
                 wait_semaphore_infos: wait_semaphores.as_slice().into(),
-                command_buffer_infos: command_buffer_infos.into(),
+                command_buffer_infos: cmd_buffer_infos.into(),
                 signal_semaphore_infos: signal_semaphores.as_slice().into(),
                 ..default()
             }],
@@ -2554,7 +2505,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             *pool = vk::DescriptorPool::null()
         }
 
-        for pool in frame.command_buffer_pools.slots_mut() {
+        for pool in frame.cmd_buffer_pools.slots_mut() {
             if pool.next_free_index == 0 {
                 continue;
             }
@@ -2697,14 +2648,13 @@ impl<'app> Drop for VulkanDevice<'app> {
             Self::destroy_deferred(device_fn, device, frame);
 
             let mut arena = HybridArena::<512>::new();
-            for pool in frame.command_buffer_pools.slots_mut() {
-                if !pool.command_buffers.is_empty() {
+            for pool in frame.cmd_buffer_pools.slots_mut() {
+                if !pool.cmd_buffers.is_empty() {
                     arena.reset();
-                    let command_buffers = arena.alloc_slice_fill_iter(
-                        pool.command_buffers.iter().map(|x| x.command_buffer),
-                    );
+                    let cmd_buffers = arena
+                        .alloc_slice_fill_iter(pool.cmd_buffers.iter().map(|x| x.command_buffer));
                     unsafe {
-                        device_fn.free_command_buffers(device, pool.command_pool, command_buffers)
+                        device_fn.free_command_buffers(device, pool.command_pool, cmd_buffers)
                     };
                 }
 
