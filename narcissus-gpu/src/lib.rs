@@ -5,7 +5,7 @@ use narcissus_core::{flags_def, thread_token_def, Handle, PhantomUnsend};
 
 mod vulkan;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Texture(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -68,6 +68,7 @@ pub enum TextureFormat {
     BGRA8_UNORM,
     RGBA8_SRGB,
     RGBA8_UNORM,
+    DEPTH_F32,
 }
 
 flags_def!(TextureUsageFlags);
@@ -154,6 +155,84 @@ pub struct SamplerDesc {
     pub max_lod: f32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Topology {
+    Points = 0,
+    Lines = 1,
+    LineStrip = 2,
+    Triangles = 3,
+    TriangleStrip = 4,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PolygonMode {
+    Fill,
+    Line,
+    Point,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CullingMode {
+    None,
+    Front,
+    Back,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FrontFace {
+    Clockwise,
+    CounterClockwise,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum CompareOp {
+    Never,
+    Less,
+    Equal,
+    LessOrEqual,
+    Greater,
+    NotEqual,
+    GreaterOrEqual,
+    Always,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum StencilOp {
+    Keep,
+    Zero,
+    Replace,
+    IncrementAndClamp,
+    DecrementAndClamp,
+    Invert,
+    IncrementAndWrap,
+    DecrementAndWrap,
+}
+
+#[derive(Clone, Copy)]
+pub struct StencilOpState {
+    pub fail_op: StencilOp,
+    pub pass_op: StencilOp,
+    pub depth_fail_op: StencilOp,
+    pub compare_op: CompareOp,
+    pub compare_mask: u32,
+    pub write_mask: u32,
+    pub reference: u32,
+}
+
+impl Default for StencilOpState {
+    fn default() -> Self {
+        Self {
+            fail_op: StencilOp::Keep,
+            pass_op: StencilOp::Keep,
+            depth_fail_op: StencilOp::Keep,
+            compare_op: CompareOp::Never,
+            compare_mask: 0,
+            write_mask: 0,
+            reference: 0,
+        }
+    }
+}
+
 pub struct GraphicsPipelineLayout<'a> {
     pub color_attachment_formats: &'a [TextureFormat],
     pub depth_attachment_format: Option<TextureFormat>,
@@ -165,6 +244,16 @@ pub struct GraphicsPipelineDesc<'a> {
     pub fragment_shader: ShaderDesc<'a>,
     pub bind_group_layouts: &'a [BindGroupLayout],
     pub layout: GraphicsPipelineLayout<'a>,
+    pub topology: Topology,
+    pub polygon_mode: PolygonMode,
+    pub culling_mode: CullingMode,
+    pub front_face: FrontFace,
+    pub depth_compare_op: CompareOp,
+    pub depth_test_enable: bool,
+    pub depth_write_enable: bool,
+    pub stencil_test_enable: bool,
+    pub stencil_back: StencilOpState,
+    pub stencil_front: StencilOpState,
 }
 
 pub struct ComputePipelineDesc<'a> {
@@ -209,6 +298,12 @@ pub struct RenderingDesc<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexType {
+    U16,
+    U32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingType {
     Sampler,
     Texture,
@@ -238,7 +333,8 @@ pub struct Bind<'a> {
 pub enum TypedBind<'a> {
     Sampler(&'a [Sampler]),
     Texture(&'a [Texture]),
-    Buffer(&'a [Buffer]),
+    UniformBuffer(&'a [Buffer]),
+    StorageBuffer(&'a [Buffer]),
 }
 
 thread_token_def!(ThreadToken, GpuConcurrent, 8);
@@ -314,6 +410,14 @@ pub trait Device {
         bindings: &[Bind],
     );
 
+    fn cmd_set_index_buffer(
+        &self,
+        command_buffer_token: &CommandBufferToken,
+        buffer: Buffer,
+        offset: u64,
+        index_type: IndexType,
+    );
+
     fn cmd_set_pipeline(&self, command_buffer_token: &CommandBufferToken, pipeline: Pipeline);
 
     fn cmd_begin_rendering(
@@ -327,6 +431,7 @@ pub trait Device {
     fn cmd_end_rendering(&self, command_buffer_token: &CommandBufferToken);
 
     fn cmd_set_viewports(&self, command_buffer_token: &CommandBufferToken, viewports: &[Viewport]);
+
     fn cmd_set_scissors(&self, command_buffer_token: &CommandBufferToken, scissors: &[Scissor]);
 
     fn cmd_draw(
@@ -335,6 +440,16 @@ pub trait Device {
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
+        first_instance: u32,
+    );
+
+    fn cmd_draw_indexed(
+        &self,
+        command_buffer_token: &CommandBufferToken,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
         first_instance: u32,
     );
 

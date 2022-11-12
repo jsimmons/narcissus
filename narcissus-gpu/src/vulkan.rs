@@ -15,10 +15,12 @@ use vulkan_sys as vk;
 
 use crate::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferUsageFlags,
-    ClearValue, CommandBufferToken, ComputePipelineDesc, Device, FrameToken, GpuConcurrent,
-    GraphicsPipelineDesc, LoadOp, MemoryLocation, Pipeline, Sampler, SamplerAddressMode,
-    SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, Texture, TextureDesc,
-    TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken, TypedBind,
+    ClearValue, CommandBufferToken, CompareOp, ComputePipelineDesc, CullingMode, Device,
+    FrameToken, FrontFace, GpuConcurrent, GraphicsPipelineDesc, IndexType, LoadOp, MemoryLocation,
+    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
+    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, Texture, TextureDesc,
+    TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken, Topology,
+    TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -51,12 +53,19 @@ fn vk_vec<T, F: FnMut(&mut u32, *mut T) -> vulkan_sys::Result>(mut f: F) -> Vec<
 }
 
 #[must_use]
+fn vulkan_bool32(b: bool) -> vk::Bool32 {
+    const VALUES: [vk::Bool32; 2] = [vk::Bool32::False, vk::Bool32::True];
+    VALUES[b as usize]
+}
+
+#[must_use]
 fn vulkan_format(format: TextureFormat) -> vk::Format {
     match format {
         TextureFormat::RGBA8_SRGB => vk::Format::R8G8B8A8_SRGB,
         TextureFormat::RGBA8_UNORM => vk::Format::R8G8B8A8_UNORM,
         TextureFormat::BGRA8_SRGB => vk::Format::B8G8R8A8_SRGB,
         TextureFormat::BGRA8_UNORM => vk::Format::B8G8R8A8_UNORM,
+        TextureFormat::DEPTH_F32 => vk::Format::D32_SFLOAT,
     }
 }
 
@@ -67,6 +76,7 @@ fn vulkan_aspect(format: TextureFormat) -> vk::ImageAspectFlags {
         | TextureFormat::BGRA8_UNORM
         | TextureFormat::RGBA8_SRGB
         | TextureFormat::RGBA8_UNORM => vk::ImageAspectFlags::COLOR,
+        TextureFormat::DEPTH_F32 => vk::ImageAspectFlags::DEPTH,
     }
 }
 
@@ -112,6 +122,92 @@ fn vulkan_descriptor_type(binding_type: BindingType) -> vk::DescriptorType {
         BindingType::StorageBuffer => vk::DescriptorType::StorageBuffer,
         BindingType::DynamicUniformBuffer => vk::DescriptorType::UniformBufferDynamic,
         BindingType::DynamicStorageBuffer => vk::DescriptorType::StorageBufferDynamic,
+    }
+}
+
+#[must_use]
+fn vulkan_index_type(index_type: IndexType) -> vk::IndexType {
+    match index_type {
+        IndexType::U16 => vk::IndexType::Uint16,
+        IndexType::U32 => vk::IndexType::Uint32,
+    }
+}
+
+#[must_use]
+fn vulkan_primitive_topology(primitive_topology: Topology) -> vk::PrimitiveTopology {
+    match primitive_topology {
+        Topology::Points => vk::PrimitiveTopology::PointList,
+        Topology::Lines => vk::PrimitiveTopology::LineList,
+        Topology::LineStrip => vk::PrimitiveTopology::LineStrip,
+        Topology::Triangles => vk::PrimitiveTopology::TriangleList,
+        Topology::TriangleStrip => vk::PrimitiveTopology::TriangleStrip,
+    }
+}
+
+#[must_use]
+fn vulkan_polygon_mode(polygon_mode: PolygonMode) -> vk::PolygonMode {
+    match polygon_mode {
+        PolygonMode::Fill => vk::PolygonMode::Fill,
+        PolygonMode::Line => vk::PolygonMode::Line,
+        PolygonMode::Point => vk::PolygonMode::Point,
+    }
+}
+
+#[must_use]
+fn vulkan_cull_mode(culling_mode: CullingMode) -> vk::CullModeFlags {
+    match culling_mode {
+        CullingMode::None => vk::CullModeFlags::NONE,
+        CullingMode::Front => vk::CullModeFlags::FRONT,
+        CullingMode::Back => vk::CullModeFlags::BACK,
+    }
+}
+
+#[must_use]
+fn vulkan_front_face(front_face: FrontFace) -> vk::FrontFace {
+    match front_face {
+        FrontFace::Clockwise => vk::FrontFace::Clockwise,
+        FrontFace::CounterClockwise => vk::FrontFace::CounterClockwise,
+    }
+}
+
+#[must_use]
+fn vulkan_compare_op(compare_op: CompareOp) -> vk::CompareOp {
+    match compare_op {
+        CompareOp::Never => vk::CompareOp::Never,
+        CompareOp::Less => vk::CompareOp::Less,
+        CompareOp::Equal => vk::CompareOp::Equal,
+        CompareOp::LessOrEqual => vk::CompareOp::LessOrEqual,
+        CompareOp::Greater => vk::CompareOp::Greater,
+        CompareOp::NotEqual => vk::CompareOp::NotEqual,
+        CompareOp::GreaterOrEqual => vk::CompareOp::GreaterOrEqual,
+        CompareOp::Always => vk::CompareOp::Always,
+    }
+}
+
+#[must_use]
+fn vulkan_stencil_op(stencil_op: StencilOp) -> vk::StencilOp {
+    match stencil_op {
+        StencilOp::Keep => vk::StencilOp::Keep,
+        StencilOp::Zero => vk::StencilOp::Zero,
+        StencilOp::Replace => vk::StencilOp::Replace,
+        StencilOp::IncrementAndClamp => vk::StencilOp::IncrementAndClamp,
+        StencilOp::DecrementAndClamp => vk::StencilOp::DecrementAndClamp,
+        StencilOp::Invert => vk::StencilOp::Invert,
+        StencilOp::IncrementAndWrap => vk::StencilOp::IncrementAndWrap,
+        StencilOp::DecrementAndWrap => vk::StencilOp::DecrementAndWrap,
+    }
+}
+
+#[must_use]
+fn vulkan_stencil_op_state(stencil_op_state: StencilOpState) -> vk::StencilOpState {
+    vk::StencilOpState {
+        fail_op: vulkan_stencil_op(stencil_op_state.fail_op),
+        pass_op: vulkan_stencil_op(stencil_op_state.pass_op),
+        depth_fail_op: vulkan_stencil_op(stencil_op_state.depth_fail_op),
+        compare_op: vulkan_compare_op(stencil_op_state.compare_op),
+        compare_mask: stencil_op_state.compare_mask,
+        write_mask: stencil_op_state.write_mask,
+        reference: stencil_op_state.reference,
     }
 }
 
@@ -1332,18 +1428,43 @@ impl<'driver> Device for VulkanDevice<'driver> {
             },
         ];
 
+        let topology = vulkan_primitive_topology(desc.topology);
+        let polygon_mode = vulkan_polygon_mode(desc.polygon_mode);
+        let cull_mode = vulkan_cull_mode(desc.culling_mode);
+        let front_face = vulkan_front_face(desc.front_face);
+        let depth_compare_op = vulkan_compare_op(desc.depth_compare_op);
+        let depth_test_enable = vulkan_bool32(desc.depth_test_enable);
+        let depth_write_enable = vulkan_bool32(desc.depth_write_enable);
+        let stencil_test_enable = vulkan_bool32(desc.stencil_test_enable);
+        let back = vulkan_stencil_op_state(desc.stencil_back);
+        let front = vulkan_stencil_op_state(desc.stencil_front);
+
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default();
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
-            topology: vk::PrimitiveTopology::TriangleList,
+            topology,
             ..default()
         };
         let viewport_state = vk::PipelineViewportStateCreateInfo::default();
         let rasterization_state = vk::PipelineRasterizationStateCreateInfo {
             line_width: 1.0,
+            polygon_mode,
+            cull_mode,
+            front_face,
             ..default()
         };
         let multisample_state = vk::PipelineMultisampleStateCreateInfo {
             rasterization_samples: vk::SampleCountFlags::SAMPLE_COUNT_1,
+            ..default()
+        };
+        let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo {
+            depth_compare_op,
+            depth_test_enable,
+            depth_write_enable,
+            min_depth_bounds: 0.0,
+            max_depth_bounds: 1.0,
+            stencil_test_enable,
+            back,
+            front,
             ..default()
         };
         let color_blend_attachments = &[vk::PipelineColorBlendAttachmentState {
@@ -1372,7 +1493,6 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 .copied()
                 .map(vulkan_format),
         );
-
         let pipeline_rendering_create_info = vk::PipelineRenderingCreateInfo {
             view_mask: 0,
             color_attachment_formats: color_attachment_formats.into(),
@@ -1398,6 +1518,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             viewport_state: Some(&viewport_state),
             rasterization_state: Some(&rasterization_state),
             multisample_state: Some(&multisample_state),
+            depth_stencil_state: Some(&depth_stencil_state),
             color_blend_state: Some(&color_blend_state),
             dynamic_state: Some(&dynamic_state),
             layout,
@@ -1992,7 +2113,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     ..default()
                 }
             }
-            TypedBind::Buffer(buffers) => {
+            TypedBind::UniformBuffer(buffers) => {
                 let buffer_infos_iter = buffers.iter().map(|buffer| {
                     let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
                     vk::DescriptorBufferInfo {
@@ -2008,6 +2129,26 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     dst_array_element: bind.array_element,
                     descriptor_count: buffer_infos.len() as u32,
                     descriptor_type: vk::DescriptorType::UniformBuffer,
+                    buffer_info: buffer_infos.as_ptr(),
+                    ..default()
+                }
+            }
+            TypedBind::StorageBuffer(buffers) => {
+                let buffer_infos_iter = buffers.iter().map(|buffer| {
+                    let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
+                    vk::DescriptorBufferInfo {
+                        buffer,
+                        offset: 0,
+                        range: !0,
+                    }
+                });
+                let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
+                vk::WriteDescriptorSet {
+                    dst_set: descriptor_set,
+                    dst_binding: bind.binding,
+                    dst_array_element: bind.array_element,
+                    descriptor_count: buffer_infos.len() as u32,
+                    descriptor_type: vk::DescriptorType::StorageBuffer,
                     buffer_info: buffer_infos.as_ptr(),
                     ..default()
                 }
@@ -2037,6 +2178,22 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 &[descriptor_set],
                 &[],
             )
+        }
+    }
+
+    fn cmd_set_index_buffer(
+        &self,
+        command_buffer_token: &CommandBufferToken,
+        buffer: Buffer,
+        offset: u64,
+        index_type: IndexType,
+    ) {
+        let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
+        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        let index_type = vulkan_index_type(index_type);
+        unsafe {
+            self.device_fn
+                .cmd_bind_index_buffer(command_buffer, buffer, offset, index_type)
         }
     }
 
@@ -2146,6 +2303,35 @@ impl<'driver> Device for VulkanDevice<'driver> {
             })
             .collect::<Vec<_>>();
 
+        let depth_attachment = desc.depth_attachment.as_ref().map(|attachment| {
+            let image_view = match self.texture_pool.lock().get(attachment.texture.0).unwrap() {
+                VulkanTextureHolder::Unique(texture) => texture.view,
+                VulkanTextureHolder::Shared(texture) => texture.view,
+                VulkanTextureHolder::Swapchain(_) => panic!(),
+            };
+
+            let (load_op, clear_value) = match attachment.load_op {
+                LoadOp::Load => (vk::AttachmentLoadOp::Load, vk::ClearValue::default()),
+                LoadOp::Clear(clear_value) => {
+                    (vk::AttachmentLoadOp::Clear, vulkan_clear_value(clear_value))
+                }
+                LoadOp::DontCare => (vk::AttachmentLoadOp::DontCare, vk::ClearValue::default()),
+            };
+
+            let store_op = match attachment.store_op {
+                crate::StoreOp::Store => vk::AttachmentStoreOp::Store,
+                crate::StoreOp::DontCare => vk::AttachmentStoreOp::DontCare,
+            };
+            vk::RenderingAttachmentInfo {
+                image_view,
+                image_layout: vk::ImageLayout::DepthAttachmentOptimal,
+                load_op,
+                store_op,
+                clear_value,
+                ..default()
+            }
+        });
+
         let rendering_info = vk::RenderingInfo {
             flags: vk::RenderingFlags::default(),
             render_area: vk::Rect2d {
@@ -2161,7 +2347,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             layer_count: 1,
             view_mask: 0,
             color_attachments: color_attachments.as_slice().into(),
-            depth_attachment: None,
+            depth_attachment: depth_attachment.as_ref(),
             stencil_attachment: None,
             ..default()
         };
@@ -2219,6 +2405,28 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 vertex_count,
                 instance_count,
                 first_vertex,
+                first_instance,
+            )
+        }
+    }
+
+    fn cmd_draw_indexed(
+        &self,
+        command_buffer_token: &CommandBufferToken,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        let command_buffer = vk::CommandBuffer::from_raw(command_buffer_token.raw);
+        unsafe {
+            self.device_fn.cmd_draw_indexed(
+                command_buffer,
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
                 first_instance,
             )
         }
@@ -2512,11 +2720,13 @@ impl<'app> Drop for VulkanDevice<'app> {
         {
             let mut image_views = Vec::new();
             let mut images = Vec::new();
+            let mut memories = Vec::new();
             for texture in self.texture_pool.get_mut().values() {
                 match texture {
                     VulkanTextureHolder::Unique(texture) => {
                         image_views.push(texture.view);
-                        images.push(texture.texture.image)
+                        images.push(texture.texture.image);
+                        memories.push(texture.texture.memory.memory);
                     }
                     VulkanTextureHolder::Shared(texture) => {
                         image_views.push(texture.view);
@@ -2533,6 +2743,10 @@ impl<'app> Drop for VulkanDevice<'app> {
 
             for image in images {
                 unsafe { device_fn.destroy_image(device, image, None) }
+            }
+
+            for memory in memories {
+                unsafe { device_fn.free_memory(device, memory, None) }
             }
         }
 
