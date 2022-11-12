@@ -8,7 +8,8 @@ use std::{
 
 use narcissus_app::{App, Window};
 use narcissus_core::{
-    cstr, default, manual_arc, manual_arc::ManualArc, HybridArena, Mutex, PhantomUnsend, Pool,
+    cstr, default, manual_arc, manual_arc::ManualArc, Arena, HybridArena, Mutex, PhantomUnsend,
+    Pool,
 };
 
 use vulkan_sys as vk;
@@ -413,11 +414,16 @@ impl FrameCounter {
     }
 }
 
+struct VulkanPerThread {
+    cmd_buffer_pool: VulkanCmdBufferPool,
+    descriptor_pool: vk::DescriptorPool,
+    arena: Arena,
+}
+
 struct VulkanFrame {
     universal_queue_fence: AtomicU64,
 
-    cmd_buffer_pools: GpuConcurrent<VulkanCmdBufferPool>,
-    descriptor_pool_pools: GpuConcurrent<vk::DescriptorPool>,
+    per_thread: GpuConcurrent<VulkanPerThread>,
 
     present_swapchains: Mutex<HashMap<Window, VulkanPresentInfo>>,
 
@@ -441,8 +447,11 @@ impl VulkanFrame {
         thread_token: &'a mut ThreadToken,
         cmd_buffer_token: &'a CmdBufferToken,
     ) -> &'a mut VulkanCmdBuffer {
-        let cmd_buffer_pool = self.cmd_buffer_pools.get_mut(thread_token);
-        &mut cmd_buffer_pool.cmd_buffers[cmd_buffer_token.index]
+        &mut self
+            .per_thread
+            .get_mut(thread_token)
+            .cmd_buffer_pool
+            .cmd_buffers[cmd_buffer_token.index]
     }
 
     fn recycle_semaphore(&self, semaphore: vk::Semaphore) {
@@ -715,8 +724,8 @@ impl<'app> VulkanDevice<'app> {
         };
 
         let frames = Box::new(std::array::from_fn(|_| {
-            let cmd_buffer_pools = GpuConcurrent::new(|| {
-                let pool = {
+            let per_thread = GpuConcurrent::new(|| {
+                let command_pool = {
                     let create_info = vk::CommandPoolCreateInfo {
                         flags: vk::CommandPoolCreateFlags::TRANSIENT,
                         queue_family_index,
@@ -726,18 +735,20 @@ impl<'app> VulkanDevice<'app> {
                     vk_check!(device_fn.create_command_pool(device, &create_info, None, &mut pool));
                     pool
                 };
-                VulkanCmdBufferPool {
-                    command_pool: pool,
+                let cmd_buffer_pool = VulkanCmdBufferPool {
+                    command_pool,
                     cmd_buffers: Vec::new(),
                     next_free_index: 0,
+                };
+                VulkanPerThread {
+                    cmd_buffer_pool,
+                    descriptor_pool: vk::DescriptorPool::null(),
+                    arena: Arena::new(),
                 }
             });
 
-            let descriptor_pool_pools = GpuConcurrent::new(vk::DescriptorPool::null);
-
             UnsafeCell::new(VulkanFrame {
-                cmd_buffer_pools,
-                descriptor_pool_pools,
+                per_thread,
                 universal_queue_fence: AtomicU64::new(universal_queue_fence),
                 present_swapchains: default(),
                 destroyed_allocations: default(),
@@ -1949,10 +1960,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
     ) -> CmdBufferToken {
-        let cmd_buffer_pool = self
-            .frame(frame_token)
-            .cmd_buffer_pools
-            .get_mut(thread_token);
+        let frame = self.frame(frame_token);
+
+        let cmd_buffer_pool = &mut frame.per_thread.get_mut(thread_token).cmd_buffer_pool;
 
         // We have consumed all available command buffers, need to allocate a new one.
         if cmd_buffer_pool.next_free_index >= cmd_buffer_pool.cmd_buffers.len() {
@@ -2013,18 +2023,19 @@ impl<'driver> Device for VulkanDevice<'driver> {
     ) {
         let arena = HybridArena::<4096>::new();
 
-        let frame = self.frame(frame_token);
-
         let descriptor_set_layout = self.bind_group_layout_pool.lock().get(layout.0).unwrap().0;
 
-        let mut descriptor_pool = *frame.descriptor_pool_pools.get(thread_token);
+        let frame = self.frame(frame_token);
+        let per_thread = frame.per_thread.get_mut(thread_token);
+
+        let mut descriptor_pool = per_thread.descriptor_pool;
         let mut allocated_pool = false;
         let descriptor_set = loop {
             if descriptor_pool.is_null() {
                 // Need to fetch a new descriptor pool
                 descriptor_pool = self.request_descriptor_pool();
                 frame.recycle_descriptor_pool(descriptor_pool);
-                *frame.descriptor_pool_pools.get_mut(thread_token) = descriptor_pool;
+                per_thread.descriptor_pool = descriptor_pool;
                 allocated_pool = true;
             }
             let allocate_info = vk::DescriptorSetAllocateInfo {
@@ -2501,22 +2512,18 @@ impl<'driver> Device for VulkanDevice<'driver> {
             vk_check!(device_fn.wait_semaphores(device, &wait_info, !0));
         }
 
-        for pool in frame.descriptor_pool_pools.slots_mut() {
-            *pool = vk::DescriptorPool::null()
-        }
+        for per_thread in frame.per_thread.slots_mut() {
+            per_thread.descriptor_pool = vk::DescriptorPool::null();
+            if per_thread.cmd_buffer_pool.next_free_index != 0 {
+                vk_check!(device_fn.reset_command_pool(
+                    device,
+                    per_thread.cmd_buffer_pool.command_pool,
+                    vk::CommandPoolResetFlags::default()
+                ));
 
-        for pool in frame.cmd_buffer_pools.slots_mut() {
-            if pool.next_free_index == 0 {
-                continue;
+                per_thread.cmd_buffer_pool.next_free_index = 0;
             }
-
-            vk_check!(device_fn.reset_command_pool(
-                device,
-                pool.command_pool,
-                vk::CommandPoolResetFlags::default()
-            ));
-
-            pool.next_free_index = 0;
+            per_thread.arena.reset()
         }
 
         self.recycled_semaphores
@@ -2648,17 +2655,32 @@ impl<'app> Drop for VulkanDevice<'app> {
             Self::destroy_deferred(device_fn, device, frame);
 
             let mut arena = HybridArena::<512>::new();
-            for pool in frame.cmd_buffer_pools.slots_mut() {
-                if !pool.cmd_buffers.is_empty() {
+
+            for per_thread in frame.per_thread.slots_mut() {
+                if !per_thread.cmd_buffer_pool.cmd_buffers.is_empty() {
                     arena.reset();
-                    let cmd_buffers = arena
-                        .alloc_slice_fill_iter(pool.cmd_buffers.iter().map(|x| x.command_buffer));
+                    let cmd_buffers = arena.alloc_slice_fill_iter(
+                        per_thread
+                            .cmd_buffer_pool
+                            .cmd_buffers
+                            .iter()
+                            .map(|x| x.command_buffer),
+                    );
                     unsafe {
-                        device_fn.free_command_buffers(device, pool.command_pool, cmd_buffers)
+                        device_fn.free_command_buffers(
+                            device,
+                            per_thread.cmd_buffer_pool.command_pool,
+                            cmd_buffers,
+                        )
                     };
                 }
-
-                unsafe { device_fn.destroy_command_pool(device, pool.command_pool, None) }
+                unsafe {
+                    device_fn.destroy_command_pool(
+                        device,
+                        per_thread.cmd_buffer_pool.command_pool,
+                        None,
+                    )
+                }
             }
         }
 
