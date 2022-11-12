@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 
 pub struct DelayQueue<T> {
-    delay: u64,
-    counter: u64,
-    values: VecDeque<(u64, T)>,
+    delay: usize,
+    counter: usize,
+    values: VecDeque<(usize, T)>,
 }
 
 impl<T> DelayQueue<T> {
-    pub fn new(delay: u64) -> Self {
+    pub fn new(delay: usize) -> Self {
         Self {
             delay,
             counter: 0,
@@ -33,7 +33,7 @@ impl<T> DelayQueue<T> {
         }
     }
 
-    pub fn drain<R>(&mut self, range: R) -> std::collections::vec_deque::Drain<'_, (u64, T)>
+    pub fn drain<R>(&mut self, range: R) -> std::collections::vec_deque::Drain<'_, (usize, T)>
     where
         R: std::ops::RangeBounds<usize>,
     {

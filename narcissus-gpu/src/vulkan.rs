@@ -26,6 +26,11 @@ use crate::{
 
 const NUM_FRAMES: usize = 2;
 
+/// How many frames to delay swapchain destruction.
+///
+/// There's no correct answer here (spec bug) we're just picking a big number and hoping for the best.
+const SWAPCHAIN_DESTROY_DELAY_FRAMES: usize = 8;
+
 macro_rules! vk_check {
     ($e:expr) => ({
         #[allow(unused_unsafe)]
@@ -782,7 +787,7 @@ impl<'app> VulkanDevice<'app> {
             frames,
 
             swapchains: Mutex::new(HashMap::new()),
-            destroyed_swapchains: Mutex::new(DelayQueue::new(8)),
+            destroyed_swapchains: Mutex::new(DelayQueue::new(SWAPCHAIN_DESTROY_DELAY_FRAMES)),
 
             texture_pool: default(),
             buffer_pool: default(),
