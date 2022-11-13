@@ -10,9 +10,25 @@ pub type JoystickID = i32;
 pub type TouchID = i64;
 pub type FingerID = i64;
 pub type GestureID = i64;
-pub type Keycode = i32;
 
-#[repr(C)]
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PressedState {
+    Released = 0,
+    Pressed = 1,
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left = 1,
+    Middle = 2,
+    Right = 3,
+    X1 = 4,
+    X2 = 5,
+}
+
+#[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scancode {
     UNKNOWN = 0,
@@ -398,12 +414,303 @@ pub enum Scancode {
     NUM_SCANCODES = 512,
 }
 
+const fn keycode_from_scancode(scancode: Scancode) -> i32 {
+    scancode as i32 | 1 << 30
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy)]
+pub enum Keycode {
+    UNKNOWN = 0,
+
+    RETURN = '\r' as i32,
+    ESCAPE = '\x1B' as i32,
+    BACKSPACE = '\x08' as i32,
+    TAB = '\t' as i32,
+    SPACE = ' ' as i32,
+    EXCLAIM = '!' as i32,
+    QUOTEDBL = '"' as i32,
+    HASH = '#' as i32,
+    PERCENT = '%' as i32,
+    DOLLAR = '$' as i32,
+    AMPERSAND = '&' as i32,
+    QUOTE = '\'' as i32,
+    LEFTPAREN = '(' as i32,
+    RIGHTPAREN = ')' as i32,
+    ASTERISK = '*' as i32,
+    PLUS = '+' as i32,
+    COMMA = ',' as i32,
+    MINUS = '-' as i32,
+    PERIOD = '.' as i32,
+    SLASH = '/' as i32,
+    KEY_0 = '0' as i32,
+    KEY_1 = '1' as i32,
+    KEY_2 = '2' as i32,
+    KEY_3 = '3' as i32,
+    KEY_4 = '4' as i32,
+    KEY_5 = '5' as i32,
+    KEY_6 = '6' as i32,
+    KEY_7 = '7' as i32,
+    KEY_8 = '8' as i32,
+    KEY_9 = '9' as i32,
+    COLON = ':' as i32,
+    SEMICOLON = ';' as i32,
+    LESS = '<' as i32,
+    EQUALS = '=' as i32,
+    GREATER = '>' as i32,
+    QUESTION = '?' as i32,
+    AT = '@' as i32,
+
+    /*
+      Skip uppercase letters
+    */
+    LEFTBRACKET = '[' as i32,
+    BACKSLASH = '\\' as i32,
+    RIGHTBRACKET = ']' as i32,
+    CARET = '^' as i32,
+    UNDERSCORE = '_' as i32,
+    BACKQUOTE = '`' as i32,
+    a = 'a' as i32,
+    b = 'b' as i32,
+    c = 'c' as i32,
+    d = 'd' as i32,
+    e = 'e' as i32,
+    f = 'f' as i32,
+    g = 'g' as i32,
+    h = 'h' as i32,
+    i = 'i' as i32,
+    j = 'j' as i32,
+    k = 'k' as i32,
+    l = 'l' as i32,
+    m = 'm' as i32,
+    n = 'n' as i32,
+    o = 'o' as i32,
+    p = 'p' as i32,
+    q = 'q' as i32,
+    r = 'r' as i32,
+    s = 's' as i32,
+    t = 't' as i32,
+    u = 'u' as i32,
+    v = 'v' as i32,
+    w = 'w' as i32,
+    x = 'x' as i32,
+    y = 'y' as i32,
+    z = 'z' as i32,
+
+    CAPSLOCK = keycode_from_scancode(Scancode::CAPSLOCK),
+
+    F1 = keycode_from_scancode(Scancode::F1),
+    F2 = keycode_from_scancode(Scancode::F2),
+    F3 = keycode_from_scancode(Scancode::F3),
+    F4 = keycode_from_scancode(Scancode::F4),
+    F5 = keycode_from_scancode(Scancode::F5),
+    F6 = keycode_from_scancode(Scancode::F6),
+    F7 = keycode_from_scancode(Scancode::F7),
+    F8 = keycode_from_scancode(Scancode::F8),
+    F9 = keycode_from_scancode(Scancode::F9),
+    F10 = keycode_from_scancode(Scancode::F10),
+    F11 = keycode_from_scancode(Scancode::F11),
+    F12 = keycode_from_scancode(Scancode::F12),
+
+    PRINTSCREEN = keycode_from_scancode(Scancode::PRINTSCREEN),
+    SCROLLLOCK = keycode_from_scancode(Scancode::SCROLLLOCK),
+    PAUSE = keycode_from_scancode(Scancode::PAUSE),
+    INSERT = keycode_from_scancode(Scancode::INSERT),
+    HOME = keycode_from_scancode(Scancode::HOME),
+    PAGEUP = keycode_from_scancode(Scancode::PAGEUP),
+    DELETE = '\x7F' as i32,
+    END = keycode_from_scancode(Scancode::END),
+    PAGEDOWN = keycode_from_scancode(Scancode::PAGEDOWN),
+    RIGHT = keycode_from_scancode(Scancode::RIGHT),
+    LEFT = keycode_from_scancode(Scancode::LEFT),
+    DOWN = keycode_from_scancode(Scancode::DOWN),
+    UP = keycode_from_scancode(Scancode::UP),
+
+    NUMLOCKCLEAR = keycode_from_scancode(Scancode::NUMLOCKCLEAR),
+    KP_DIVIDE = keycode_from_scancode(Scancode::KP_DIVIDE),
+    KP_MULTIPLY = keycode_from_scancode(Scancode::KP_MULTIPLY),
+    KP_MINUS = keycode_from_scancode(Scancode::KP_MINUS),
+    KP_PLUS = keycode_from_scancode(Scancode::KP_PLUS),
+    KP_ENTER = keycode_from_scancode(Scancode::KP_ENTER),
+    KP_1 = keycode_from_scancode(Scancode::KP_1),
+    KP_2 = keycode_from_scancode(Scancode::KP_2),
+    KP_3 = keycode_from_scancode(Scancode::KP_3),
+    KP_4 = keycode_from_scancode(Scancode::KP_4),
+    KP_5 = keycode_from_scancode(Scancode::KP_5),
+    KP_6 = keycode_from_scancode(Scancode::KP_6),
+    KP_7 = keycode_from_scancode(Scancode::KP_7),
+    KP_8 = keycode_from_scancode(Scancode::KP_8),
+    KP_9 = keycode_from_scancode(Scancode::KP_9),
+    KP_0 = keycode_from_scancode(Scancode::KP_0),
+    KP_PERIOD = keycode_from_scancode(Scancode::KP_PERIOD),
+
+    APPLICATION = keycode_from_scancode(Scancode::APPLICATION),
+    POWER = keycode_from_scancode(Scancode::POWER),
+    KP_EQUALS = keycode_from_scancode(Scancode::KP_EQUALS),
+    F13 = keycode_from_scancode(Scancode::F13),
+    F14 = keycode_from_scancode(Scancode::F14),
+    F15 = keycode_from_scancode(Scancode::F15),
+    F16 = keycode_from_scancode(Scancode::F16),
+    F17 = keycode_from_scancode(Scancode::F17),
+    F18 = keycode_from_scancode(Scancode::F18),
+    F19 = keycode_from_scancode(Scancode::F19),
+    F20 = keycode_from_scancode(Scancode::F20),
+    F21 = keycode_from_scancode(Scancode::F21),
+    F22 = keycode_from_scancode(Scancode::F22),
+    F23 = keycode_from_scancode(Scancode::F23),
+    F24 = keycode_from_scancode(Scancode::F24),
+    EXECUTE = keycode_from_scancode(Scancode::EXECUTE),
+    HELP = keycode_from_scancode(Scancode::HELP),
+    MENU = keycode_from_scancode(Scancode::MENU),
+    SELECT = keycode_from_scancode(Scancode::SELECT),
+    STOP = keycode_from_scancode(Scancode::STOP),
+    AGAIN = keycode_from_scancode(Scancode::AGAIN),
+    UNDO = keycode_from_scancode(Scancode::UNDO),
+    CUT = keycode_from_scancode(Scancode::CUT),
+    COPY = keycode_from_scancode(Scancode::COPY),
+    PASTE = keycode_from_scancode(Scancode::PASTE),
+    FIND = keycode_from_scancode(Scancode::FIND),
+    MUTE = keycode_from_scancode(Scancode::MUTE),
+    VOLUMEUP = keycode_from_scancode(Scancode::VOLUMEUP),
+    VOLUMEDOWN = keycode_from_scancode(Scancode::VOLUMEDOWN),
+    KP_COMMA = keycode_from_scancode(Scancode::KP_COMMA),
+    KP_EQUALSAS400 = keycode_from_scancode(Scancode::KP_EQUALSAS400),
+
+    ALTERASE = keycode_from_scancode(Scancode::ALTERASE),
+    SYSREQ = keycode_from_scancode(Scancode::SYSREQ),
+    CANCEL = keycode_from_scancode(Scancode::CANCEL),
+    CLEAR = keycode_from_scancode(Scancode::CLEAR),
+    PRIOR = keycode_from_scancode(Scancode::PRIOR),
+    RETURN2 = keycode_from_scancode(Scancode::RETURN2),
+    SEPARATOR = keycode_from_scancode(Scancode::SEPARATOR),
+    OUT = keycode_from_scancode(Scancode::OUT),
+    OPER = keycode_from_scancode(Scancode::OPER),
+    CLEARAGAIN = keycode_from_scancode(Scancode::CLEARAGAIN),
+    CRSEL = keycode_from_scancode(Scancode::CRSEL),
+    EXSEL = keycode_from_scancode(Scancode::EXSEL),
+
+    KP_00 = keycode_from_scancode(Scancode::KP_00),
+    KP_000 = keycode_from_scancode(Scancode::KP_000),
+    THOUSANDSSEPARATOR = keycode_from_scancode(Scancode::THOUSANDSSEPARATOR),
+    DECIMALSEPARATOR = keycode_from_scancode(Scancode::DECIMALSEPARATOR),
+    CURRENCYUNIT = keycode_from_scancode(Scancode::CURRENCYUNIT),
+    CURRENCYSUBUNIT = keycode_from_scancode(Scancode::CURRENCYSUBUNIT),
+    KP_LEFTPAREN = keycode_from_scancode(Scancode::KP_LEFTPAREN),
+    KP_RIGHTPAREN = keycode_from_scancode(Scancode::KP_RIGHTPAREN),
+    KP_LEFTBRACE = keycode_from_scancode(Scancode::KP_LEFTBRACE),
+    KP_RIGHTBRACE = keycode_from_scancode(Scancode::KP_RIGHTBRACE),
+    KP_TAB = keycode_from_scancode(Scancode::KP_TAB),
+    KP_BACKSPACE = keycode_from_scancode(Scancode::KP_BACKSPACE),
+    KP_A = keycode_from_scancode(Scancode::KP_A),
+    KP_B = keycode_from_scancode(Scancode::KP_B),
+    KP_C = keycode_from_scancode(Scancode::KP_C),
+    KP_D = keycode_from_scancode(Scancode::KP_D),
+    KP_E = keycode_from_scancode(Scancode::KP_E),
+    KP_F = keycode_from_scancode(Scancode::KP_F),
+    KP_XOR = keycode_from_scancode(Scancode::KP_XOR),
+    KP_POWER = keycode_from_scancode(Scancode::KP_POWER),
+    KP_PERCENT = keycode_from_scancode(Scancode::KP_PERCENT),
+    KP_LESS = keycode_from_scancode(Scancode::KP_LESS),
+    KP_GREATER = keycode_from_scancode(Scancode::KP_GREATER),
+    KP_AMPERSAND = keycode_from_scancode(Scancode::KP_AMPERSAND),
+    KP_DBLAMPERSAND = keycode_from_scancode(Scancode::KP_DBLAMPERSAND),
+    KP_VERTICALBAR = keycode_from_scancode(Scancode::KP_VERTICALBAR),
+    KP_DBLVERTICALBAR = keycode_from_scancode(Scancode::KP_DBLVERTICALBAR),
+    KP_COLON = keycode_from_scancode(Scancode::KP_COLON),
+    KP_HASH = keycode_from_scancode(Scancode::KP_HASH),
+    KP_SPACE = keycode_from_scancode(Scancode::KP_SPACE),
+    KP_AT = keycode_from_scancode(Scancode::KP_AT),
+    KP_EXCLAM = keycode_from_scancode(Scancode::KP_EXCLAM),
+    KP_MEMSTORE = keycode_from_scancode(Scancode::KP_MEMSTORE),
+    KP_MEMRECALL = keycode_from_scancode(Scancode::KP_MEMRECALL),
+    KP_MEMCLEAR = keycode_from_scancode(Scancode::KP_MEMCLEAR),
+    KP_MEMADD = keycode_from_scancode(Scancode::KP_MEMADD),
+    KP_MEMSUBTRACT = keycode_from_scancode(Scancode::KP_MEMSUBTRACT),
+    KP_MEMMULTIPLY = keycode_from_scancode(Scancode::KP_MEMMULTIPLY),
+    KP_MEMDIVIDE = keycode_from_scancode(Scancode::KP_MEMDIVIDE),
+    KP_PLUSMINUS = keycode_from_scancode(Scancode::KP_PLUSMINUS),
+    KP_CLEAR = keycode_from_scancode(Scancode::KP_CLEAR),
+    KP_CLEARENTRY = keycode_from_scancode(Scancode::KP_CLEARENTRY),
+    KP_BINARY = keycode_from_scancode(Scancode::KP_BINARY),
+    KP_OCTAL = keycode_from_scancode(Scancode::KP_OCTAL),
+    KP_DECIMAL = keycode_from_scancode(Scancode::KP_DECIMAL),
+    KP_HEXADECIMAL = keycode_from_scancode(Scancode::KP_HEXADECIMAL),
+
+    LCTRL = keycode_from_scancode(Scancode::LCTRL),
+    LSHIFT = keycode_from_scancode(Scancode::LSHIFT),
+    LALT = keycode_from_scancode(Scancode::LALT),
+    LGUI = keycode_from_scancode(Scancode::LGUI),
+    RCTRL = keycode_from_scancode(Scancode::RCTRL),
+    RSHIFT = keycode_from_scancode(Scancode::RSHIFT),
+    RALT = keycode_from_scancode(Scancode::RALT),
+    RGUI = keycode_from_scancode(Scancode::RGUI),
+
+    MODE = keycode_from_scancode(Scancode::MODE),
+
+    AUDIONEXT = keycode_from_scancode(Scancode::AUDIONEXT),
+    AUDIOPREV = keycode_from_scancode(Scancode::AUDIOPREV),
+    AUDIOSTOP = keycode_from_scancode(Scancode::AUDIOSTOP),
+    AUDIOPLAY = keycode_from_scancode(Scancode::AUDIOPLAY),
+    AUDIOMUTE = keycode_from_scancode(Scancode::AUDIOMUTE),
+    MEDIASELECT = keycode_from_scancode(Scancode::MEDIASELECT),
+    WWW = keycode_from_scancode(Scancode::WWW),
+    MAIL = keycode_from_scancode(Scancode::MAIL),
+    CALCULATOR = keycode_from_scancode(Scancode::CALCULATOR),
+    COMPUTER = keycode_from_scancode(Scancode::COMPUTER),
+    AC_SEARCH = keycode_from_scancode(Scancode::AC_SEARCH),
+    AC_HOME = keycode_from_scancode(Scancode::AC_HOME),
+    AC_BACK = keycode_from_scancode(Scancode::AC_BACK),
+    AC_FORWARD = keycode_from_scancode(Scancode::AC_FORWARD),
+    AC_STOP = keycode_from_scancode(Scancode::AC_STOP),
+    AC_REFRESH = keycode_from_scancode(Scancode::AC_REFRESH),
+    AC_BOOKMARKS = keycode_from_scancode(Scancode::AC_BOOKMARKS),
+
+    BRIGHTNESSDOWN = keycode_from_scancode(Scancode::BRIGHTNESSDOWN),
+    BRIGHTNESSUP = keycode_from_scancode(Scancode::BRIGHTNESSUP),
+    DISPLAYSWITCH = keycode_from_scancode(Scancode::DISPLAYSWITCH),
+    KBDILLUMTOGGLE = keycode_from_scancode(Scancode::KBDILLUMTOGGLE),
+    KBDILLUMDOWN = keycode_from_scancode(Scancode::KBDILLUMDOWN),
+    KBDILLUMUP = keycode_from_scancode(Scancode::KBDILLUMUP),
+    EJECT = keycode_from_scancode(Scancode::EJECT),
+    SLEEP = keycode_from_scancode(Scancode::SLEEP),
+    APP1 = keycode_from_scancode(Scancode::APP1),
+    APP2 = keycode_from_scancode(Scancode::APP2),
+
+    AUDIOREWIND = keycode_from_scancode(Scancode::AUDIOREWIND),
+    AUDIOFASTFORWARD = keycode_from_scancode(Scancode::AUDIOFASTFORWARD),
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Keymod(pub u16);
+
+impl Keymod {
+    pub const NONE: Self = Self(0x0000);
+    pub const LSHIFT: Self = Self(0x0001);
+    pub const RSHIFT: Self = Self(0x0002);
+    pub const LCTRL: Self = Self(0x0040);
+    pub const RCTRL: Self = Self(0x0080);
+    pub const LALT: Self = Self(0x0100);
+    pub const RALT: Self = Self(0x0200);
+    pub const LGUI: Self = Self(0x0400);
+    pub const RGUI: Self = Self(0x0800);
+    pub const NUM: Self = Self(0x1000);
+    pub const CAPS: Self = Self(0x2000);
+    pub const MODE: Self = Self(0x4000);
+    pub const SCROLL: Self = Self(0x8000);
+
+    pub const CTRL: Self = Self(Self::LCTRL.0 | Self::RCTRL.0);
+    pub const SHIFT: Self = Self(Self::LSHIFT.0 | Self::RSHIFT.0);
+    pub const ALT: Self = Self(Self::LALT.0 | Self::RALT.0);
+    pub const GUI: Self = Self(Self::LGUI.0 | Self::RGUI.0);
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Keysym {
     pub scancode: Scancode,
     pub sym: Keycode,
-    pub modifiers: u16,
+    pub modifiers: Keymod,
     pub _unused: u32,
 }
 
@@ -568,7 +875,7 @@ pub struct KeyboardEvent {
     pub r#type: EventType,
     pub timestamp: u32,
     pub window_id: u32,
-    pub state: u8,
+    pub state: PressedState,
     pub repeat: u8,
     pub _padding2: u8,
     pub _padding3: u8,
@@ -620,8 +927,8 @@ pub struct MouseButtonEvent {
     pub timestamp: u32,
     pub window_id: u32,
     pub which: u32,
-    pub button: u8,
-    pub state: u8,
+    pub button: MouseButton,
+    pub state: PressedState,
     pub clicks: u8,
     pub padding1: u8,
     pub x: i32,
@@ -917,6 +1224,8 @@ extern "C" {
 
     pub fn SDL_GetWindowID(window: *mut Window) -> u32;
     pub fn SDL_GetWindowFromID(id: u32) -> *mut Window;
+
+    pub fn SDL_GetKeyFromScancode(scancode: Scancode) -> Keycode;
 
     pub fn SDL_PollEvent(event: *mut Event) -> i32;
 

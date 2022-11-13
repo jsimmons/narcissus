@@ -1,6 +1,6 @@
 use std::{path::Path, time::Instant};
 
-use narcissus_app::{create_app, Event, WindowDesc};
+use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{cstr, default, obj, Image};
 use narcissus_gpu::{
     create_vulkan_device, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, Buffer,
@@ -193,7 +193,7 @@ pub fn main() {
     let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
 
     let app = create_app();
-    let window = app.create_window(&WindowDesc {
+    let main_window = app.create_window(&WindowDesc {
         title: "narcissus",
         width: 800,
         height: 600,
@@ -279,11 +279,21 @@ pub fn main() {
         while let Some(event) = app.poll_event() {
             use Event::*;
             match event {
+                KeyPress {
+                    window: _,
+                    key,
+                    pressed: _,
+                    modifiers: _,
+                } => {
+                    if key == Key::Escape {
+                        break 'main;
+                    }
+                }
                 Quit => {
                     break 'main;
                 }
-                WindowClose(w) => {
-                    assert_eq!(window, w);
+                Close { window } => {
+                    assert_eq!(window, main_window);
                     device.destroy_window(window);
                     break 'main;
                 }
@@ -292,7 +302,7 @@ pub fn main() {
         }
 
         let (width, height, swapchain_image) =
-            device.acquire_swapchain(&frame_token, window, TextureFormat::BGRA8_SRGB);
+            device.acquire_swapchain(&frame_token, main_window, TextureFormat::BGRA8_SRGB);
 
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.5;

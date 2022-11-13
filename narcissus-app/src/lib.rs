@@ -1,8 +1,27 @@
+mod button;
+mod key;
 mod sdl;
 
 use std::ffi::{c_void, CStr};
 
-use narcissus_core::Handle;
+use narcissus_core::{flags_def, Handle};
+
+pub use button::Button;
+pub use key::Key;
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum PressedState {
+    Released,
+    Pressed,
+}
+
+flags_def!(ModifierFlags);
+impl ModifierFlags {
+    pub const ALT: Self = Self(1 << 0);
+    pub const CTRL: Self = Self(1 << 1);
+    pub const SHIFT: Self = Self(1 << 2);
+    pub const META: Self = Self(1 << 3);
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Debug)]
 pub struct Window(Handle);
@@ -23,7 +42,66 @@ pub struct WindowDesc<'a> {
 pub enum Event {
     Unknown,
     Quit,
-    WindowClose(Window),
+
+    KeyPress {
+        window: Window,
+        key: Key,
+        pressed: PressedState,
+        modifiers: ModifierFlags,
+    },
+
+    ButtonPress {
+        window: Window,
+        button: Button,
+        pressed: PressedState,
+    },
+
+    MouseMotion {
+        window: Window,
+        x: i32,
+        y: i32,
+    },
+
+    /// A window has gained mouse focus.
+    MouseEnter {
+        window: Window,
+        x: i32,
+        y: i32,
+    },
+
+    /// A window has lost moust focus.
+    MouseLeave {
+        window: Window,
+        x: i32,
+        y: i32,
+    },
+
+    /// A window has gained keyboard focus.
+    FocusIn {
+        window: Window,
+    },
+
+    /// A window has lost keyboard focus.
+    FocusOut {
+        window: Window,
+    },
+
+    /// The window has been resized.
+    Resize {
+        window: Window,
+        width: u32,
+        height: u32,
+    },
+
+    // The close button has been pressed on the window.
+    Close {
+        window: Window,
+    },
+
+    // The window has been destroyed.
+    Destroy {
+        window: Window,
+    },
 }
 
 pub trait App {
