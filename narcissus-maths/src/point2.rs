@@ -8,6 +8,10 @@ pub struct Point2 {
     pub y: f32,
 }
 
+pub const fn point2(x: f32, y: f32) -> Point2 {
+    Point2 { x, y }
+}
+
 impl_shared!(Point2, f32, 2);
 impl_affine!(Point2, f32, 2);
 

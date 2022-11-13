@@ -11,6 +11,10 @@ pub struct Vec3 {
 impl_shared!(Vec3, f32, 3);
 impl_vector!(Vec3, f32, 3);
 
+pub const fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
+    Vec3 { x, y, z }
+}
+
 impl Vec3 {
     pub const X: Vec3 = Vec3::new(1.0, 0.0, 0.0);
     pub const Y: Vec3 = Vec3::new(0.0, 1.0, 0.0);

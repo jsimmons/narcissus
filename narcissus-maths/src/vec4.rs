@@ -9,6 +9,10 @@ pub struct Vec4 {
     pub w: f32,
 }
 
+pub const fn vec4(x: f32, y: f32, z: f32, w: f32) -> Vec4 {
+    Vec4 { x, y, z, w }
+}
+
 impl_shared!(Vec4, f32, 4);
 impl_vector!(Vec4, f32, 4);
 

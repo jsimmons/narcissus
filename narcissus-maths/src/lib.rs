@@ -19,14 +19,14 @@ pub use mat2::Mat2;
 pub use mat3::Mat3;
 pub use mat4::Mat4;
 pub use next_after_f32::next_after_f32;
-pub use point2::Point2;
-pub use point3::Point3;
+pub use point2::{point2, Point2};
+pub use point3::{point3, Point3};
 pub use quat::Quat;
 pub use sin_cos_pi::sin_cos_pi_f32;
 pub use tan_pi::tan_pi_f32;
-pub use vec2::Vec2;
-pub use vec3::Vec3;
-pub use vec4::Vec4;
+pub use vec2::{vec2, Vec2};
+pub use vec3::{vec3, Vec3};
+pub use vec4::{vec4, Vec4};
 
 /// Unit type for an angle expressed in radians.
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Default)]

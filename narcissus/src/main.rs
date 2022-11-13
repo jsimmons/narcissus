@@ -11,7 +11,7 @@ use narcissus_gpu::{
     TypedBind, Viewport,
 };
 use narcissus_maths::{
-    sin_cos_pi_f32, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec2, Vec3, Vec4,
+    sin_cos_pi_f32, vec2, vec3, vec4, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec2, Vec3,
 };
 
 const MAX_SHARKS: usize = 262_144;
@@ -53,15 +53,15 @@ fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
 
     impl obj::Visitor for ObjVisitor {
         fn visit_position(&mut self, x: f32, y: f32, z: f32, _w: f32) {
-            self.positions.push(Vec3::new(x, y, z))
+            self.positions.push(vec3(x, y, z))
         }
 
         fn visit_texcoord(&mut self, u: f32, v: f32, _w: f32) {
-            self.texcoords.push(Vec2::new(u, v));
+            self.texcoords.push(vec2(u, v));
         }
 
         fn visit_normal(&mut self, x: f32, y: f32, z: f32) {
-            self.normals.push(Vec3::new(x, y, z))
+            self.normals.push(vec3(x, y, z))
         }
 
         fn visit_face(&mut self, indices: &[(i32, i32, i32)]) {
@@ -94,9 +94,9 @@ fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
             let texcoord = visitor.texcoords[texcoord_index as usize - 1];
             (
                 Vertex {
-                    position: Vec4::new(position.x, position.y, position.z, 0.0).into(),
-                    normal: Vec4::new(normal.x, normal.y, normal.z, 0.0).into(),
-                    texcoord: Vec4::new(texcoord.x, texcoord.y, 0.0, 0.0).into(),
+                    position: vec4(position.x, position.y, position.z, 0.0).into(),
+                    normal: vec4(normal.x, normal.y, normal.z, 0.0).into(),
+                    texcoord: vec4(texcoord.x, texcoord.y, 0.0, 0.0).into(),
                 },
                 index as u16,
             )
@@ -318,7 +318,7 @@ pub fn main() {
             let z = z as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
             shark_transforms.push(Affine3 {
                 matrix: Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(rng.next_f32())),
-                translate: Vec3::new(x, 0.0, z),
+                translate: vec3(x, 0.0, z),
             })
         }
     }

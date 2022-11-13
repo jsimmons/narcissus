@@ -7,6 +7,10 @@ pub struct Vec2 {
     pub y: f32,
 }
 
+pub const fn vec2(x: f32, y: f32) -> Vec2 {
+    Vec2 { x, y }
+}
+
 impl_shared!(Vec2, f32, 2);
 impl_vector!(Vec2, f32, 2);
 
