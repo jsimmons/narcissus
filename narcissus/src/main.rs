@@ -333,13 +333,14 @@ pub fn main() {
             depth_height = height;
         }
 
-        let cmd_buffer_token = device.create_cmd_buffer(&frame_token, &mut thread_token);
+        let mut cmd_buffer = device.create_cmd_buffer(&frame_token, &mut thread_token);
+
+        device.cmd_set_pipeline(&mut cmd_buffer, pipeline);
 
         device.cmd_set_bind_group(
             &frame_token,
             &mut thread_token,
-            &cmd_buffer_token,
-            pipeline,
+            &mut cmd_buffer,
             uniform_bind_group_layout,
             0,
             &[Bind {
@@ -352,8 +353,7 @@ pub fn main() {
         device.cmd_set_bind_group(
             &frame_token,
             &mut thread_token,
-            &cmd_buffer_token,
-            pipeline,
+            &mut cmd_buffer,
             storage_bind_group_layout,
             1,
             &[Bind {
@@ -363,12 +363,10 @@ pub fn main() {
             }],
         );
 
-        device.cmd_set_index_buffer(&cmd_buffer_token, blåhaj_index_buffer, 0, IndexType::U16);
+        device.cmd_set_index_buffer(&mut cmd_buffer, blåhaj_index_buffer, 0, IndexType::U16);
 
         device.cmd_begin_rendering(
-            &frame_token,
-            &mut thread_token,
-            &cmd_buffer_token,
+            &mut cmd_buffer,
             &RenderingDesc {
                 x: 0,
                 y: 0,
@@ -393,10 +391,8 @@ pub fn main() {
             },
         );
 
-        device.cmd_set_pipeline(&cmd_buffer_token, pipeline);
-
         device.cmd_set_scissors(
-            &cmd_buffer_token,
+            &mut cmd_buffer,
             &[Scissor {
                 x: 0,
                 y: 0,
@@ -406,7 +402,7 @@ pub fn main() {
         );
 
         device.cmd_set_viewports(
-            &cmd_buffer_token,
+            &mut cmd_buffer,
             &[Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -417,11 +413,11 @@ pub fn main() {
             }],
         );
 
-        device.cmd_draw_indexed(&cmd_buffer_token, blåhaj_indices.len() as u32, 1, 0, 0, 0);
+        device.cmd_draw_indexed(&mut cmd_buffer, blåhaj_indices.len() as u32, 1, 0, 0, 0);
 
-        device.cmd_end_rendering(&cmd_buffer_token);
+        device.cmd_end_rendering(&mut cmd_buffer);
 
-        device.submit(&frame_token, &mut thread_token, cmd_buffer_token);
+        device.submit(&frame_token, cmd_buffer);
 
         device.end_frame(frame_token);
     }

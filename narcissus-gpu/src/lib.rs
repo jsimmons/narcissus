@@ -347,15 +347,15 @@ pub enum TypedBind<'a> {
 
 thread_token_def!(ThreadToken, GpuConcurrent, 8);
 
-pub struct FrameToken<'device> {
-    device_address: usize,
+pub struct FrameToken<'a> {
+    device_addr: usize,
     frame_index: usize,
-    phantom: PhantomData<&'device dyn Device>,
+    _phantom: &'a PhantomData<()>,
 }
 
-pub struct CmdBufferToken {
-    index: usize,
-    raw: u64,
+pub struct CmdBuffer<'a> {
+    cmd_buffer_addr: usize,
+    _phantom: &'a PhantomData<()>,
     phantom_unsend: PhantomUnsend,
 }
 
@@ -401,18 +401,17 @@ pub trait Device {
     ) -> (u32, u32, Texture);
     fn destroy_window(&self, window: Window);
 
-    fn create_cmd_buffer(
-        &self,
-        frame_token: &FrameToken,
-        thread_token: &mut ThreadToken,
-    ) -> CmdBufferToken;
+    fn create_cmd_buffer<'a, 'thread>(
+        &'a self,
+        frame_token: &'a FrameToken,
+        thread_token: &'thread mut ThreadToken,
+    ) -> CmdBuffer<'a>;
 
     fn cmd_set_bind_group(
         &self,
         frame_token: &FrameToken,
         thread_token: &mut ThreadToken,
-        cmd_buffer_token: &CmdBufferToken,
-        pipeline: Pipeline,
+        cmd_buffer: &mut CmdBuffer,
         layout: BindGroupLayout,
         bind_group_index: u32,
         bindings: &[Bind],
@@ -420,31 +419,25 @@ pub trait Device {
 
     fn cmd_set_index_buffer(
         &self,
-        cmd_buffer_token: &CmdBufferToken,
+        cmd_buffer: &mut CmdBuffer,
         buffer: Buffer,
         offset: u64,
         index_type: IndexType,
     );
 
-    fn cmd_set_pipeline(&self, cmd_buffer_token: &CmdBufferToken, pipeline: Pipeline);
+    fn cmd_set_pipeline(&self, cmd_buffer: &mut CmdBuffer, pipeline: Pipeline);
 
-    fn cmd_begin_rendering(
-        &self,
-        frame_token: &FrameToken,
-        thread_token: &mut ThreadToken,
-        cmd_buffer_token: &CmdBufferToken,
-        desc: &RenderingDesc,
-    );
+    fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &RenderingDesc);
 
-    fn cmd_end_rendering(&self, cmd_buffer_token: &CmdBufferToken);
+    fn cmd_end_rendering(&self, cmd_buffer: &mut CmdBuffer);
 
-    fn cmd_set_viewports(&self, cmd_buffer_token: &CmdBufferToken, viewports: &[Viewport]);
+    fn cmd_set_viewports(&self, cmd_buffer: &mut CmdBuffer, viewports: &[Viewport]);
 
-    fn cmd_set_scissors(&self, cmd_buffer_token: &CmdBufferToken, scissors: &[Scissor]);
+    fn cmd_set_scissors(&self, cmd_buffer: &mut CmdBuffer, scissors: &[Scissor]);
 
     fn cmd_draw(
         &self,
-        cmd_buffer_token: &CmdBufferToken,
+        cmd_buffer: &mut CmdBuffer,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
@@ -453,7 +446,7 @@ pub trait Device {
 
     fn cmd_draw_indexed(
         &self,
-        cmd_buffer_token: &CmdBufferToken,
+        cmd_buffer: &mut CmdBuffer,
         index_count: u32,
         instance_count: u32,
         first_index: u32,
@@ -461,12 +454,7 @@ pub trait Device {
         first_instance: u32,
     );
 
-    fn submit(
-        &self,
-        frame_token: &FrameToken,
-        thread_token: &mut ThreadToken,
-        cmd_buffer_token: CmdBufferToken,
-    );
+    fn submit(&self, frame_token: &FrameToken, cmd_buffer_token: CmdBuffer);
 
     fn begin_frame(&self) -> FrameToken;
 
