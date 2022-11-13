@@ -1,7 +1,7 @@
 use std::{path::Path, time::Instant};
 
 use narcissus_app::{create_app, Event, Key, WindowDesc};
-use narcissus_core::{cstr, default, obj, Image};
+use narcissus_core::{cstr, default, obj, rand::Pcg64, Image};
 use narcissus_gpu::{
     create_vulkan_device, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, Buffer,
     BufferDesc, BufferUsageFlags, ClearValue, CompareOp, CullingMode, Device, FrontFace,
@@ -10,7 +10,12 @@ use narcissus_gpu::{
     TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, ThreadToken, Topology,
     TypedBind, Viewport,
 };
-use narcissus_maths::{sin_cos_pi_f32, Deg, Mat4, Point3, Vec2, Vec3, Vec4};
+use narcissus_maths::{
+    sin_cos_pi_f32, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec2, Vec3, Vec4,
+};
+
+const MAX_SHARKS: usize = 262_144;
+const NUM_SHARKS: usize = 10;
 
 /// Marker trait indicates it's safe to convert a given type directly to an array of bytes.
 ///
@@ -20,11 +25,11 @@ use narcissus_maths::{sin_cos_pi_f32, Deg, Mat4, Point3, Vec2, Vec3, Vec4};
 unsafe trait Blittable: Sized {}
 
 #[allow(unused)]
-struct Uniform {
+struct Uniforms {
     clip_from_model: Mat4,
 }
 
-unsafe impl Blittable for Uniform {}
+unsafe impl Blittable for Uniforms {}
 
 #[allow(unused)]
 struct Vertex {
@@ -35,6 +40,7 @@ struct Vertex {
 
 unsafe impl Blittable for Vertex {}
 unsafe impl Blittable for u16 {}
+unsafe impl Blittable for Affine3 {}
 
 fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
     #[derive(Default)]
@@ -137,17 +143,17 @@ where
     buffer
 }
 
-struct UniformBufferMap<'a> {
+struct MappedBuffer<'a> {
     device: &'a dyn Device,
     buffer: Buffer,
     slice: &'a mut [u8],
 }
 
-impl<'a> UniformBufferMap<'a> {
-    pub fn new(device: &'a dyn Device, len: usize) -> Self {
+impl<'a> MappedBuffer<'a> {
+    pub fn new(device: &'a dyn Device, usage: BufferUsageFlags, len: usize) -> Self {
         let buffer = device.create_buffer(&BufferDesc {
             memory_location: MemoryLocation::PreferHost,
-            usage: BufferUsageFlags::UNIFORM,
+            usage,
             size: len,
         });
         unsafe {
@@ -177,9 +183,20 @@ impl<'a> UniformBufferMap<'a> {
             self.slice.copy_from_slice(src)
         }
     }
+
+    pub fn write_slice<T>(&mut self, values: &[T])
+    where
+        T: Blittable,
+    {
+        unsafe {
+            let len = values.len() * std::mem::size_of::<T>();
+            let src = std::slice::from_raw_parts(values.as_ptr() as *const u8, len);
+            self.slice[..len].copy_from_slice(src)
+        }
+    }
 }
 
-impl<'a> Drop for UniformBufferMap<'a> {
+impl<'a> Drop for MappedBuffer<'a> {
     fn drop(&mut self) {
         // Safety: Make sure we don't have the slice outlive the mapping.
         unsafe {
@@ -218,12 +235,20 @@ pub fn main() {
     });
 
     let storage_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
-        entries: &[BindGroupLayoutEntryDesc {
-            slot: 0,
-            stages: ShaderStageFlags::ALL,
-            binding_type: BindingType::StorageBuffer,
-            count: 1,
-        }],
+        entries: &[
+            BindGroupLayoutEntryDesc {
+                slot: 0,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::StorageBuffer,
+                count: 1,
+            },
+            BindGroupLayoutEntryDesc {
+                slot: 1,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::StorageBuffer,
+                count: 1,
+            },
+        ],
     });
 
     let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
@@ -266,11 +291,37 @@ pub fn main() {
         blåhaj_indices.as_slice(),
     );
 
-    let mut uniforms = UniformBufferMap::new(device.as_ref(), std::mem::size_of::<Uniform>());
+    let mut uniforms = MappedBuffer::new(
+        device.as_ref(),
+        BufferUsageFlags::UNIFORM,
+        std::mem::size_of::<Uniforms>(),
+    );
+
+    let mut transforms = MappedBuffer::new(
+        device.as_ref(),
+        BufferUsageFlags::STORAGE,
+        std::mem::size_of::<Affine3>() * MAX_SHARKS,
+    );
 
     let mut depth_width = 0;
     let mut depth_height = 0;
     let mut depth_image = default();
+
+    let shark_distance = 8.0;
+
+    let mut rng = Pcg64::new();
+
+    let mut shark_transforms = Vec::new();
+    for z in 0..NUM_SHARKS {
+        for x in 0..NUM_SHARKS {
+            let x = x as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
+            let z = z as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
+            shark_transforms.push(Affine3 {
+                matrix: Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(rng.next_f32())),
+                translate: Vec3::new(x, 0.0, z),
+            })
+        }
+    }
 
     let start_time = Instant::now();
     'main: loop {
@@ -305,16 +356,28 @@ pub fn main() {
             device.acquire_swapchain(&frame, main_window, TextureFormat::BGRA8_SRGB);
 
         let frame_start = Instant::now() - start_time;
-        let frame_start = frame_start.as_secs_f32() * 0.5;
+        let frame_start = frame_start.as_secs_f32() * 0.125;
+
+        for (i, transform) in shark_transforms.iter_mut().enumerate() {
+            let direction = if i & 1 == 0 { 1.0 } else { -1.0 };
+            let (s, _) = sin_cos_pi_f32(frame_start + (i as f32) * 0.125);
+            transform.translate.y = 0.0 + s;
+            transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.005 * direction))
+        }
+
+        transforms.write_slice(&shark_transforms);
 
         let (s, c) = sin_cos_pi_f32(frame_start);
-        let camera_from_model =
-            Mat4::look_at(Point3::new(s * 5.0, 1.0, c * 5.0), Point3::ZERO, -Vec3::Y);
+        let camera_height = c * 5.0;
+        let camera_radius = 50.0;
+        let eye = Point3::new(s * camera_radius, camera_height, c * camera_radius);
+        let center = Point3::ZERO;
+        let camera_from_model = Mat4::look_at(eye, center, -Vec3::Y);
         let clip_from_camera =
-            Mat4::perspective_rev_inf_zo(Deg::new(90.0).into(), width as f32 / height as f32, 0.01);
+            Mat4::perspective_rev_inf_zo(Deg::new(45.0).into(), width as f32 / height as f32, 0.01);
         let clip_from_model = clip_from_camera * camera_from_model;
 
-        uniforms.write(Uniform { clip_from_model });
+        uniforms.write(Uniforms { clip_from_model });
 
         if width != depth_width || height != depth_height {
             device.destroy_texture(&frame, depth_image);
@@ -356,11 +419,18 @@ pub fn main() {
             &mut cmd_buffer,
             storage_bind_group_layout,
             1,
-            &[Bind {
-                binding: 0,
-                array_element: 0,
-                typed: TypedBind::StorageBuffer(&[blåhaj_vertex_buffer]),
-            }],
+            &[
+                Bind {
+                    binding: 0,
+                    array_element: 0,
+                    typed: TypedBind::StorageBuffer(&[blåhaj_vertex_buffer]),
+                },
+                Bind {
+                    binding: 1,
+                    array_element: 0,
+                    typed: TypedBind::StorageBuffer(&[transforms.buffer()]),
+                },
+            ],
         );
 
         device.cmd_set_index_buffer(&mut cmd_buffer, blåhaj_index_buffer, 0, IndexType::U16);
@@ -413,7 +483,14 @@ pub fn main() {
             }],
         );
 
-        device.cmd_draw_indexed(&mut cmd_buffer, blåhaj_indices.len() as u32, 1, 0, 0, 0);
+        device.cmd_draw_indexed(
+            &mut cmd_buffer,
+            blåhaj_indices.len() as u32,
+            shark_transforms.len() as u32,
+            0,
+            0,
+            0,
+        );
 
         device.cmd_end_rendering(&mut cmd_buffer);
 

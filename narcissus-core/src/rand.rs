@@ -42,6 +42,14 @@ impl Pcg64 {
         let (_, carry) = fraction.overflowing_add(hi);
         result + carry as u64
     }
+
+    /// Generates a uniformly distributed random float in the range `-1.0..1.0`
+    #[inline]
+    #[must_use]
+    pub fn next_f32(&mut self) -> f32 {
+        let value = (self.next_u64() >> (64 - 25)) as i64 as f32;
+        value * 5.960_464_5e-8 // 0x1p-24f
+    }
 }
 
 impl Default for Pcg64 {
