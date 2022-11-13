@@ -269,7 +269,7 @@ pub fn main() {
         topology: Topology::Triangles,
         polygon_mode: PolygonMode::Fill,
         culling_mode: CullingMode::Back,
-        front_face: FrontFace::Clockwise,
+        front_face: FrontFace::CounterClockwise,
         depth_bias: None,
         depth_compare_op: CompareOp::GreaterOrEqual,
         depth_test_enable: true,
@@ -307,7 +307,7 @@ pub fn main() {
     let mut depth_height = 0;
     let mut depth_image = default();
 
-    let shark_distance = 8.0;
+    let shark_distance = 4.0;
 
     let mut rng = Pcg64::new();
 
@@ -361,18 +361,18 @@ pub fn main() {
         for (i, transform) in shark_transforms.iter_mut().enumerate() {
             let direction = if i & 1 == 0 { 1.0 } else { -1.0 };
             let (s, _) = sin_cos_pi_f32(frame_start + (i as f32) * 0.125);
-            transform.translate.y = 0.0 + s;
+            transform.translate.y = s;
             transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.005 * direction))
         }
 
         transforms.write_slice(&shark_transforms);
 
-        let (s, c) = sin_cos_pi_f32(frame_start);
-        let camera_height = c * 5.0;
-        let camera_radius = 50.0;
+        let (s, c) = sin_cos_pi_f32(frame_start * 0.2);
+        let camera_height = c * 8.0;
+        let camera_radius = 20.0;
         let eye = Point3::new(s * camera_radius, camera_height, c * camera_radius);
         let center = Point3::ZERO;
-        let camera_from_model = Mat4::look_at(eye, center, -Vec3::Y);
+        let camera_from_model = Mat4::look_at(eye, center, Vec3::Y);
         let clip_from_camera =
             Mat4::perspective_rev_inf_zo(Deg::new(45.0).into(), width as f32 / height as f32, 0.01);
         let clip_from_model = clip_from_camera * camera_from_model;
