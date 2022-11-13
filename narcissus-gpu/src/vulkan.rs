@@ -18,8 +18,8 @@ use vulkan_sys as vk;
 use crate::{
     delay_queue::DelayQueue, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer,
     BufferDesc, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp, ComputePipelineDesc,
-    CullingMode, Device, FrameToken, FrontFace, GpuConcurrent, GraphicsPipelineDesc, IndexType,
-    LoadOp, MemoryLocation, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
+    CullingMode, Device, Frame, FrontFace, GpuConcurrent, GraphicsPipelineDesc, IndexType, LoadOp,
+    MemoryLocation, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
     SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Texture,
     TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
     Topology, TypedBind,
@@ -369,13 +369,10 @@ struct VulkanCmdBufferPool {
     command_buffers: Vec<vk::CommandBuffer>,
 }
 
-impl<'device> FrameToken<'device> {
+impl<'device> Frame<'device> {
     fn check_device(&self, device: &VulkanDevice) {
         let device_address = device as *const _ as usize;
-        assert_eq!(
-            self.device_addr, device_address,
-            "frame token device mismatch"
-        )
+        assert_eq!(self.device_addr, device_address, "frame device mismatch")
     }
 
     fn check_frame_counter(&self, frame_counter_value: usize) {
@@ -383,7 +380,7 @@ impl<'device> FrameToken<'device> {
         assert_eq!(
             self.frame_index,
             frame_counter_value >> 1,
-            "token does not match current frame"
+            "frame does not match device frame"
         );
     }
 }
@@ -404,26 +401,26 @@ impl FrameCounter {
         self.value.load(Ordering::Relaxed)
     }
 
-    fn acquire(&self, device: &VulkanDevice) -> FrameToken {
+    fn acquire(&self, device: &VulkanDevice) -> Frame {
         let old_frame_counter = self.value.fetch_add(1, Ordering::SeqCst);
         assert!(
             old_frame_counter & 1 == 1,
-            "acquiring a frame token before previous frame token has been released"
+            "acquiring a frame before previous frame has been released"
         );
 
         let frame_counter = old_frame_counter + 1;
         let frame_index = frame_counter >> 1;
 
-        FrameToken {
+        Frame {
             device_addr: device as *const _ as usize,
             frame_index,
             _phantom: &PhantomData,
         }
     }
 
-    fn release(&self, frame_token: FrameToken) {
+    fn release(&self, frame: Frame) {
         let old_frame_counter = self.value.fetch_add(1, Ordering::SeqCst);
-        frame_token.check_frame_counter(old_frame_counter);
+        frame.check_frame_counter(old_frame_counter);
     }
 }
 
@@ -455,18 +452,6 @@ struct VulkanFrame {
 }
 
 impl VulkanFrame {
-    // fn cmd_buffer_mut<'a>(
-    //     &self,
-    //     thread_token: &'a mut ThreadToken,
-    //     cmd_buffer_token: &'a CmdBuffer,
-    // ) -> &'a mut VulkanCmdBuffer {
-    //     &mut self
-    //         .per_thread
-    //         .get_mut(thread_token)
-    //         .cmd_buffer_pool
-    //         .cmd_buffers[cmd_buffer_token.index]
-    // }
-
     fn recycle_semaphore(&self, semaphore: vk::Semaphore) {
         self.recycled_semaphores.lock().push_back(semaphore);
     }
@@ -814,22 +799,20 @@ impl<'app> VulkanDevice<'app> {
         }
     }
 
-    fn frame<'token>(&self, frame_token: &'token FrameToken) -> &'token VulkanFrame {
-        frame_token.check_device(self);
-        frame_token.check_frame_counter(self.frame_counter.load());
-        // Safety: Reference is bound to the frame token exposed by the API. only one frame token
-        // can be valid at a time. The returned frame is only valid so long as we have a ref on the
-        // token.
-        unsafe { &*self.frames[frame_token.frame_index % NUM_FRAMES].get() }
+    fn frame<'token>(&self, frame: &'token Frame) -> &'token VulkanFrame {
+        frame.check_device(self);
+        frame.check_frame_counter(self.frame_counter.load());
+        // Safety: Reference is bound to the frame exposed by the API. only one frame can be valid
+        // at a time. The returned VulkanFrame is only valid so long as we have a ref on the frame.
+        unsafe { &*self.frames[frame.frame_index % NUM_FRAMES].get() }
     }
 
-    fn frame_mut<'token>(&self, frame_token: &'token mut FrameToken) -> &'token mut VulkanFrame {
-        frame_token.check_device(self);
-        frame_token.check_frame_counter(self.frame_counter.load());
-        // Safety: Mutable reference is bound to the frame token exposed by the API. only one frame
-        // token can be valid at a time. The returned frame is only valid so long as we have a mut
-        // ref on the token.
-        unsafe { &mut *self.frames[frame_token.frame_index % NUM_FRAMES].get() }
+    fn frame_mut<'token>(&self, frame: &'token mut Frame) -> &'token mut VulkanFrame {
+        frame.check_device(self);
+        frame.check_frame_counter(self.frame_counter.load());
+        // Safety: Reference is bound to the frame exposed by the API. only one frame can be valid
+        // at a time. The returned VulkanFrame is only valid so long as we have a ref on the frame.
+        unsafe { &mut *self.frames[frame.frame_index % NUM_FRAMES].get() }
     }
 
     fn cmd_buffer_mut<'a>(&self, cmd_buffer: &'a mut CmdBuffer) -> &'a mut VulkanCmdBuffer {
@@ -1572,17 +1555,17 @@ impl<'driver> Device for VulkanDevice<'driver> {
         todo!()
     }
 
-    fn destroy_buffer(&self, frame_token: &FrameToken, buffer: Buffer) {
+    fn destroy_buffer(&self, frame: &Frame, buffer: Buffer) {
         if let Some(buffer) = self.buffer_pool.lock().remove(buffer.0) {
-            let frame = self.frame(frame_token);
+            let frame = self.frame(frame);
             frame.destroyed_buffers.lock().push_back(buffer.buffer);
             frame.destroyed_allocations.lock().push_back(buffer.memory);
         }
     }
 
-    fn destroy_texture(&self, frame_token: &FrameToken, texture: Texture) {
+    fn destroy_texture(&self, frame: &Frame, texture: Texture) {
         if let Some(texture) = self.texture_pool.lock().remove(texture.0) {
-            let frame = self.frame(frame_token);
+            let frame = self.frame(frame);
 
             match texture {
                 // The texture is unique, we've never allocated a reference counted object for it.
@@ -1613,35 +1596,31 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn destroy_sampler(&self, frame_token: &FrameToken, sampler: Sampler) {
+    fn destroy_sampler(&self, frame: &Frame, sampler: Sampler) {
         if let Some(sampler) = self.sampler_pool.lock().remove(sampler.0) {
-            self.frame(frame_token)
+            self.frame(frame)
                 .destroyed_samplers
                 .lock()
                 .push_back(sampler.0)
         }
     }
 
-    fn destroy_bind_group_layout(
-        &self,
-        frame_token: &FrameToken,
-        bind_group_layout: BindGroupLayout,
-    ) {
+    fn destroy_bind_group_layout(&self, frame: &Frame, bind_group_layout: BindGroupLayout) {
         if let Some(bind_group_layout) = self
             .bind_group_layout_pool
             .lock()
             .remove(bind_group_layout.0)
         {
-            self.frame(frame_token)
+            self.frame(frame)
                 .destroyed_descriptor_set_layouts
                 .lock()
                 .push_back(bind_group_layout.0)
         }
     }
 
-    fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline) {
+    fn destroy_pipeline(&self, frame: &Frame, pipeline: Pipeline) {
         if let Some(pipeline) = self.pipeline_pool.lock().remove(pipeline.0) {
-            let frame = self.frame(frame_token);
+            let frame = self.frame(frame);
             frame
                 .destroyed_pipeline_layouts
                 .lock()
@@ -1698,7 +1677,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn acquire_swapchain(
         &self,
-        frame_token: &FrameToken,
+        frame: &Frame,
         window: Window,
         format: TextureFormat,
     ) -> (u32, u32, Texture) {
@@ -1769,7 +1748,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
         assert_eq!(format, vulkan_swapchain.surface_format.format);
 
-        let frame = self.frame(frame_token);
+        let frame = self.frame(frame);
         let mut texture_pool = self.texture_pool.lock();
 
         let mut present_swapchains = frame.present_swapchains.lock();
@@ -1980,12 +1959,8 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn create_cmd_buffer(
-        &self,
-        frame_token: &FrameToken,
-        thread_token: &mut ThreadToken,
-    ) -> CmdBuffer {
-        let frame = self.frame(frame_token);
+    fn create_cmd_buffer(&self, frame: &Frame, thread_token: &mut ThreadToken) -> CmdBuffer {
+        let frame = self.frame(frame);
         let per_thread = frame.per_thread.get_mut(thread_token);
         let cmd_buffer_pool = &mut per_thread.cmd_buffer_pool;
 
@@ -2033,7 +2008,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
     fn cmd_set_bind_group(
         &self,
-        frame_token: &FrameToken,
+        frame: &Frame,
         thread_token: &mut ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         layout: BindGroupLayout,
@@ -2044,7 +2019,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
 
         let descriptor_set_layout = self.bind_group_layout_pool.lock().get(layout.0).unwrap().0;
 
-        let frame = self.frame(frame_token);
+        let frame = self.frame(frame);
         let per_thread = frame.per_thread.get_mut(thread_token);
 
         let mut descriptor_pool = per_thread.descriptor_pool;
@@ -2421,10 +2396,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn submit(&self, frame_token: &FrameToken, mut cmd_buffer: CmdBuffer) {
+    fn submit(&self, frame: &Frame, mut cmd_buffer: CmdBuffer) {
         let fence = self.universal_queue_fence.fetch_add(1, Ordering::SeqCst) + 1;
 
-        let frame = self.frame(frame_token);
+        let frame = self.frame(frame);
         frame.universal_queue_fence.store(fence, Ordering::Relaxed);
 
         let cmd_buffer = self.cmd_buffer_mut(&mut cmd_buffer);
@@ -2513,121 +2488,125 @@ impl<'driver> Device for VulkanDevice<'driver> {
         ));
     }
 
-    fn begin_frame(&self) -> FrameToken {
+    fn begin_frame(&self) -> Frame {
         let device_fn = &self.device_fn;
         let device = self.device;
 
-        let mut frame_token = self.frame_counter.acquire(self);
-        let frame = self.frame_mut(&mut frame_token);
-
+        let mut frame = self.frame_counter.acquire(self);
         {
-            let semaphore_fences = &[frame
-                .universal_queue_fence
-                .load(std::sync::atomic::Ordering::Relaxed)];
-            let semaphores = &[self.universal_queue_semaphore];
-            let wait_info = vk::SemaphoreWaitInfo {
-                semaphores: (semaphores, semaphore_fences).into(),
-                ..default()
-            };
-            vk_check!(device_fn.wait_semaphores(device, &wait_info, !0));
-        }
+            let frame = self.frame_mut(&mut frame);
 
-        for per_thread in frame.per_thread.slots_mut() {
-            per_thread.descriptor_pool = vk::DescriptorPool::null();
-            if per_thread.cmd_buffer_pool.next_free_index != 0 {
-                vk_check!(device_fn.reset_command_pool(
-                    device,
-                    per_thread.cmd_buffer_pool.command_pool,
-                    vk::CommandPoolResetFlags::default()
-                ));
-
-                per_thread.cmd_buffer_pool.next_free_index = 0;
+            {
+                let semaphore_fences = &[frame
+                    .universal_queue_fence
+                    .load(std::sync::atomic::Ordering::Relaxed)];
+                let semaphores = &[self.universal_queue_semaphore];
+                let wait_info = vk::SemaphoreWaitInfo {
+                    semaphores: (semaphores, semaphore_fences).into(),
+                    ..default()
+                };
+                vk_check!(device_fn.wait_semaphores(device, &wait_info, !0));
             }
-            per_thread.arena.reset()
+
+            for per_thread in frame.per_thread.slots_mut() {
+                per_thread.descriptor_pool = vk::DescriptorPool::null();
+                if per_thread.cmd_buffer_pool.next_free_index != 0 {
+                    vk_check!(device_fn.reset_command_pool(
+                        device,
+                        per_thread.cmd_buffer_pool.command_pool,
+                        vk::CommandPoolResetFlags::default()
+                    ));
+
+                    per_thread.cmd_buffer_pool.next_free_index = 0;
+                }
+                per_thread.arena.reset()
+            }
+
+            self.recycled_semaphores
+                .lock()
+                .extend(frame.recycled_semaphores.get_mut().drain(..));
+
+            for descriptor_pool in frame.recycled_descriptor_pools.get_mut() {
+                vk_check!(device_fn.reset_descriptor_pool(
+                    device,
+                    *descriptor_pool,
+                    vk::DescriptorPoolResetFlags::default()
+                ))
+            }
+
+            self.recycled_descriptor_pools
+                .lock()
+                .extend(frame.recycled_descriptor_pools.get_mut().drain(..));
+
+            Self::destroy_deferred(device_fn, device, frame);
+
+            self.destroyed_swapchains
+                .lock()
+                .expire(|(window, swapchain, surface, image_views)| {
+                    self.destroy_swapchain(window, surface, swapchain, &image_views);
+                });
         }
 
-        self.recycled_semaphores
-            .lock()
-            .extend(frame.recycled_semaphores.get_mut().drain(..));
-
-        for descriptor_pool in frame.recycled_descriptor_pools.get_mut() {
-            vk_check!(device_fn.reset_descriptor_pool(
-                device,
-                *descriptor_pool,
-                vk::DescriptorPoolResetFlags::default()
-            ))
-        }
-
-        self.recycled_descriptor_pools
-            .lock()
-            .extend(frame.recycled_descriptor_pools.get_mut().drain(..));
-
-        Self::destroy_deferred(device_fn, device, frame);
-
-        self.destroyed_swapchains
-            .lock()
-            .expire(|(window, swapchain, surface, image_views)| {
-                self.destroy_swapchain(window, surface, swapchain, &image_views);
-            });
-
-        frame_token
+        frame
     }
 
-    fn end_frame(&self, mut frame_token: FrameToken) {
+    fn end_frame(&self, mut frame: Frame) {
         let arena = HybridArena::<512>::new();
 
-        let frame = self.frame_mut(&mut frame_token);
+        {
+            let frame = self.frame_mut(&mut frame);
 
-        let present_swapchains = frame.present_swapchains.get_mut();
-        if !present_swapchains.is_empty() {
-            let windows = arena.alloc_slice_fill_iter(present_swapchains.keys().copied());
-            let wait_semaphores =
-                arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.release));
-            let swapchains =
-                arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.swapchain));
-            let swapchain_image_indices =
-                arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.image_index));
+            let present_swapchains = frame.present_swapchains.get_mut();
+            if !present_swapchains.is_empty() {
+                let windows = arena.alloc_slice_fill_iter(present_swapchains.keys().copied());
+                let wait_semaphores =
+                    arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.release));
+                let swapchains =
+                    arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.swapchain));
+                let swapchain_image_indices =
+                    arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.image_index));
 
-            present_swapchains.clear();
+                present_swapchains.clear();
 
-            let results = arena.alloc_slice_fill_copy(swapchains.len(), vk::Result::Success);
+                let results = arena.alloc_slice_fill_copy(swapchains.len(), vk::Result::Success);
 
-            let present_info = vk::PresentInfoKHR {
-                wait_semaphores: wait_semaphores.into(),
-                swapchains: (swapchains, swapchain_image_indices).into(),
-                results: results.as_mut_ptr(),
-                ..default()
-            };
+                let present_info = vk::PresentInfoKHR {
+                    wait_semaphores: wait_semaphores.into(),
+                    swapchains: (swapchains, swapchain_image_indices).into(),
+                    results: results.as_mut_ptr(),
+                    ..default()
+                };
 
-            unsafe {
-                // check results below, so ignore this return value.
-                let _ = self
-                    .swapchain_fn
-                    .queue_present(self.universal_queue, &present_info);
-            };
+                unsafe {
+                    // check results below, so ignore this return value.
+                    let _ = self
+                        .swapchain_fn
+                        .queue_present(self.universal_queue, &present_info);
+                };
 
-            for (i, &result) in results.iter().enumerate() {
-                match result {
-                    vk::Result::Success => {}
-                    vk::Result::SuboptimalKHR => {
-                        // Yikes
-                        if let VulkanSwapchainState::Occupied {
-                            width: _,
-                            height: _,
-                            suboptimal,
-                            swapchain: _,
-                            image_views: _,
-                        } = &mut self.swapchains.lock().get_mut(&windows[i]).unwrap().state
-                        {
-                            *suboptimal = true;
+                for (i, &result) in results.iter().enumerate() {
+                    match result {
+                        vk::Result::Success => {}
+                        vk::Result::SuboptimalKHR => {
+                            // Yikes
+                            if let VulkanSwapchainState::Occupied {
+                                width: _,
+                                height: _,
+                                suboptimal,
+                                swapchain: _,
+                                image_views: _,
+                            } = &mut self.swapchains.lock().get_mut(&windows[i]).unwrap().state
+                            {
+                                *suboptimal = true;
+                            }
                         }
+                        _ => vk_check!(result),
                     }
-                    _ => vk_check!(result),
                 }
             }
         }
 
-        self.frame_counter.release(frame_token);
+        self.frame_counter.release(frame);
     }
 
     unsafe fn map_buffer(&self, buffer: Buffer) -> *mut u8 {

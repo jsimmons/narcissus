@@ -347,7 +347,7 @@ pub enum TypedBind<'a> {
 
 thread_token_def!(ThreadToken, GpuConcurrent, 8);
 
-pub struct FrameToken<'a> {
+pub struct Frame<'a> {
     device_addr: usize,
     frame_index: usize,
     _phantom: &'a PhantomData<()>,
@@ -368,15 +368,11 @@ pub trait Device {
     fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline;
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline;
 
-    fn destroy_buffer(&self, frame_token: &FrameToken, buffer: Buffer);
-    fn destroy_texture(&self, frame_token: &FrameToken, texture: Texture);
-    fn destroy_sampler(&self, frame_token: &FrameToken, sampler: Sampler);
-    fn destroy_bind_group_layout(
-        &self,
-        frame_token: &FrameToken,
-        bind_group_layout: BindGroupLayout,
-    );
-    fn destroy_pipeline(&self, frame_token: &FrameToken, pipeline: Pipeline);
+    fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
+    fn destroy_texture(&self, frame: &Frame, texture: Texture);
+    fn destroy_sampler(&self, frame: &Frame, sampler: Sampler);
+    fn destroy_bind_group_layout(&self, frame: &Frame, bind_group_layout: BindGroupLayout);
+    fn destroy_pipeline(&self, frame: &Frame, pipeline: Pipeline);
 
     /// Map the given buffer in its entirety to system memory and return a pointer to it.
     ///
@@ -395,7 +391,7 @@ pub trait Device {
 
     fn acquire_swapchain(
         &self,
-        frame_token: &FrameToken,
+        frame: &Frame,
         window: Window,
         format: TextureFormat,
     ) -> (u32, u32, Texture);
@@ -403,13 +399,13 @@ pub trait Device {
 
     fn create_cmd_buffer<'a, 'thread>(
         &'a self,
-        frame_token: &'a FrameToken,
+        frame: &'a Frame,
         thread_token: &'thread mut ThreadToken,
     ) -> CmdBuffer<'a>;
 
     fn cmd_set_bind_group(
         &self,
-        frame_token: &FrameToken,
+        frame: &Frame,
         thread_token: &mut ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         layout: BindGroupLayout,
@@ -454,11 +450,11 @@ pub trait Device {
         first_instance: u32,
     );
 
-    fn submit(&self, frame_token: &FrameToken, cmd_buffer_token: CmdBuffer);
+    fn submit(&self, frame: &Frame, cmd_buffer: CmdBuffer);
 
-    fn begin_frame(&self) -> FrameToken;
+    fn begin_frame(&self) -> Frame;
 
-    fn end_frame<'device>(&'device self, frame_token: FrameToken<'device>);
+    fn end_frame<'device>(&'device self, frame: Frame<'device>);
 }
 
 pub fn create_vulkan_device<'app>(app: &'app dyn App) -> Box<dyn Device + 'app> {

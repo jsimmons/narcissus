@@ -274,7 +274,7 @@ pub fn main() {
 
     let start_time = Instant::now();
     'main: loop {
-        let frame_token = device.begin_frame();
+        let frame = device.begin_frame();
 
         while let Some(event) = app.poll_event() {
             use Event::*;
@@ -302,7 +302,7 @@ pub fn main() {
         }
 
         let (width, height, swapchain_image) =
-            device.acquire_swapchain(&frame_token, main_window, TextureFormat::BGRA8_SRGB);
+            device.acquire_swapchain(&frame, main_window, TextureFormat::BGRA8_SRGB);
 
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.5;
@@ -317,7 +317,7 @@ pub fn main() {
         uniforms.write(Uniform { clip_from_model });
 
         if width != depth_width || height != depth_height {
-            device.destroy_texture(&frame_token, depth_image);
+            device.destroy_texture(&frame, depth_image);
             depth_image = device.create_texture(&TextureDesc {
                 memory_location: MemoryLocation::PreferDevice,
                 usage: TextureUsageFlags::DEPTH_STENCIL,
@@ -333,12 +333,12 @@ pub fn main() {
             depth_height = height;
         }
 
-        let mut cmd_buffer = device.create_cmd_buffer(&frame_token, &mut thread_token);
+        let mut cmd_buffer = device.create_cmd_buffer(&frame, &mut thread_token);
 
         device.cmd_set_pipeline(&mut cmd_buffer, pipeline);
 
         device.cmd_set_bind_group(
-            &frame_token,
+            &frame,
             &mut thread_token,
             &mut cmd_buffer,
             uniform_bind_group_layout,
@@ -351,7 +351,7 @@ pub fn main() {
         );
 
         device.cmd_set_bind_group(
-            &frame_token,
+            &frame,
             &mut thread_token,
             &mut cmd_buffer,
             storage_bind_group_layout,
@@ -417,8 +417,8 @@ pub fn main() {
 
         device.cmd_end_rendering(&mut cmd_buffer);
 
-        device.submit(&frame_token, cmd_buffer);
+        device.submit(&frame, cmd_buffer);
 
-        device.end_frame(frame_token);
+        device.end_frame(frame);
     }
 }
