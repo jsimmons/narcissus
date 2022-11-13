@@ -53,6 +53,9 @@ impl Mat3 {
     }
 
     /// Constructs a transformation matrix which rotates around the given `axis` by `angle`.
+    ///
+    /// In a right-handed coordinate system, positive angles rotate counter-clockwise around `axis`
+    /// where `axis` is pointing toward the observer.
     pub fn from_axis_rotation(axis: Vec3, rotation: HalfTurn) -> Mat3 {
         let (sin, cos) = sin_cos_pi_f32(rotation.as_f32());
         let axis_sin = axis * sin;
@@ -257,6 +260,13 @@ mod tests {
         assert_eq!(rot_180_z * Vec3::Z, Vec3::Z);
         assert_eq!(rot_180_z * Vec2::X, -Vec2::X);
         assert_eq!(rot_180_z * Vec2::Y, -Vec2::Y);
+
+        // Check we're rotating the right way, counter-clockwise.
+        let rot_90_y = Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
+        assert_eq!(rot_90_y * Vec3::Z, Vec3::X);
+        assert_eq!(rot_90_y * -Vec3::Z, -Vec3::X);
+        assert_eq!(rot_90_y * Vec3::X, -Vec3::Z);
+        assert_eq!(rot_90_y * -Vec3::X, Vec3::Z);
     }
 
     #[test]
