@@ -157,3 +157,20 @@ impl std::ops::DivAssign for Vec3 {
         self.z /= rhs.z;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cross_product() {
+        assert_eq!(
+            Vec3::cross(Vec3::new(1.0, 2.0, 3.0), Vec3::new(4.0, 5.0, 6.0)),
+            Vec3::new(-3.0, 6.0, -3.0)
+        );
+        assert_eq!(
+            Vec3::cross(Vec3::new(2.0, 1.0, 2.0), Vec3::new(3.0, 4.0, 3.0)),
+            Vec3::new(-5.0, 0.0, 5.0)
+        );
+    }
+}
