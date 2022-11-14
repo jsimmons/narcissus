@@ -50,6 +50,7 @@ impl Handle {
     /// # Panics
     ///
     /// Panics if the generation counter is even, as that would reference an empty slot.
+    #[inline(always)]
     fn encode(encode_multiplier: u32, generation: u32, slot_index: SlotIndex) -> Self {
         assert!(generation & 1 == 1);
 
@@ -125,6 +126,7 @@ struct Slot {
 }
 
 impl Slot {
+    #[inline(always)]
     const fn new() -> Self {
         Self {
             // Clear the generation counter, but leave the index bits set.
@@ -133,16 +135,19 @@ impl Slot {
     }
 
     /// Extract the current generation counter from this slot.
+    #[inline(always)]
     fn generation(&self) -> u32 {
         (self.value_index_and_gen >> GEN_SHIFT) & GEN_MASK
     }
 
     /// Extract the current value index from this slot.
+    #[inline(always)]
     fn value_index(&self) -> ValueIndex {
         ValueIndex((self.value_index_and_gen >> IDX_SHIFT) & IDX_MASK)
     }
 
     /// Updates the slot's value index without modifying the generation.
+    #[inline(always)]
     fn update_value_index(&mut self, value_index: ValueIndex) {
         debug_assert!(value_index.0 & IDX_MASK == value_index.0);
         self.value_index_and_gen =
@@ -150,6 +155,7 @@ impl Slot {
     }
 
     /// Sets the slot's value index, incrementing the generation counter.
+    #[inline(always)]
     fn set_value_index(&mut self, value_index: ValueIndex) {
         let new_generation = self.generation().wrapping_add(1);
         self.value_index_and_gen =
@@ -157,6 +163,7 @@ impl Slot {
     }
 
     /// Clears the slot's value index, incrementing the generation counter.
+    #[inline(always)]
     fn clear_value_index(&mut self) {
         // Since we're clearing we need to reset the generation to one referencing an empty slot. But we still want to
         // invalidate old handles.
@@ -270,6 +277,7 @@ impl Slots {
         Self { len: 0, ptr }
     }
 
+    #[inline(always)]
     fn get(&self, slot_index: SlotIndex) -> Option<&Slot> {
         let index = slot_index.0 as usize;
         if index < self.len {
@@ -279,6 +287,7 @@ impl Slots {
         }
     }
 
+    #[inline(always)]
     fn get_mut(&mut self, slot_index: SlotIndex) -> Option<&mut Slot> {
         let index = slot_index.0 as usize;
         if index < self.len {
@@ -345,6 +354,7 @@ impl<T> Values<T> {
     }
 
     /// Update the lookup table for the given `ValueIndex` with a new `SlotIndex`
+    #[inline(always)]
     fn set_slot(&mut self, value_index: ValueIndex, slot_index: SlotIndex) {
         let value_index = value_index.0 as usize;
         assert!(value_index < self.len);
@@ -357,6 +367,7 @@ impl<T> Values<T> {
     }
 
     /// Retreive the `SlotIndex` corresponding to the given `ValueIndex` from the lookup table.
+    #[inline(always)]
     fn get_slot(&mut self, value_index: ValueIndex) -> SlotIndex {
         let value_index = value_index.0 as usize;
         assert!(value_index < self.len);
@@ -365,6 +376,7 @@ impl<T> Values<T> {
     }
 
     /// Push a new value into the values storage. Returns the index of the added value.
+    #[inline(always)]
     fn push(&mut self, value: T) -> ValueIndex {
         if self.len == self.cap {
             self.grow();
@@ -381,6 +393,7 @@ impl<T> Values<T> {
     /// the lookup tables for the moved element.
     ///
     /// Returns the removed value.
+    #[inline(always)]
     fn swap_remove(&mut self, value_index: ValueIndex, slots: &mut Slots) -> T {
         let last_value_index = ValueIndex((self.len - 1) as u32);
 
@@ -414,6 +427,7 @@ impl<T> Values<T> {
 
     /// Retreive a reference to the value at `value_index`
     /// Panics if `value_index` is out of bounds
+    #[inline(always)]
     fn get(&self, value_index: ValueIndex) -> &T {
         let value_index = value_index.0 as usize;
         assert!(value_index < self.len);
@@ -423,6 +437,7 @@ impl<T> Values<T> {
 
     /// Retreive a mutable reference to the value at `value_index`
     /// Panics if `value_index` is out of bounds
+    #[inline(always)]
     fn get_mut(&mut self, value_index: ValueIndex) -> &mut T {
         let value_index = value_index.0 as usize;
         assert!(value_index < self.len);
