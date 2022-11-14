@@ -15,7 +15,7 @@ use narcissus_maths::{
 };
 
 const MAX_SHARKS: usize = 262_144;
-const NUM_SHARKS: usize = 10;
+const NUM_SHARKS: usize = 50;
 
 /// Marker trait indicates it's safe to convert a given type directly to an array of bytes.
 ///
