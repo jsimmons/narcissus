@@ -16,13 +16,15 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    delay_queue::DelayQueue, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, Buffer,
-    BufferDesc, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp, ComputePipelineDesc,
-    CullingMode, Device, Frame, FrontFace, GpuConcurrent, GraphicsPipelineDesc, IndexType, LoadOp,
-    MemoryLocation, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
-    SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Texture,
-    TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, TextureViewDesc, ThreadToken,
-    Topology, TypedBind,
+    delay_queue::DelayQueue, Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType,
+    Buffer, BufferDesc, BufferTextureCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp,
+    ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier,
+    GpuConcurrent, GraphicsPipelineDesc, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
+    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
+    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Texture,
+    TextureAspectFlags, TextureBarrier, TextureDesc, TextureDimension, TextureFormat,
+    TextureLayout, TextureSubresourceLayers, TextureSubresourceRange, TextureUsageFlags,
+    TextureViewDesc, ThreadToken, Topology, TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -59,6 +61,44 @@ fn vk_vec<T, F: FnMut(&mut u32, *mut T) -> vulkan_sys::Result>(mut f: F) -> Vec<
     v
 }
 
+impl From<Extent2d> for vk::Extent2d {
+    fn from(extent: Extent2d) -> Self {
+        vk::Extent2d {
+            width: extent.width,
+            height: extent.height,
+        }
+    }
+}
+
+impl From<Extent3d> for vk::Extent3d {
+    fn from(extent: Extent3d) -> Self {
+        vk::Extent3d {
+            width: extent.width,
+            height: extent.height,
+            depth: extent.depth,
+        }
+    }
+}
+
+impl From<Offset2d> for vk::Offset2d {
+    fn from(extent: Offset2d) -> Self {
+        vk::Offset2d {
+            x: extent.x,
+            y: extent.y,
+        }
+    }
+}
+
+impl From<Offset3d> for vk::Offset3d {
+    fn from(extent: Offset3d) -> Self {
+        vk::Offset3d {
+            x: extent.x,
+            y: extent.y,
+            z: extent.z,
+        }
+    }
+}
+
 #[must_use]
 fn vulkan_bool32(b: bool) -> vk::Bool32 {
     const VALUES: [vk::Bool32; 2] = [vk::Bool32::False, vk::Bool32::True];
@@ -76,8 +116,7 @@ fn vulkan_format(format: TextureFormat) -> vk::Format {
     }
 }
 
-#[must_use]
-fn vulkan_aspect(format: TextureFormat) -> vk::ImageAspectFlags {
+fn vulkan_aspect_for_format(format: TextureFormat) -> vk::ImageAspectFlags {
     match format {
         TextureFormat::BGRA8_SRGB
         | TextureFormat::BGRA8_UNORM
@@ -85,6 +124,20 @@ fn vulkan_aspect(format: TextureFormat) -> vk::ImageAspectFlags {
         | TextureFormat::RGBA8_UNORM => vk::ImageAspectFlags::COLOR,
         TextureFormat::DEPTH_F32 => vk::ImageAspectFlags::DEPTH,
     }
+}
+
+fn vulkan_aspect(aspect: TextureAspectFlags) -> vk::ImageAspectFlags {
+    let mut aspect_flags = default();
+    if aspect.contains(TextureAspectFlags::COLOR) {
+        aspect_flags |= vk::ImageAspectFlags::COLOR;
+    }
+    if aspect.contains(TextureAspectFlags::DEPTH) {
+        aspect_flags |= vk::ImageAspectFlags::DEPTH;
+    }
+    if aspect.contains(TextureAspectFlags::STENCIL) {
+        aspect_flags |= vk::ImageAspectFlags::STENCIL;
+    }
+    aspect_flags
 }
 
 #[must_use]
@@ -254,6 +307,349 @@ fn vulkan_image_view_type(
     }
 }
 
+fn vulkan_subresource_layers(
+    subresource_layers: &TextureSubresourceLayers,
+) -> vk::ImageSubresourceLayers {
+    vk::ImageSubresourceLayers {
+        aspect_mask: vulkan_aspect(subresource_layers.aspect),
+        mip_level: subresource_layers.mip_level,
+        base_array_layer: subresource_layers.base_array_layer,
+        layer_count: subresource_layers.array_layer_count,
+    }
+}
+
+fn vulkan_subresource_range(subresource: &TextureSubresourceRange) -> vk::ImageSubresourceRange {
+    vk::ImageSubresourceRange {
+        aspect_mask: vulkan_aspect(subresource.aspect),
+        base_mip_level: subresource.base_mip_level,
+        level_count: subresource.mip_level_count,
+        base_array_layer: subresource.base_array_layer,
+        layer_count: subresource.array_layer_count,
+    }
+}
+
+struct VulkanAccessInfo {
+    stages: vk::PipelineStageFlags2,
+    access: vk::AccessFlags2,
+    layout: vk::ImageLayout,
+}
+
+#[must_use]
+fn vulkan_access_info(access: Access) -> VulkanAccessInfo {
+    match access {
+        Access::None => VulkanAccessInfo {
+            stages: default(),
+            access: default(),
+            layout: vk::ImageLayout::Undefined,
+        },
+
+        Access::IndirectBuffer => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::DRAW_INDIRECT,
+            access: vk::AccessFlags2::INDIRECT_COMMAND_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+        Access::IndexBuffer => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::VERTEX_INPUT,
+            access: vk::AccessFlags2::INDEX_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+        Access::VertexBuffer => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::VERTEX_INPUT,
+            access: vk::AccessFlags2::VERTEX_ATTRIBUTE_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+
+        Access::VertexShaderUniformBufferRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::VERTEX_SHADER,
+            access: vk::AccessFlags2::UNIFORM_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+        Access::VertexShaderSampledImageRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::VERTEX_SHADER,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::ReadOnlyOptimal,
+        },
+        Access::VertexShaderOtherRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::VERTEX_SHADER,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::General,
+        },
+
+        Access::FragmentShaderUniformBufferRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            access: vk::AccessFlags2::UNIFORM_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+        Access::FragmentShaderSampledImageRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::ReadOnlyOptimal,
+        },
+        Access::FragmentShaderOtherRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::General,
+        },
+
+        Access::ColorAttachmentRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            access: vk::AccessFlags2::COLOR_ATTACHMENT_READ,
+            layout: vk::ImageLayout::AttachmentOptimal,
+        },
+        Access::DepthStencilAttachmentRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ,
+            layout: vk::ImageLayout::AttachmentOptimal,
+        },
+
+        Access::ShaderUniformBufferRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::ALL_COMMANDS,
+            access: vk::AccessFlags2::UNIFORM_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+        Access::ShaderUniformBufferOrVertexBufferRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::ALL_COMMANDS,
+            access: vk::AccessFlags2::UNIFORM_READ | vk::AccessFlags2::VERTEX_ATTRIBUTE_READ,
+            layout: vk::ImageLayout::Undefined,
+        },
+        Access::ShaderSampledImageRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::ALL_COMMANDS,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::ReadOnlyOptimal,
+        },
+        Access::ShaderOtherRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::ALL_COMMANDS,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::General,
+        },
+
+        Access::TransferRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::TRANSFER,
+            access: vk::AccessFlags2::TRANSFER_READ,
+            layout: vk::ImageLayout::TransferSrcOptimal,
+        },
+        Access::HostRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::HOST,
+            access: vk::AccessFlags2::HOST_READ,
+            layout: vk::ImageLayout::General,
+        },
+
+        Access::PresentRead => VulkanAccessInfo {
+            stages: default(),
+            access: default(),
+            layout: vk::ImageLayout::PresentSrcKhr,
+        },
+
+        Access::VertexShaderWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::VERTEX_SHADER,
+            access: vk::AccessFlags2::SHADER_WRITE,
+            layout: vk::ImageLayout::General,
+        },
+        Access::FragmentShaderWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            access: vk::AccessFlags2::SHADER_WRITE,
+            layout: vk::ImageLayout::General,
+        },
+        Access::ColorAttachmentWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            access: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            layout: vk::ImageLayout::ColorAttachmentOptimal,
+        },
+        Access::DepthStencilAttachmentWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS
+                | vk::PipelineStageFlags2::LATE_FRAGMENT_TESTS,
+            access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            layout: vk::ImageLayout::DepthAttachmentOptimal,
+        },
+        Access::ShaderWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::ALL_COMMANDS,
+            access: vk::AccessFlags2::SHADER_WRITE,
+            layout: vk::ImageLayout::General,
+        },
+        Access::TransferWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::TRANSFER,
+            access: vk::AccessFlags2::TRANSFER_WRITE,
+            layout: vk::ImageLayout::TransferDstOptimal,
+        },
+        Access::HostPreInitializedWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::HOST,
+            access: vk::AccessFlags2::HOST_WRITE,
+            layout: vk::ImageLayout::Preinitialized,
+        },
+        Access::HostWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::HOST,
+            access: vk::AccessFlags2::HOST_WRITE,
+            layout: vk::ImageLayout::General,
+        },
+        Access::ColorAttachmentReadWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            access: vk::AccessFlags2::COLOR_ATTACHMENT_READ
+                | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            layout: vk::ImageLayout::AttachmentOptimal,
+        },
+        Access::General => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::ALL_COMMANDS,
+            access: vk::AccessFlags2::COLOR_ATTACHMENT_READ
+                | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            layout: vk::ImageLayout::General,
+        },
+    }
+}
+
+fn vulkan_memory_barrier(barrier: &GlobalBarrier) -> vk::MemoryBarrier2 {
+    let mut src_stage_mask = default();
+    let mut src_access_mask = default();
+    let mut dst_stage_mask = default();
+    let mut dst_access_mask = default();
+
+    for &access in barrier.prev_access {
+        debug_assert!(
+            access.is_read() || barrier.prev_access.len() == 1,
+            "write access types must be on their own"
+        );
+
+        let info = vulkan_access_info(access);
+        src_stage_mask |= info.stages;
+
+        // For writes, add availability operations.
+        if access.is_write() {
+            src_access_mask |= info.access;
+        }
+    }
+
+    for &access in barrier.next_access {
+        debug_assert!(
+            access.is_read() || barrier.prev_access.len() == 1,
+            "write access types must be on their own"
+        );
+
+        let info = vulkan_access_info(access);
+        dst_stage_mask |= info.stages;
+
+        // Add visibility operations if necessary.
+        //
+        // If the src access mask is zero, this is a Write-After-Read hazard (or for some reason, a
+        // Read-After-Read), so the dst access mask can be safely zeroed as these don't need
+        // visibility.
+        if src_access_mask != default() {
+            dst_access_mask |= info.access;
+        }
+    }
+
+    if src_stage_mask == default() {
+        src_stage_mask = vk::PipelineStageFlags2::TOP_OF_PIPE;
+    }
+
+    if dst_stage_mask == default() {
+        dst_stage_mask = vk::PipelineStageFlags2::BOTTOM_OF_PIPE;
+    }
+
+    vk::MemoryBarrier2 {
+        src_stage_mask,
+        src_access_mask,
+        dst_stage_mask,
+        dst_access_mask,
+        ..default()
+    }
+}
+
+fn vulkan_image_memory_barrier(
+    barrier: &TextureBarrier,
+    image: vk::Image,
+    subresource_range: vk::ImageSubresourceRange,
+) -> vk::ImageMemoryBarrier2 {
+    let mut src_stage_mask = default();
+    let mut src_access_mask = default();
+    let mut dst_stage_mask = default();
+    let mut dst_access_mask = default();
+    let mut old_layout = vk::ImageLayout::Undefined;
+    let mut new_layout = vk::ImageLayout::Undefined;
+
+    for &access in barrier.prev_access {
+        debug_assert!(
+            access.is_read() || barrier.prev_access.len() == 1,
+            "write access types must be on their own"
+        );
+
+        let info = vulkan_access_info(access);
+        src_stage_mask |= info.stages;
+
+        // For writes, add availability operations.
+        if access.is_write() {
+            src_access_mask |= info.access;
+        }
+
+        let layout = match barrier.prev_layout {
+            TextureLayout::Optimal => info.layout,
+            TextureLayout::General => {
+                if access == Access::PresentRead {
+                    vk::ImageLayout::PresentSrcKhr
+                } else {
+                    vk::ImageLayout::General
+                }
+            }
+        };
+
+        debug_assert!(
+            old_layout == vk::ImageLayout::Undefined || old_layout == layout,
+            "mixed image layout"
+        );
+
+        old_layout = layout;
+    }
+
+    for &access in barrier.next_access {
+        debug_assert!(
+            access.is_read() || barrier.prev_access.len() == 1,
+            "write access types must be on their own"
+        );
+
+        let info = vulkan_access_info(access);
+        dst_stage_mask |= info.stages;
+
+        // Add visibility operations if necessary.
+        //
+        // If the src access mask is zero, this is a Write-After-Read hazard (or for some reason, a
+        // Read-After-Read), so the dst access mask can be safely zeroed as these don't need
+        // visibility.
+        if src_access_mask != default() {
+            dst_access_mask |= info.access;
+        }
+
+        let layout = match barrier.next_layout {
+            TextureLayout::Optimal => info.layout,
+            TextureLayout::General => {
+                if access == Access::PresentRead {
+                    vk::ImageLayout::PresentSrcKhr
+                } else {
+                    vk::ImageLayout::General
+                }
+            }
+        };
+
+        debug_assert!(
+            new_layout == vk::ImageLayout::Undefined || new_layout == layout,
+            "mixed image layout"
+        );
+
+        new_layout = layout;
+    }
+
+    vk::ImageMemoryBarrier2 {
+        src_stage_mask,
+        src_access_mask,
+        dst_stage_mask,
+        dst_access_mask,
+        old_layout,
+        new_layout,
+        src_queue_family_index: 0,
+        dst_queue_family_index: 0,
+        image,
+        subresource_range,
+        ..default()
+    }
+}
+
 struct VulkanBuffer {
     memory: VulkanMemory,
     buffer: vk::Buffer,
@@ -288,6 +684,14 @@ enum VulkanTextureHolder {
 }
 
 impl VulkanTextureHolder {
+    fn image(&self) -> vk::Image {
+        match self {
+            VulkanTextureHolder::Unique(x) => x.texture.image,
+            VulkanTextureHolder::Shared(_) => panic!(),
+            VulkanTextureHolder::Swapchain(_) => panic!(),
+        }
+    }
+
     fn image_view(&self) -> vk::ImageView {
         match self {
             VulkanTextureHolder::Unique(x) => x.view,
@@ -1173,7 +1577,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         };
 
         let view_type = vulkan_image_view_type(desc.layer_count, desc.dimension);
-        let aspect_mask = vulkan_aspect(desc.format);
+        let aspect_mask = vulkan_aspect_for_format(desc.format);
         let create_info = vk::ImageViewCreateInfo {
             image,
             view_type,
@@ -1227,21 +1631,16 @@ impl<'driver> Device for VulkanDevice<'driver> {
             }
         }
 
-        let view_type = vulkan_image_view_type(desc.layer_count, desc.dimension);
-        let aspect_mask = vulkan_aspect(desc.format);
+        let subresource_range = vulkan_subresource_range(&desc.subresource_range);
+        let view_type =
+            vulkan_image_view_type(desc.subresource_range.array_layer_count, desc.dimension);
         let format = vulkan_format(desc.format);
 
         let create_info = vk::ImageViewCreateInfo {
             image: arc_texture.image,
             view_type,
             format,
-            subresource_range: vk::ImageSubresourceRange {
-                aspect_mask,
-                base_mip_level: desc.base_mip,
-                level_count: desc.mip_count,
-                base_array_layer: desc.base_layer,
-                layer_count: desc.layer_count,
-            },
+            subresource_range,
             ..default()
         };
 
@@ -1288,11 +1687,11 @@ impl<'driver> Device for VulkanDevice<'driver> {
         };
 
         let (compare_enable, compare_op) = match desc.compare_op {
-            SamplerCompareOp::None => (vk::Bool32::False, vk::CompareOp::Always),
-            SamplerCompareOp::Less => (vk::Bool32::True, vk::CompareOp::Less),
-            SamplerCompareOp::LessEq => (vk::Bool32::True, vk::CompareOp::LessOrEqual),
-            SamplerCompareOp::Greater => (vk::Bool32::True, vk::CompareOp::Greater),
-            SamplerCompareOp::GreaterEq => (vk::Bool32::True, vk::CompareOp::GreaterOrEqual),
+            None => (vk::Bool32::False, vk::CompareOp::Always),
+            Some(SamplerCompareOp::Less) => (vk::Bool32::True, vk::CompareOp::Less),
+            Some(SamplerCompareOp::LessEq) => (vk::Bool32::True, vk::CompareOp::LessOrEqual),
+            Some(SamplerCompareOp::Greater) => (vk::Bool32::True, vk::CompareOp::Greater),
+            Some(SamplerCompareOp::GreaterEq) => (vk::Bool32::True, vk::CompareOp::GreaterOrEqual),
         };
 
         let mut sampler = vk::Sampler::null();
@@ -2006,6 +2405,103 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
+    fn cmd_barrier(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        global_barrier: Option<&GlobalBarrier>,
+        texture_barriers: &[TextureBarrier],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let memory_barriers = arena.alloc_slice_fill_iter(
+            global_barrier
+                .iter()
+                .map(|global_barrier| vulkan_memory_barrier(global_barrier)),
+        );
+
+        let image_memory_barriers =
+            arena.alloc_slice_fill_iter(texture_barriers.iter().map(|texture_barrier| {
+                let image = self
+                    .texture_pool
+                    .lock()
+                    .get(texture_barrier.texture.0)
+                    .expect("invalid texture handle")
+                    .image();
+
+                // TODO: This needs to be pulled from somewhere useful.
+                let subresource_range = vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                };
+                vulkan_image_memory_barrier(texture_barrier, image, subresource_range)
+            }));
+
+        let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
+        unsafe {
+            self.device_fn.cmd_pipeline_barrier2(
+                command_buffer,
+                &vk::DependencyInfo {
+                    memory_barriers: memory_barriers.into(),
+                    image_memory_barriers: image_memory_barriers.into(),
+                    ..default()
+                },
+            )
+        }
+    }
+
+    fn cmd_copy_buffer_to_texture(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        src_buffer: Buffer,
+        dst_texture: Texture,
+        dst_texture_layout: TextureLayout,
+        copies: &[BufferTextureCopy],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let regions = arena.alloc_slice_fill_iter(copies.iter().map(|copy| vk::BufferImageCopy {
+            buffer_offset: copy.buffer_offset,
+            buffer_row_length: copy.buffer_row_length,
+            buffer_image_height: copy.buffer_image_height,
+            image_subresource: vulkan_subresource_layers(&copy.texture_subresource_layers),
+            image_offset: copy.texture_offset.into(),
+            image_extent: copy.texture_extent.into(),
+        }));
+
+        let src_buffer = self
+            .buffer_pool
+            .lock()
+            .get(src_buffer.0)
+            .expect("invalid buffer handle")
+            .buffer;
+
+        let dst_image = self
+            .texture_pool
+            .lock()
+            .get(dst_texture.0)
+            .expect("invalid texture handle")
+            .image();
+
+        let dst_image_layout = match dst_texture_layout {
+            TextureLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
+            TextureLayout::General => vk::ImageLayout::General,
+        };
+
+        let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
+        unsafe {
+            self.device_fn.cmd_copy_buffer_to_image(
+                command_buffer,
+                src_buffer,
+                dst_image,
+                dst_image_layout,
+                regions,
+            )
+        }
+    }
+
     fn cmd_set_bind_group(
         &self,
         frame: &Frame,
@@ -2086,7 +2582,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                         .unwrap()
                         .image_view();
                     vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::ColorAttachmentOptimal,
+                        image_layout: vk::ImageLayout::ShaderReadOnlyOptimal, // TODO: Determine appropriate layout here.
                         image_view,
                         sampler: vk::Sampler::null(),
                     }

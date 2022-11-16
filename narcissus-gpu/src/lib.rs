@@ -6,6 +6,32 @@ use narcissus_core::{flags_def, thread_token_def, Handle, PhantomUnsend};
 mod delay_queue;
 mod vulkan;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Offset2d {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Extent2d {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Offset3d {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Extent3d {
+    pub width: u32,
+    pub height: u32,
+    pub depth: u32,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Texture(Handle);
 
@@ -40,10 +66,8 @@ pub struct Viewport {
 
 #[repr(C)]
 pub struct Scissor {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
+    pub offset: Offset2d,
+    pub extent: Extent2d,
 }
 
 flags_def!(ShaderStageFlags);
@@ -72,6 +96,13 @@ pub enum TextureFormat {
     DEPTH_F32,
 }
 
+flags_def!(TextureAspectFlags);
+impl TextureAspectFlags {
+    pub const COLOR: Self = Self(1 << 0);
+    pub const DEPTH: Self = Self(1 << 1);
+    pub const STENCIL: Self = Self(1 << 2);
+}
+
 flags_def!(TextureUsageFlags);
 impl TextureUsageFlags {
     pub const SAMPLED: Self = Self(1 << 0);
@@ -80,6 +111,21 @@ impl TextureUsageFlags {
     pub const RENDER_TARGET: Self = Self(1 << 3);
     pub const TRANSFER_SRC: Self = Self(1 << 4);
     pub const TRANSFER_DST: Self = Self(1 << 5);
+}
+
+pub struct TextureSubresourceLayers {
+    pub aspect: TextureAspectFlags,
+    pub mip_level: u32,
+    pub base_array_layer: u32,
+    pub array_layer_count: u32,
+}
+
+pub struct TextureSubresourceRange {
+    pub aspect: TextureAspectFlags,
+    pub base_mip_level: u32,
+    pub mip_level_count: u32,
+    pub base_array_layer: u32,
+    pub array_layer_count: u32,
 }
 
 flags_def!(BufferUsageFlags);
@@ -102,6 +148,7 @@ pub struct TextureDesc {
     pub usage: TextureUsageFlags,
     pub dimension: TextureDimension,
     pub format: TextureFormat,
+    pub initial_layout: TextureLayout,
     pub width: u32,
     pub height: u32,
     pub depth: u32,
@@ -113,10 +160,16 @@ pub struct TextureViewDesc {
     pub texture: Texture,
     pub dimension: TextureDimension,
     pub format: TextureFormat,
-    pub base_mip: u32,
-    pub mip_count: u32,
-    pub base_layer: u32,
-    pub layer_count: u32,
+    pub subresource_range: TextureSubresourceRange,
+}
+
+pub struct BufferTextureCopy {
+    pub buffer_offset: u64,
+    pub buffer_row_length: u32,
+    pub buffer_image_height: u32,
+    pub texture_subresource_layers: TextureSubresourceLayers,
+    pub texture_offset: Offset3d,
+    pub texture_extent: Extent3d,
 }
 
 pub struct ShaderDesc<'a> {
@@ -134,7 +187,6 @@ pub enum SamplerFilter {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SamplerCompareOp {
-    None,
     Less,
     LessEq,
     Greater,
@@ -150,7 +202,7 @@ pub enum SamplerAddressMode {
 pub struct SamplerDesc {
     pub filter: SamplerFilter,
     pub address_mode: SamplerAddressMode,
-    pub compare_op: SamplerCompareOp,
+    pub compare_op: Option<SamplerCompareOp>,
     pub mip_lod_bias: f32,
     pub min_lod: f32,
     pub max_lod: f32,
@@ -345,6 +397,142 @@ pub enum TypedBind<'a> {
     StorageBuffer(&'a [Buffer]),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    /// No access.
+    None,
+
+    /// Read as an indirect buffer for drawing or dispatch.
+    IndirectBuffer,
+    /// Read as an index buffer.
+    IndexBuffer,
+    /// Read as a vertex buffer.
+    VertexBuffer,
+
+    /// Read as a uniform buffer in a vertex shader.
+    VertexShaderUniformBufferRead,
+    /// Read as a sampled image or uniform texel buffer in a vertex shader.
+    VertexShaderSampledImageRead,
+    /// Read as any other resource in a vertex shader.
+    VertexShaderOtherRead,
+
+    /// Read as a uniform buffer in a fragment shader.
+    FragmentShaderUniformBufferRead,
+    /// Read as a sampled image or uniform texel buffer in a fragment shader.
+    FragmentShaderSampledImageRead,
+    /// Read as any other resource in a fragment shader.
+    FragmentShaderOtherRead,
+
+    /// Read as a color attachement.
+    ColorAttachmentRead,
+    /// Read as a depth-stencil attachment.
+    DepthStencilAttachmentRead,
+
+    /// Read as a uniform buffer in any shader.
+    ShaderUniformBufferRead,
+    /// Read as a uniform buffer or vertex buffer in any shader.
+    ShaderUniformBufferOrVertexBufferRead,
+    /// Read as a sampled image or uniform texel buffer in any shader.
+    ShaderSampledImageRead,
+    /// Read as any other resource (excluding attachments) in any shader.
+    ShaderOtherRead,
+
+    /// Read as the source of a transfer operation.
+    TransferRead,
+    /// Read on the host.
+    HostRead,
+
+    /// Read by the presentation engine.
+    PresentRead,
+
+    /// Written as any resource in a vertex shader.
+    VertexShaderWrite,
+    /// Written as any resource in a fragment shader.
+    FragmentShaderWrite,
+
+    /// Written as a color attachment during rendering.
+    ColorAttachmentWrite,
+    /// Written as a depth-stencil attachment during rendering.
+    DepthStencilAttachmentWrite,
+
+    /// Written as any resource in any shader.
+    ShaderWrite,
+
+    /// Written as the destination of a transfer operation.
+    TransferWrite,
+    /// Pre-initialized on the host before device access starts.
+    HostPreInitializedWrite,
+    /// Written on the host.
+    HostWrite,
+
+    /// Read or written as a color attachment during rendering.
+    ColorAttachmentReadWrite,
+
+    /// Covers any access. Slow mode like snail.
+    General,
+}
+
+impl Access {
+    /// Check whether this access type exclusively reads.
+    pub fn is_read(self) -> bool {
+        match self {
+            Access::None => true,
+            Access::IndirectBuffer => true,
+            Access::IndexBuffer => true,
+            Access::VertexBuffer => true,
+            Access::VertexShaderUniformBufferRead => true,
+            Access::VertexShaderSampledImageRead => true,
+            Access::VertexShaderOtherRead => true,
+            Access::FragmentShaderUniformBufferRead => true,
+            Access::FragmentShaderSampledImageRead => true,
+            Access::FragmentShaderOtherRead => true,
+            Access::ColorAttachmentRead => true,
+            Access::DepthStencilAttachmentRead => true,
+            Access::ShaderUniformBufferRead => true,
+            Access::ShaderUniformBufferOrVertexBufferRead => true,
+            Access::ShaderSampledImageRead => true,
+            Access::ShaderOtherRead => true,
+            Access::TransferRead => true,
+            Access::HostRead => true,
+            Access::PresentRead => true,
+            Access::VertexShaderWrite => false,
+            Access::FragmentShaderWrite => false,
+            Access::ColorAttachmentWrite => false,
+            Access::DepthStencilAttachmentWrite => false,
+            Access::ShaderWrite => false,
+            Access::TransferWrite => false,
+            Access::HostPreInitializedWrite => false,
+            Access::HostWrite => false,
+            Access::ColorAttachmentReadWrite => false,
+            Access::General => false,
+        }
+    }
+
+    /// Check whether this access type contains a write.
+    pub fn is_write(self) -> bool {
+        !self.is_read()
+    }
+}
+
+pub enum TextureLayout {
+    Optimal,
+    General,
+}
+
+pub struct GlobalBarrier<'a> {
+    pub prev_access: &'a [Access],
+    pub next_access: &'a [Access],
+}
+
+pub struct TextureBarrier<'a> {
+    pub prev_access: &'a [Access],
+    pub next_access: &'a [Access],
+    pub prev_layout: TextureLayout,
+    pub next_layout: TextureLayout,
+    pub texture: Texture,
+    pub subresource_range: TextureSubresourceRange,
+}
+
 thread_token_def!(ThreadToken, GpuConcurrent, 8);
 
 pub struct Frame<'a> {
@@ -397,6 +585,7 @@ pub trait Device {
     ) -> (u32, u32, Texture);
     fn destroy_window(&self, window: Window);
 
+    #[must_use]
     fn create_cmd_buffer<'a, 'thread>(
         &'a self,
         frame: &'a Frame,
@@ -423,13 +612,29 @@ pub trait Device {
 
     fn cmd_set_pipeline(&self, cmd_buffer: &mut CmdBuffer, pipeline: Pipeline);
 
-    fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &RenderingDesc);
-
-    fn cmd_end_rendering(&self, cmd_buffer: &mut CmdBuffer);
-
     fn cmd_set_viewports(&self, cmd_buffer: &mut CmdBuffer, viewports: &[Viewport]);
 
     fn cmd_set_scissors(&self, cmd_buffer: &mut CmdBuffer, scissors: &[Scissor]);
+
+    fn cmd_barrier(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        global_barrier: Option<&GlobalBarrier>,
+        texture_barriers: &[TextureBarrier],
+    );
+
+    fn cmd_copy_buffer_to_texture(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        src_buffer: Buffer,
+        dst_texture: Texture,
+        dst_texture_layout: TextureLayout,
+        copies: &[BufferTextureCopy],
+    );
+
+    fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &RenderingDesc);
+
+    fn cmd_end_rendering(&self, cmd_buffer: &mut CmdBuffer);
 
     fn cmd_draw(
         &self,

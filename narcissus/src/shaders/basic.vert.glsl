@@ -22,7 +22,8 @@ layout(std430, set = 1, binding = 1) readonly buffer transformBuffer {
     TransformData transforms[];
 };
 
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) out vec2 texcoord;
+layout(location = 1) out vec3 normal;
 
 void main() {
     TransformData td = transforms[gl_InstanceIndex];
@@ -36,7 +37,8 @@ void main() {
     vec3 modelOff = vec3(td.transform[2].y, td.transform[2].z, td.transform[2].w);
     vec3 posWorld = transpose(modelRot) * vd.position.xyz + modelOff;
     vec4 posClip = transpose(viewProj) * vec4(posWorld, 1.0);
-
     gl_Position = posClip;
-    fragColor = vd.normal.xyz * 0.5 + 0.5;
+
+    normal = vd.normal.xyz;
+    texcoord = vec2(vd.texcoord.x, 1.0 - vd.texcoord.y);
 }

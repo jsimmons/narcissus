@@ -3,12 +3,14 @@ use std::{path::Path, time::Instant};
 use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{cstr, default, obj, rand::Pcg64, Image};
 use narcissus_gpu::{
-    create_vulkan_device, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, Buffer,
-    BufferDesc, BufferUsageFlags, ClearValue, CompareOp, CullingMode, Device, FrontFace,
-    GraphicsPipelineDesc, GraphicsPipelineLayout, IndexType, LoadOp, MemoryLocation, PolygonMode,
-    RenderingAttachment, RenderingDesc, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
-    TextureDesc, TextureDimension, TextureFormat, TextureUsageFlags, ThreadToken, Topology,
-    TypedBind, Viewport,
+    create_vulkan_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
+    Buffer, BufferDesc, BufferTextureCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
+    Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, IndexType,
+    LoadOp, MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
+    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
+    Texture, TextureAspectFlags, TextureBarrier, TextureDesc, TextureDimension, TextureFormat,
+    TextureLayout, TextureSubresourceLayers, TextureSubresourceRange, TextureUsageFlags,
+    ThreadToken, Topology, TypedBind, Viewport,
 };
 use narcissus_maths::{
     sin_cos_pi_f32, vec2, vec3, vec4, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec2, Vec3,
@@ -39,6 +41,7 @@ struct Vertex {
 }
 
 unsafe impl Blittable for Vertex {}
+unsafe impl Blittable for u8 {}
 unsafe impl Blittable for u16 {}
 unsafe impl Blittable for Affine3 {}
 
@@ -143,6 +146,102 @@ where
     buffer
 }
 
+fn create_texture_with_data(
+    device: &dyn Device,
+    thread_token: &mut ThreadToken,
+    width: u32,
+    height: u32,
+    data: &[u8],
+) -> Texture {
+    let frame = device.begin_frame();
+
+    let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER_SRC, data);
+    let texture = device.create_texture(&TextureDesc {
+        memory_location: MemoryLocation::PreferDevice,
+        usage: TextureUsageFlags::SAMPLED | TextureUsageFlags::TRANSFER_DST,
+        dimension: TextureDimension::Type2d,
+        format: TextureFormat::RGBA8_SRGB,
+        initial_layout: TextureLayout::Optimal,
+        width,
+        height,
+        depth: 1,
+        layer_count: 1,
+        mip_levels: 1,
+    });
+
+    let mut cmd_buffer = device.create_cmd_buffer(&frame, thread_token);
+
+    device.cmd_barrier(
+        &mut cmd_buffer,
+        None,
+        &[TextureBarrier {
+            prev_access: &[Access::None],
+            next_access: &[Access::TransferWrite],
+            prev_layout: TextureLayout::Optimal,
+            next_layout: TextureLayout::Optimal,
+            texture,
+            subresource_range: TextureSubresourceRange {
+                aspect: TextureAspectFlags::COLOR,
+                base_mip_level: 0,
+                mip_level_count: 1,
+                base_array_layer: 0,
+                array_layer_count: 1,
+            },
+        }],
+    );
+
+    device.cmd_copy_buffer_to_texture(
+        &mut cmd_buffer,
+        buffer,
+        texture,
+        TextureLayout::Optimal,
+        &[BufferTextureCopy {
+            buffer_offset: 0,
+            buffer_row_length: 0,
+            buffer_image_height: 0,
+            texture_subresource_layers: TextureSubresourceLayers {
+                aspect: TextureAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                array_layer_count: 1,
+            },
+            texture_offset: Offset3d { x: 0, y: 0, z: 0 },
+            texture_extent: Extent3d {
+                width,
+                height,
+                depth: 1,
+            },
+        }],
+    );
+
+    device.cmd_barrier(
+        &mut cmd_buffer,
+        None,
+        &[TextureBarrier {
+            prev_access: &[Access::TransferWrite],
+            next_access: &[Access::FragmentShaderSampledImageRead],
+            prev_layout: TextureLayout::Optimal,
+            next_layout: TextureLayout::Optimal,
+            texture,
+            subresource_range: TextureSubresourceRange {
+                aspect: TextureAspectFlags::COLOR,
+                base_mip_level: 0,
+                mip_level_count: 1,
+                base_array_layer: 0,
+                array_layer_count: 1,
+            },
+        }],
+    );
+
+    device.submit(&frame, cmd_buffer);
+
+    device.destroy_buffer(&frame, buffer);
+
+    device.end_frame(frame);
+
+    texture
+}
+
 struct MappedBuffer<'a> {
     device: &'a dyn Device,
     buffer: Buffer,
@@ -206,7 +305,7 @@ impl<'a> Drop for MappedBuffer<'a> {
 }
 
 pub fn main() {
-    let _blåhaj_image = load_img("narcissus/data/blåhaj.png");
+    let blåhaj_image = load_img("narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
 
     let app = create_app();
@@ -246,6 +345,18 @@ pub fn main() {
                 slot: 1,
                 stages: ShaderStageFlags::ALL,
                 binding_type: BindingType::StorageBuffer,
+                count: 1,
+            },
+            BindGroupLayoutEntryDesc {
+                slot: 2,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::Sampler,
+                count: 1,
+            },
+            BindGroupLayoutEntryDesc {
+                slot: 3,
+                stages: ShaderStageFlags::ALL,
+                binding_type: BindingType::Texture,
                 count: 1,
             },
         ],
@@ -291,6 +402,14 @@ pub fn main() {
         blåhaj_indices.as_slice(),
     );
 
+    let blåhaj_texture = create_texture_with_data(
+        device.as_ref(),
+        &mut thread_token,
+        blåhaj_image.width() as u32,
+        blåhaj_image.height() as u32,
+        blåhaj_image.as_slice(),
+    );
+
     let mut uniforms = MappedBuffer::new(
         device.as_ref(),
         BufferUsageFlags::UNIFORM,
@@ -302,6 +421,15 @@ pub fn main() {
         BufferUsageFlags::STORAGE,
         std::mem::size_of::<Affine3>() * MAX_SHARKS,
     );
+
+    let sampler = device.create_sampler(&SamplerDesc {
+        filter: SamplerFilter::Point,
+        address_mode: SamplerAddressMode::Clamp,
+        compare_op: None,
+        mip_lod_bias: 0.0,
+        min_lod: 0.0,
+        max_lod: 1000.0,
+    });
 
     let mut depth_width = 0;
     let mut depth_height = 0;
@@ -356,13 +484,13 @@ pub fn main() {
             device.acquire_swapchain(&frame, main_window, TextureFormat::BGRA8_SRGB);
 
         let frame_start = Instant::now() - start_time;
-        let frame_start = frame_start.as_secs_f32() * 0.125;
+        let frame_start = frame_start.as_secs_f32() * 0.01;
 
         for (i, transform) in shark_transforms.iter_mut().enumerate() {
             let direction = if i & 1 == 0 { 1.0 } else { -1.0 };
-            let (s, _) = sin_cos_pi_f32(frame_start + (i as f32) * 0.125);
+            let (s, _) = sin_cos_pi_f32(frame_start + (i as f32) * 0.0125);
             transform.translate.y = s;
-            transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.005 * direction))
+            transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.002 * direction))
         }
 
         transforms.write_slice(&shark_transforms);
@@ -386,6 +514,7 @@ pub fn main() {
                 usage: TextureUsageFlags::DEPTH_STENCIL,
                 dimension: TextureDimension::Type2d,
                 format: TextureFormat::DEPTH_F32,
+                initial_layout: TextureLayout::Optimal,
                 width,
                 height,
                 depth: 1,
@@ -430,6 +559,16 @@ pub fn main() {
                     array_element: 0,
                     typed: TypedBind::StorageBuffer(&[transforms.buffer()]),
                 },
+                Bind {
+                    binding: 2,
+                    array_element: 0,
+                    typed: TypedBind::Sampler(&[sampler]),
+                },
+                Bind {
+                    binding: 3,
+                    array_element: 0,
+                    typed: TypedBind::Texture(&[blåhaj_texture]),
+                },
             ],
         );
 
@@ -464,10 +603,8 @@ pub fn main() {
         device.cmd_set_scissors(
             &mut cmd_buffer,
             &[Scissor {
-                x: 0,
-                y: 0,
-                width,
-                height,
+                offset: Offset2d { x: 0, y: 0 },
+                extent: Extent2d { width, height },
             }],
         );
 
