@@ -120,12 +120,35 @@ pub struct ImageSubresourceLayers {
     pub array_layer_count: u32,
 }
 
+impl Default for ImageSubresourceLayers {
+    fn default() -> Self {
+        Self {
+            aspect: ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            array_layer_count: 1,
+        }
+    }
+}
+
 pub struct ImageSubresourceRange {
     pub aspect: ImageAspectFlags,
     pub base_mip_level: u32,
     pub mip_level_count: u32,
     pub base_array_layer: u32,
     pub array_layer_count: u32,
+}
+
+impl Default for ImageSubresourceRange {
+    fn default() -> Self {
+        Self {
+            aspect: ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            mip_level_count: 1,
+            base_array_layer: 0,
+            array_layer_count: 1,
+        }
+    }
 }
 
 flags_def!(BufferUsageFlags);

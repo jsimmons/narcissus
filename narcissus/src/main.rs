@@ -157,6 +157,7 @@ fn create_image_with_data(
     let frame = device.begin_frame();
 
     let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER_SRC, data);
+
     let image = device.create_image(&ImageDesc {
         memory_location: MemoryLocation::PreferDevice,
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
@@ -181,13 +182,7 @@ fn create_image_with_data(
             prev_layout: ImageLayout::Optimal,
             next_layout: ImageLayout::Optimal,
             image,
-            subresource_range: ImageSubresourceRange {
-                aspect: ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                mip_level_count: 1,
-                base_array_layer: 0,
-                array_layer_count: 1,
-            },
+            subresource_range: default(),
         }],
     );
 
@@ -200,12 +195,7 @@ fn create_image_with_data(
             buffer_offset: 0,
             buffer_row_length: 0,
             buffer_image_height: 0,
-            image_subresource_layers: ImageSubresourceLayers {
-                aspect: ImageAspectFlags::COLOR,
-                mip_level: 0,
-                base_array_layer: 0,
-                array_layer_count: 1,
-            },
+            image_subresource_layers: default(),
             image_offset: Offset3d { x: 0, y: 0, z: 0 },
             image_extent: Extent3d {
                 width,
@@ -224,13 +214,7 @@ fn create_image_with_data(
             prev_layout: ImageLayout::Optimal,
             next_layout: ImageLayout::Optimal,
             image,
-            subresource_range: ImageSubresourceRange {
-                aspect: ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                mip_level_count: 1,
-                base_array_layer: 0,
-                array_layer_count: 1,
-            },
+            subresource_range: default(),
         }],
     );
 
