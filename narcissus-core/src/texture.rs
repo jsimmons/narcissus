@@ -13,7 +13,7 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-pub struct Image {
+pub struct Texture {
     width: usize,
     height: usize,
     components: usize,
@@ -21,8 +21,8 @@ pub struct Image {
     buffer: NonNull<u8>,
 }
 
-impl Image {
-    pub fn from_buffer(buffer: &[u8]) -> Result<Image, LoadError> {
+impl Texture {
+    pub fn from_buffer(buffer: &[u8]) -> Result<Texture, LoadError> {
         let mut x = 0;
         let mut y = 0;
         let mut components = 0;
@@ -47,7 +47,7 @@ impl Image {
         let components = components as usize;
         let len = x * y * components;
 
-        Ok(Image {
+        Ok(Texture {
             width: x,
             height: y,
             components,
@@ -57,19 +57,19 @@ impl Image {
         })
     }
 
-    /// Returns the image's width in pixels.
+    /// Returns the texture's width in pixels.
     #[inline]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    /// Returns the image's height in pixels.
+    /// Returns the texture's height in pixels.
     #[inline]
     pub fn height(&self) -> usize {
         self.height
     }
 
-    /// Returns the number of components in this image.
+    /// Returns the number of components in this texture.
     #[inline]
     pub fn components(&self) -> usize {
         self.components
@@ -77,10 +77,10 @@ impl Image {
 
     /// The pixel data consists of [`Self::height()`] scanlines of [`Self::width()`] pixels,
     /// with each pixel consisting of [`Self::components()`] interleaved 8-bit components; the first
-    /// pixel pointed to is top-left-most in the image. There is no padding between
-    /// image scanlines or between pixels, regardless of format.
+    /// pixel pointed to is top-left-most in the texture. There is no padding between
+    /// texture scanlines or between pixels, regardless of format.
     ///
-    /// An output image with N components has the following components interleaved
+    /// An output texture with N components has the following components interleaved
     /// in this order in each pixel:
     ///
     /// |  N |   Components            |
@@ -90,12 +90,12 @@ impl Image {
     /// | 3  | red, green, blue        |
     /// | 4  | red, green, blue, alpha |
     pub fn as_slice(&self) -> &[u8] {
-        // Safety: Slice size is calculated when creating `Image`.
+        // Safety: Slice size is calculated when creating `Texture`.
         unsafe { std::slice::from_raw_parts(self.buffer.as_ptr(), self.len) }
     }
 }
 
-impl Drop for Image {
+impl Drop for Texture {
     fn drop(&mut self) {
         // Safety: Always allocated by `stbi_load_xxx` functions.
         unsafe { stbi_image_free(self.buffer.as_ptr() as *mut _) }

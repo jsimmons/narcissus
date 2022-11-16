@@ -1,15 +1,15 @@
 use std::{path::Path, time::Instant};
 
 use narcissus_app::{create_app, Event, Key, WindowDesc};
-use narcissus_core::{cstr, default, obj, rand::Pcg64, Image};
+use narcissus_core::{cstr, default, obj, rand::Pcg64, Texture};
 use narcissus_gpu::{
     create_vulkan_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
-    Buffer, BufferDesc, BufferTextureCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
-    Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, IndexType,
-    LoadOp, MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
+    Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
+    Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, Image,
+    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
+    ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, IndexType, LoadOp,
+    MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
     SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
-    Texture, TextureAspectFlags, TextureBarrier, TextureDesc, TextureDimension, TextureFormat,
-    TextureLayout, TextureSubresourceLayers, TextureSubresourceRange, TextureUsageFlags,
     ThreadToken, Topology, TypedBind, Viewport,
 };
 use narcissus_maths::{
@@ -114,16 +114,17 @@ fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
     (vertices, indices)
 }
 
-fn load_img<P: AsRef<Path>>(path: P) -> Image {
+fn load_texture<P: AsRef<Path>>(path: P) -> Texture {
     let start = std::time::Instant::now();
     let path = path.as_ref();
-    let image = Image::from_buffer(std::fs::read(path).expect("failed to read file").as_slice())
-        .expect("failed to load image");
+    let texture =
+        Texture::from_buffer(std::fs::read(path).expect("failed to read file").as_slice())
+            .expect("failed to load image");
     println!(
         "loading image {path:?} took {:?}",
         std::time::Instant::now() - start
     );
-    image
+    texture
 }
 
 fn create_buffer_with_data<T>(device: &dyn Device, usage: BufferUsageFlags, data: &[T]) -> Buffer
@@ -146,22 +147,22 @@ where
     buffer
 }
 
-fn create_texture_with_data(
+fn create_image_with_data(
     device: &dyn Device,
     thread_token: &mut ThreadToken,
     width: u32,
     height: u32,
     data: &[u8],
-) -> Texture {
+) -> Image {
     let frame = device.begin_frame();
 
     let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER_SRC, data);
-    let texture = device.create_texture(&TextureDesc {
+    let image = device.create_image(&ImageDesc {
         memory_location: MemoryLocation::PreferDevice,
-        usage: TextureUsageFlags::SAMPLED | TextureUsageFlags::TRANSFER_DST,
-        dimension: TextureDimension::Type2d,
-        format: TextureFormat::RGBA8_SRGB,
-        initial_layout: TextureLayout::Optimal,
+        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
+        dimension: ImageDimension::Type2d,
+        format: ImageFormat::RGBA8_SRGB,
+        initial_layout: ImageLayout::Optimal,
         width,
         height,
         depth: 1,
@@ -174,14 +175,14 @@ fn create_texture_with_data(
     device.cmd_barrier(
         &mut cmd_buffer,
         None,
-        &[TextureBarrier {
+        &[ImageBarrier {
             prev_access: &[Access::None],
             next_access: &[Access::TransferWrite],
-            prev_layout: TextureLayout::Optimal,
-            next_layout: TextureLayout::Optimal,
-            texture,
-            subresource_range: TextureSubresourceRange {
-                aspect: TextureAspectFlags::COLOR,
+            prev_layout: ImageLayout::Optimal,
+            next_layout: ImageLayout::Optimal,
+            image,
+            subresource_range: ImageSubresourceRange {
+                aspect: ImageAspectFlags::COLOR,
                 base_mip_level: 0,
                 mip_level_count: 1,
                 base_array_layer: 0,
@@ -190,23 +191,23 @@ fn create_texture_with_data(
         }],
     );
 
-    device.cmd_copy_buffer_to_texture(
+    device.cmd_copy_buffer_to_image(
         &mut cmd_buffer,
         buffer,
-        texture,
-        TextureLayout::Optimal,
-        &[BufferTextureCopy {
+        image,
+        ImageLayout::Optimal,
+        &[BufferImageCopy {
             buffer_offset: 0,
             buffer_row_length: 0,
             buffer_image_height: 0,
-            texture_subresource_layers: TextureSubresourceLayers {
-                aspect: TextureAspectFlags::COLOR,
+            image_subresource_layers: ImageSubresourceLayers {
+                aspect: ImageAspectFlags::COLOR,
                 mip_level: 0,
                 base_array_layer: 0,
                 array_layer_count: 1,
             },
-            texture_offset: Offset3d { x: 0, y: 0, z: 0 },
-            texture_extent: Extent3d {
+            image_offset: Offset3d { x: 0, y: 0, z: 0 },
+            image_extent: Extent3d {
                 width,
                 height,
                 depth: 1,
@@ -217,14 +218,14 @@ fn create_texture_with_data(
     device.cmd_barrier(
         &mut cmd_buffer,
         None,
-        &[TextureBarrier {
+        &[ImageBarrier {
             prev_access: &[Access::TransferWrite],
             next_access: &[Access::FragmentShaderSampledImageRead],
-            prev_layout: TextureLayout::Optimal,
-            next_layout: TextureLayout::Optimal,
-            texture,
-            subresource_range: TextureSubresourceRange {
-                aspect: TextureAspectFlags::COLOR,
+            prev_layout: ImageLayout::Optimal,
+            next_layout: ImageLayout::Optimal,
+            image,
+            subresource_range: ImageSubresourceRange {
+                aspect: ImageAspectFlags::COLOR,
                 base_mip_level: 0,
                 mip_level_count: 1,
                 base_array_layer: 0,
@@ -239,7 +240,7 @@ fn create_texture_with_data(
 
     device.end_frame(frame);
 
-    texture
+    image
 }
 
 struct MappedBuffer<'a> {
@@ -305,7 +306,7 @@ impl<'a> Drop for MappedBuffer<'a> {
 }
 
 pub fn main() {
-    let blåhaj_image = load_img("narcissus/data/blåhaj.png");
+    let blåhaj_image = load_texture("narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
 
     let app = create_app();
@@ -356,7 +357,7 @@ pub fn main() {
             BindGroupLayoutEntryDesc {
                 slot: 3,
                 stages: ShaderStageFlags::ALL,
-                binding_type: BindingType::Texture,
+                binding_type: BindingType::Image,
                 count: 1,
             },
         ],
@@ -373,8 +374,8 @@ pub fn main() {
         },
         bind_group_layouts: &[uniform_bind_group_layout, storage_bind_group_layout],
         layout: GraphicsPipelineLayout {
-            color_attachment_formats: &[TextureFormat::BGRA8_SRGB],
-            depth_attachment_format: Some(TextureFormat::DEPTH_F32),
+            color_attachment_formats: &[ImageFormat::BGRA8_SRGB],
+            depth_attachment_format: Some(ImageFormat::DEPTH_F32),
             stencil_attachment_format: None,
         },
         topology: Topology::Triangles,
@@ -402,7 +403,7 @@ pub fn main() {
         blåhaj_indices.as_slice(),
     );
 
-    let blåhaj_texture = create_texture_with_data(
+    let blåhaj_image = create_image_with_data(
         device.as_ref(),
         &mut thread_token,
         blåhaj_image.width() as u32,
@@ -481,7 +482,7 @@ pub fn main() {
         }
 
         let (width, height, swapchain_image) =
-            device.acquire_swapchain(&frame, main_window, TextureFormat::BGRA8_SRGB);
+            device.acquire_swapchain(&frame, main_window, ImageFormat::BGRA8_SRGB);
 
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.01;
@@ -508,13 +509,13 @@ pub fn main() {
         uniforms.write(Uniforms { clip_from_model });
 
         if width != depth_width || height != depth_height {
-            device.destroy_texture(&frame, depth_image);
-            depth_image = device.create_texture(&TextureDesc {
+            device.destroy_image(&frame, depth_image);
+            depth_image = device.create_image(&ImageDesc {
                 memory_location: MemoryLocation::PreferDevice,
-                usage: TextureUsageFlags::DEPTH_STENCIL,
-                dimension: TextureDimension::Type2d,
-                format: TextureFormat::DEPTH_F32,
-                initial_layout: TextureLayout::Optimal,
+                usage: ImageUsageFlags::DEPTH_STENCIL,
+                dimension: ImageDimension::Type2d,
+                format: ImageFormat::DEPTH_F32,
+                initial_layout: ImageLayout::Optimal,
                 width,
                 height,
                 depth: 1,
@@ -567,7 +568,7 @@ pub fn main() {
                 Bind {
                     binding: 3,
                     array_element: 0,
-                    typed: TypedBind::Texture(&[blåhaj_texture]),
+                    typed: TypedBind::Image(&[blåhaj_image]),
                 },
             ],
         );
@@ -582,14 +583,14 @@ pub fn main() {
                 width,
                 height,
                 color_attachments: &[RenderingAttachment {
-                    texture: swapchain_image,
+                    image: swapchain_image,
                     load_op: LoadOp::Clear(ClearValue::ColorF32([
                         0.392157, 0.584314, 0.929412, 1.0,
                     ])),
                     store_op: StoreOp::Store,
                 }],
                 depth_attachment: Some(RenderingAttachment {
-                    texture: depth_image,
+                    image: depth_image,
                     load_op: LoadOp::Clear(ClearValue::DepthStencil {
                         depth: 0.0,
                         stencil: 0,

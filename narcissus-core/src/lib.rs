@@ -18,7 +18,7 @@ mod waiter;
 pub use arena::{Arena, HybridArena};
 pub use bitset::BitIter;
 pub use fixed_vec::FixedVec;
-pub use image::Image;
+pub use image::Texture;
 pub use mutex::Mutex;
 pub use pool::{Handle, Pool};
 pub use ref_count::{Arc, Rc};

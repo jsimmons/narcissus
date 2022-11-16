@@ -33,7 +33,7 @@ pub struct Extent3d {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Texture(Handle);
+pub struct Image(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Buffer(Handle);
@@ -79,7 +79,7 @@ impl ShaderStageFlags {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum TextureDimension {
+pub enum ImageDimension {
     Type1d,
     Type2d,
     Type3d,
@@ -88,7 +88,7 @@ pub enum TextureDimension {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
-pub enum TextureFormat {
+pub enum ImageFormat {
     BGRA8_SRGB,
     BGRA8_UNORM,
     RGBA8_SRGB,
@@ -96,15 +96,15 @@ pub enum TextureFormat {
     DEPTH_F32,
 }
 
-flags_def!(TextureAspectFlags);
-impl TextureAspectFlags {
+flags_def!(ImageAspectFlags);
+impl ImageAspectFlags {
     pub const COLOR: Self = Self(1 << 0);
     pub const DEPTH: Self = Self(1 << 1);
     pub const STENCIL: Self = Self(1 << 2);
 }
 
-flags_def!(TextureUsageFlags);
-impl TextureUsageFlags {
+flags_def!(ImageUsageFlags);
+impl ImageUsageFlags {
     pub const SAMPLED: Self = Self(1 << 0);
     pub const STORAGE: Self = Self(1 << 1);
     pub const DEPTH_STENCIL: Self = Self(1 << 2);
@@ -113,15 +113,15 @@ impl TextureUsageFlags {
     pub const TRANSFER_DST: Self = Self(1 << 5);
 }
 
-pub struct TextureSubresourceLayers {
-    pub aspect: TextureAspectFlags,
+pub struct ImageSubresourceLayers {
+    pub aspect: ImageAspectFlags,
     pub mip_level: u32,
     pub base_array_layer: u32,
     pub array_layer_count: u32,
 }
 
-pub struct TextureSubresourceRange {
-    pub aspect: TextureAspectFlags,
+pub struct ImageSubresourceRange {
+    pub aspect: ImageAspectFlags,
     pub base_mip_level: u32,
     pub mip_level_count: u32,
     pub base_array_layer: u32,
@@ -143,12 +143,12 @@ pub struct BufferDesc {
     pub size: usize,
 }
 
-pub struct TextureDesc {
+pub struct ImageDesc {
     pub memory_location: MemoryLocation,
-    pub usage: TextureUsageFlags,
-    pub dimension: TextureDimension,
-    pub format: TextureFormat,
-    pub initial_layout: TextureLayout,
+    pub usage: ImageUsageFlags,
+    pub dimension: ImageDimension,
+    pub format: ImageFormat,
+    pub initial_layout: ImageLayout,
     pub width: u32,
     pub height: u32,
     pub depth: u32,
@@ -156,20 +156,20 @@ pub struct TextureDesc {
     pub mip_levels: u32,
 }
 
-pub struct TextureViewDesc {
-    pub texture: Texture,
-    pub dimension: TextureDimension,
-    pub format: TextureFormat,
-    pub subresource_range: TextureSubresourceRange,
+pub struct ImageViewDesc {
+    pub image: Image,
+    pub dimension: ImageDimension,
+    pub format: ImageFormat,
+    pub subresource_range: ImageSubresourceRange,
 }
 
-pub struct BufferTextureCopy {
+pub struct BufferImageCopy {
     pub buffer_offset: u64,
     pub buffer_row_length: u32,
     pub buffer_image_height: u32,
-    pub texture_subresource_layers: TextureSubresourceLayers,
-    pub texture_offset: Offset3d,
-    pub texture_extent: Extent3d,
+    pub image_subresource_layers: ImageSubresourceLayers,
+    pub image_offset: Offset3d,
+    pub image_extent: Extent3d,
 }
 
 pub struct ShaderDesc<'a> {
@@ -293,9 +293,9 @@ pub struct DepthBias {
 }
 
 pub struct GraphicsPipelineLayout<'a> {
-    pub color_attachment_formats: &'a [TextureFormat],
-    pub depth_attachment_format: Option<TextureFormat>,
-    pub stencil_attachment_format: Option<TextureFormat>,
+    pub color_attachment_formats: &'a [ImageFormat],
+    pub depth_attachment_format: Option<ImageFormat>,
+    pub stencil_attachment_format: Option<ImageFormat>,
 }
 
 pub struct GraphicsPipelineDesc<'a> {
@@ -342,7 +342,7 @@ pub enum StoreOp {
 }
 
 pub struct RenderingAttachment {
-    pub texture: Texture,
+    pub image: Image,
     pub load_op: LoadOp,
     pub store_op: StoreOp,
 }
@@ -366,7 +366,7 @@ pub enum IndexType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingType {
     Sampler,
-    Texture,
+    Image,
     UniformBuffer,
     StorageBuffer,
     DynamicUniformBuffer,
@@ -392,7 +392,7 @@ pub struct Bind<'a> {
 
 pub enum TypedBind<'a> {
     Sampler(&'a [Sampler]),
-    Texture(&'a [Texture]),
+    Image(&'a [Image]),
     UniformBuffer(&'a [Buffer]),
     StorageBuffer(&'a [Buffer]),
 }
@@ -514,7 +514,7 @@ impl Access {
     }
 }
 
-pub enum TextureLayout {
+pub enum ImageLayout {
     Optimal,
     General,
 }
@@ -524,13 +524,13 @@ pub struct GlobalBarrier<'a> {
     pub next_access: &'a [Access],
 }
 
-pub struct TextureBarrier<'a> {
+pub struct ImageBarrier<'a> {
     pub prev_access: &'a [Access],
     pub next_access: &'a [Access],
-    pub prev_layout: TextureLayout,
-    pub next_layout: TextureLayout,
-    pub texture: Texture,
-    pub subresource_range: TextureSubresourceRange,
+    pub prev_layout: ImageLayout,
+    pub next_layout: ImageLayout,
+    pub image: Image,
+    pub subresource_range: ImageSubresourceRange,
 }
 
 thread_token_def!(ThreadToken, GpuConcurrent, 8);
@@ -548,16 +548,16 @@ pub struct CmdBuffer<'a> {
 }
 
 pub trait Device {
-    fn create_buffer(&self, buffer_desc: &BufferDesc) -> Buffer;
-    fn create_texture(&self, texture_desc: &TextureDesc) -> Texture;
-    fn create_texture_view(&self, desc: &TextureViewDesc) -> Texture;
+    fn create_buffer(&self, desc: &BufferDesc) -> Buffer;
+    fn create_image(&self, desc: &ImageDesc) -> Image;
+    fn create_image_view(&self, desc: &ImageViewDesc) -> Image;
     fn create_sampler(&self, desc: &SamplerDesc) -> Sampler;
     fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> BindGroupLayout;
     fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline;
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline;
 
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
-    fn destroy_texture(&self, frame: &Frame, texture: Texture);
+    fn destroy_image(&self, frame: &Frame, image: Image);
     fn destroy_sampler(&self, frame: &Frame, sampler: Sampler);
     fn destroy_bind_group_layout(&self, frame: &Frame, bind_group_layout: BindGroupLayout);
     fn destroy_pipeline(&self, frame: &Frame, pipeline: Pipeline);
@@ -581,8 +581,8 @@ pub trait Device {
         &self,
         frame: &Frame,
         window: Window,
-        format: TextureFormat,
-    ) -> (u32, u32, Texture);
+        format: ImageFormat,
+    ) -> (u32, u32, Image);
     fn destroy_window(&self, window: Window);
 
     #[must_use]
@@ -620,16 +620,16 @@ pub trait Device {
         &self,
         cmd_buffer: &mut CmdBuffer,
         global_barrier: Option<&GlobalBarrier>,
-        texture_barriers: &[TextureBarrier],
+        image_barriers: &[ImageBarrier],
     );
 
-    fn cmd_copy_buffer_to_texture(
+    fn cmd_copy_buffer_to_image(
         &self,
         cmd_buffer: &mut CmdBuffer,
         src_buffer: Buffer,
-        dst_texture: Texture,
-        dst_texture_layout: TextureLayout,
-        copies: &[BufferTextureCopy],
+        dst_image: Image,
+        dst_image_layout: ImageLayout,
+        copies: &[BufferImageCopy],
     );
 
     fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &RenderingDesc);

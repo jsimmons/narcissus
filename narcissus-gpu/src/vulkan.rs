@@ -17,14 +17,14 @@ use vulkan_sys as vk;
 
 use crate::{
     delay_queue::DelayQueue, Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType,
-    Buffer, BufferDesc, BufferTextureCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp,
+    Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp,
     ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier,
-    GpuConcurrent, GraphicsPipelineDesc, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
+    GpuConcurrent, GraphicsPipelineDesc, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
+    ImageDimension, ImageFormat, ImageLayout, ImageSubresourceLayers, ImageSubresourceRange,
+    ImageUsageFlags, ImageViewDesc, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
     Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
-    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Texture,
-    TextureAspectFlags, TextureBarrier, TextureDesc, TextureDimension, TextureFormat,
-    TextureLayout, TextureSubresourceLayers, TextureSubresourceRange, TextureUsageFlags,
-    TextureViewDesc, ThreadToken, Topology, TypedBind,
+    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, ThreadToken, Topology,
+    TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -106,35 +106,35 @@ fn vulkan_bool32(b: bool) -> vk::Bool32 {
 }
 
 #[must_use]
-fn vulkan_format(format: TextureFormat) -> vk::Format {
+fn vulkan_format(format: ImageFormat) -> vk::Format {
     match format {
-        TextureFormat::RGBA8_SRGB => vk::Format::R8G8B8A8_SRGB,
-        TextureFormat::RGBA8_UNORM => vk::Format::R8G8B8A8_UNORM,
-        TextureFormat::BGRA8_SRGB => vk::Format::B8G8R8A8_SRGB,
-        TextureFormat::BGRA8_UNORM => vk::Format::B8G8R8A8_UNORM,
-        TextureFormat::DEPTH_F32 => vk::Format::D32_SFLOAT,
+        ImageFormat::RGBA8_SRGB => vk::Format::R8G8B8A8_SRGB,
+        ImageFormat::RGBA8_UNORM => vk::Format::R8G8B8A8_UNORM,
+        ImageFormat::BGRA8_SRGB => vk::Format::B8G8R8A8_SRGB,
+        ImageFormat::BGRA8_UNORM => vk::Format::B8G8R8A8_UNORM,
+        ImageFormat::DEPTH_F32 => vk::Format::D32_SFLOAT,
     }
 }
 
-fn vulkan_aspect_for_format(format: TextureFormat) -> vk::ImageAspectFlags {
+fn vulkan_aspect_for_format(format: ImageFormat) -> vk::ImageAspectFlags {
     match format {
-        TextureFormat::BGRA8_SRGB
-        | TextureFormat::BGRA8_UNORM
-        | TextureFormat::RGBA8_SRGB
-        | TextureFormat::RGBA8_UNORM => vk::ImageAspectFlags::COLOR,
-        TextureFormat::DEPTH_F32 => vk::ImageAspectFlags::DEPTH,
+        ImageFormat::BGRA8_SRGB
+        | ImageFormat::BGRA8_UNORM
+        | ImageFormat::RGBA8_SRGB
+        | ImageFormat::RGBA8_UNORM => vk::ImageAspectFlags::COLOR,
+        ImageFormat::DEPTH_F32 => vk::ImageAspectFlags::DEPTH,
     }
 }
 
-fn vulkan_aspect(aspect: TextureAspectFlags) -> vk::ImageAspectFlags {
+fn vulkan_aspect(aspect: ImageAspectFlags) -> vk::ImageAspectFlags {
     let mut aspect_flags = default();
-    if aspect.contains(TextureAspectFlags::COLOR) {
+    if aspect.contains(ImageAspectFlags::COLOR) {
         aspect_flags |= vk::ImageAspectFlags::COLOR;
     }
-    if aspect.contains(TextureAspectFlags::DEPTH) {
+    if aspect.contains(ImageAspectFlags::DEPTH) {
         aspect_flags |= vk::ImageAspectFlags::DEPTH;
     }
-    if aspect.contains(TextureAspectFlags::STENCIL) {
+    if aspect.contains(ImageAspectFlags::STENCIL) {
         aspect_flags |= vk::ImageAspectFlags::STENCIL;
     }
     aspect_flags
@@ -196,7 +196,7 @@ fn vulkan_shader_stage_flags(stage_flags: ShaderStageFlags) -> vk::ShaderStageFl
 fn vulkan_descriptor_type(binding_type: BindingType) -> vk::DescriptorType {
     match binding_type {
         BindingType::Sampler => vk::DescriptorType::Sampler,
-        BindingType::Texture => vk::DescriptorType::SampledImage,
+        BindingType::Image => vk::DescriptorType::SampledImage,
         BindingType::UniformBuffer => vk::DescriptorType::UniformBuffer,
         BindingType::StorageBuffer => vk::DescriptorType::StorageBuffer,
         BindingType::DynamicUniformBuffer => vk::DescriptorType::UniformBufferDynamic,
@@ -291,24 +291,21 @@ fn vulkan_stencil_op_state(stencil_op_state: StencilOpState) -> vk::StencilOpSta
 }
 
 #[must_use]
-fn vulkan_image_view_type(
-    layer_count: u32,
-    texture_dimension: TextureDimension,
-) -> vk::ImageViewType {
-    match (layer_count, texture_dimension) {
-        (1, TextureDimension::Type1d) => vk::ImageViewType::Type1d,
-        (1, TextureDimension::Type2d) => vk::ImageViewType::Type2d,
-        (1, TextureDimension::Type3d) => vk::ImageViewType::Type3d,
-        (6, TextureDimension::TypeCube) => vk::ImageViewType::TypeCube,
-        (_, TextureDimension::Type1d) => vk::ImageViewType::Type1dArray,
-        (_, TextureDimension::Type2d) => vk::ImageViewType::Type2dArray,
-        (_, TextureDimension::TypeCube) => vk::ImageViewType::TypeCubeArray,
+fn vulkan_image_view_type(layer_count: u32, image_dimension: ImageDimension) -> vk::ImageViewType {
+    match (layer_count, image_dimension) {
+        (1, ImageDimension::Type1d) => vk::ImageViewType::Type1d,
+        (1, ImageDimension::Type2d) => vk::ImageViewType::Type2d,
+        (1, ImageDimension::Type3d) => vk::ImageViewType::Type3d,
+        (6, ImageDimension::TypeCube) => vk::ImageViewType::TypeCube,
+        (_, ImageDimension::Type1d) => vk::ImageViewType::Type1dArray,
+        (_, ImageDimension::Type2d) => vk::ImageViewType::Type2dArray,
+        (_, ImageDimension::TypeCube) => vk::ImageViewType::TypeCubeArray,
         _ => panic!("unsupported view type"),
     }
 }
 
 fn vulkan_subresource_layers(
-    subresource_layers: &TextureSubresourceLayers,
+    subresource_layers: &ImageSubresourceLayers,
 ) -> vk::ImageSubresourceLayers {
     vk::ImageSubresourceLayers {
         aspect_mask: vulkan_aspect(subresource_layers.aspect),
@@ -318,7 +315,7 @@ fn vulkan_subresource_layers(
     }
 }
 
-fn vulkan_subresource_range(subresource: &TextureSubresourceRange) -> vk::ImageSubresourceRange {
+fn vulkan_subresource_range(subresource: &ImageSubresourceRange) -> vk::ImageSubresourceRange {
     vk::ImageSubresourceRange {
         aspect_mask: vulkan_aspect(subresource.aspect),
         base_mip_level: subresource.base_mip_level,
@@ -554,7 +551,7 @@ fn vulkan_memory_barrier(barrier: &GlobalBarrier) -> vk::MemoryBarrier2 {
 }
 
 fn vulkan_image_memory_barrier(
-    barrier: &TextureBarrier,
+    barrier: &ImageBarrier,
     image: vk::Image,
     subresource_range: vk::ImageSubresourceRange,
 ) -> vk::ImageMemoryBarrier2 {
@@ -580,8 +577,8 @@ fn vulkan_image_memory_barrier(
         }
 
         let layout = match barrier.prev_layout {
-            TextureLayout::Optimal => info.layout,
-            TextureLayout::General => {
+            ImageLayout::Optimal => info.layout,
+            ImageLayout::General => {
                 if access == Access::PresentRead {
                     vk::ImageLayout::PresentSrcKhr
                 } else {
@@ -617,8 +614,8 @@ fn vulkan_image_memory_barrier(
         }
 
         let layout = match barrier.next_layout {
-            TextureLayout::Optimal => info.layout,
-            TextureLayout::General => {
+            ImageLayout::Optimal => info.layout,
+            ImageLayout::General => {
                 if access == Access::PresentRead {
                     vk::ImageLayout::PresentSrcKhr
                 } else {
@@ -656,47 +653,47 @@ struct VulkanBuffer {
 }
 
 #[derive(Clone)]
-struct VulkanTexture {
+struct VulkanImage {
     memory: VulkanMemory,
     image: vk::Image,
 }
 
-struct VulkanTextureUnique {
-    texture: VulkanTexture,
+struct VulkanImageUnique {
+    image: VulkanImage,
     view: vk::ImageView,
 }
 
-struct VulkanTextureShared {
-    texture: ManualArc<VulkanTexture>,
+struct VulkanImageShared {
+    image: ManualArc<VulkanImage>,
     view: vk::ImageView,
 }
 
-struct VulkanTextureSwapchain {
+struct VulkanImageSwapchain {
     window: Window,
     image: vk::Image,
     view: vk::ImageView,
 }
 
-enum VulkanTextureHolder {
-    Unique(VulkanTextureUnique),
-    Shared(VulkanTextureShared),
-    Swapchain(VulkanTextureSwapchain),
+enum VulkanImageHolder {
+    Unique(VulkanImageUnique),
+    Shared(VulkanImageShared),
+    Swapchain(VulkanImageSwapchain),
 }
 
-impl VulkanTextureHolder {
+impl VulkanImageHolder {
     fn image(&self) -> vk::Image {
         match self {
-            VulkanTextureHolder::Unique(x) => x.texture.image,
-            VulkanTextureHolder::Shared(_) => panic!(),
-            VulkanTextureHolder::Swapchain(_) => panic!(),
+            VulkanImageHolder::Unique(x) => x.image.image,
+            VulkanImageHolder::Shared(_) => panic!(),
+            VulkanImageHolder::Swapchain(_) => panic!(),
         }
     }
 
     fn image_view(&self) -> vk::ImageView {
         match self {
-            VulkanTextureHolder::Unique(x) => x.view,
-            VulkanTextureHolder::Shared(x) => x.view,
-            VulkanTextureHolder::Swapchain(x) => x.view,
+            VulkanImageHolder::Unique(x) => x.view,
+            VulkanImageHolder::Shared(x) => x.view,
+            VulkanImageHolder::Swapchain(x) => x.view,
         }
     }
 }
@@ -718,7 +715,7 @@ enum VulkanSwapchainState {
         height: u32,
         suboptimal: bool,
         swapchain: vk::SwapchainKHR,
-        image_views: Box<[Texture]>,
+        image_views: Box<[Image]>,
     },
 }
 
@@ -893,7 +890,7 @@ pub(crate) struct VulkanDevice<'app> {
     swapchains: Mutex<HashMap<Window, VulkanSwapchain>>,
     destroyed_swapchains: Mutex<SwapchainDestroyQueue>,
 
-    texture_pool: Mutex<Pool<VulkanTextureHolder>>,
+    image_pool: Mutex<Pool<VulkanImageHolder>>,
     buffer_pool: Mutex<Pool<VulkanBuffer>>,
     sampler_pool: Mutex<Pool<VulkanSampler>>,
     bind_group_layout_pool: Mutex<Pool<VulkanBindGroupLayout>>,
@@ -1186,7 +1183,7 @@ impl<'app> VulkanDevice<'app> {
             swapchains: Mutex::new(HashMap::new()),
             destroyed_swapchains: Mutex::new(DelayQueue::new(SWAPCHAIN_DESTROY_DELAY_FRAMES)),
 
-            texture_pool: default(),
+            image_pool: default(),
             buffer_pool: default(),
             sampler_pool: default(),
             bind_group_layout_pool: default(),
@@ -1484,17 +1481,17 @@ impl<'driver> Device for VulkanDevice<'driver> {
         Buffer(handle)
     }
 
-    fn create_texture(&self, desc: &TextureDesc) -> Texture {
+    fn create_image(&self, desc: &ImageDesc) -> Image {
         debug_assert_ne!(desc.layer_count, 0, "layers must be at least one");
         debug_assert_ne!(desc.width, 0, "width must be at least one");
         debug_assert_ne!(desc.height, 0, "height must be at least one");
         debug_assert_ne!(desc.depth, 0, "depth must be at least one");
 
-        if desc.dimension == TextureDimension::Type3d {
+        if desc.dimension == ImageDimension::Type3d {
             debug_assert_eq!(desc.layer_count, 1, "3d image arrays are illegal");
         }
 
-        if desc.dimension == TextureDimension::TypeCube {
+        if desc.dimension == ImageDimension::TypeCube {
             debug_assert!(
                 desc.layer_count % 6 == 0,
                 "cubemaps must have 6 layers each"
@@ -1503,15 +1500,15 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
 
         let mut flags = vk::ImageCreateFlags::default();
-        if desc.dimension == TextureDimension::TypeCube {
+        if desc.dimension == ImageDimension::TypeCube {
             flags |= vk::ImageCreateFlags::CUBE_COMPATIBLE
         }
 
         let image_type = match desc.dimension {
-            TextureDimension::Type1d => vk::ImageType::Type1d,
-            TextureDimension::Type2d => vk::ImageType::Type2d,
-            TextureDimension::Type3d => vk::ImageType::Type3d,
-            TextureDimension::TypeCube => vk::ImageType::Type2d,
+            ImageDimension::Type1d => vk::ImageType::Type1d,
+            ImageDimension::Type2d => vk::ImageType::Type2d,
+            ImageDimension::Type3d => vk::ImageType::Type3d,
+            ImageDimension::TypeCube => vk::ImageType::Type2d,
         };
         let format = vulkan_format(desc.format);
         let extent = vk::Extent3d {
@@ -1521,22 +1518,22 @@ impl<'driver> Device for VulkanDevice<'driver> {
         };
 
         let mut usage = default();
-        if desc.usage.contains(TextureUsageFlags::SAMPLED) {
+        if desc.usage.contains(ImageUsageFlags::SAMPLED) {
             usage |= vk::ImageUsageFlags::SAMPLED;
         }
-        if desc.usage.contains(TextureUsageFlags::STORAGE) {
+        if desc.usage.contains(ImageUsageFlags::STORAGE) {
             usage |= vk::ImageUsageFlags::STORAGE;
         }
-        if desc.usage.contains(TextureUsageFlags::DEPTH_STENCIL) {
+        if desc.usage.contains(ImageUsageFlags::DEPTH_STENCIL) {
             usage |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
         }
-        if desc.usage.contains(TextureUsageFlags::RENDER_TARGET) {
+        if desc.usage.contains(ImageUsageFlags::RENDER_TARGET) {
             usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
         }
-        if desc.usage.contains(TextureUsageFlags::TRANSFER_DST) {
+        if desc.usage.contains(ImageUsageFlags::TRANSFER_DST) {
             usage |= vk::ImageUsageFlags::TRANSFER_DST;
         }
-        if desc.usage.contains(TextureUsageFlags::TRANSFER_SRC) {
+        if desc.usage.contains(ImageUsageFlags::TRANSFER_SRC) {
             usage |= vk::ImageUsageFlags::TRANSFER_SRC;
         }
 
@@ -1597,36 +1594,36 @@ impl<'driver> Device for VulkanDevice<'driver> {
             .device_fn
             .create_image_view(self.device, &create_info, None, &mut view));
 
-        let texture = VulkanTextureUnique {
-            texture: VulkanTexture { image, memory },
+        let image = VulkanImageUnique {
+            image: VulkanImage { image, memory },
             view,
         };
 
         let handle = self
-            .texture_pool
+            .image_pool
             .lock()
-            .insert(VulkanTextureHolder::Unique(texture));
+            .insert(VulkanImageHolder::Unique(image));
 
-        Texture(handle)
+        Image(handle)
     }
 
-    fn create_texture_view(&self, desc: &TextureViewDesc) -> Texture {
-        let mut texture_pool = self.texture_pool.lock();
-        let texture = texture_pool.get_mut(desc.texture.0).unwrap();
+    fn create_image_view(&self, desc: &ImageViewDesc) -> Image {
+        let mut image_pool = self.image_pool.lock();
+        let image = image_pool.get_mut(desc.image.0).unwrap();
 
-        let arc_texture;
-        match texture {
-            VulkanTextureHolder::Shared(shared) => arc_texture = shared.texture.clone(),
-            VulkanTextureHolder::Unique(unique) => {
-                let unique_texture = ManualArc::new(unique.texture.clone());
-                arc_texture = unique_texture.clone();
+        let arc_image;
+        match image {
+            VulkanImageHolder::Shared(shared) => arc_image = shared.image.clone(),
+            VulkanImageHolder::Unique(unique) => {
+                let unique_image = ManualArc::new(unique.image.clone());
+                arc_image = unique_image.clone();
                 let unique_view = unique.view;
-                *texture = VulkanTextureHolder::Shared(VulkanTextureShared {
-                    texture: unique_texture,
+                *image = VulkanImageHolder::Shared(VulkanImageShared {
+                    image: unique_image,
                     view: unique_view,
                 })
             }
-            VulkanTextureHolder::Swapchain(_) => {
+            VulkanImageHolder::Swapchain(_) => {
                 panic!("unable to create additional views of swapchain images")
             }
         }
@@ -1637,7 +1634,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         let format = vulkan_format(desc.format);
 
         let create_info = vk::ImageViewCreateInfo {
-            image: arc_texture.image,
+            image: arc_image.image,
             view_type,
             format,
             subresource_range,
@@ -1649,12 +1646,12 @@ impl<'driver> Device for VulkanDevice<'driver> {
             .device_fn
             .create_image_view(self.device, &create_info, None, &mut view));
 
-        let handle = texture_pool.insert(VulkanTextureHolder::Shared(VulkanTextureShared {
-            texture: arc_texture,
+        let handle = image_pool.insert(VulkanImageHolder::Shared(VulkanImageShared {
+            image: arc_image,
             view,
         }));
 
-        Texture(handle)
+        Image(handle)
     }
 
     fn create_sampler(&self, desc: &SamplerDesc) -> Sampler {
@@ -1962,33 +1959,30 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn destroy_texture(&self, frame: &Frame, texture: Texture) {
-        if let Some(texture) = self.texture_pool.lock().remove(texture.0) {
+    fn destroy_image(&self, frame: &Frame, image: Image) {
+        if let Some(image_holder) = self.image_pool.lock().remove(image.0) {
             let frame = self.frame(frame);
 
-            match texture {
-                // The texture is unique, we've never allocated a reference counted object for it.
-                VulkanTextureHolder::Unique(texture) => {
-                    frame.destroyed_image_views.lock().push_back(texture.view);
-                    frame
-                        .destroyed_images
-                        .lock()
-                        .push_back(texture.texture.image);
+            match image_holder {
+                // The image is unique, we've never allocated a reference counted object for it.
+                VulkanImageHolder::Unique(image) => {
+                    frame.destroyed_image_views.lock().push_back(image.view);
+                    frame.destroyed_images.lock().push_back(image.image.image);
                     frame
                         .destroyed_allocations
                         .lock()
-                        .push_back(texture.texture.memory);
+                        .push_back(image.image.memory);
                 }
-                // The texture was at one point shared, we may or may not have the last reference.
-                VulkanTextureHolder::Shared(texture) => {
-                    frame.destroyed_image_views.lock().push_back(texture.view);
+                // The image was at one point shared, we may or may not have the last reference.
+                VulkanImageHolder::Shared(image) => {
+                    frame.destroyed_image_views.lock().push_back(image.view);
                     // If we had the last reference we need to destroy the image and memory too
-                    if let manual_arc::Release::Unique(texture) = texture.texture.release() {
-                        frame.destroyed_images.lock().push_back(texture.image);
-                        frame.destroyed_allocations.lock().push_back(texture.memory);
+                    if let manual_arc::Release::Unique(image) = image.image.release() {
+                        frame.destroyed_images.lock().push_back(image.image);
+                        frame.destroyed_allocations.lock().push_back(image.memory);
                     }
                 }
-                VulkanTextureHolder::Swapchain(_) => {
+                VulkanImageHolder::Swapchain(_) => {
                     panic!("cannot directly destroy swapchain images")
                 }
             }
@@ -2042,7 +2036,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
             capabilities: _,
         }) = self.swapchains.lock().remove(&window)
         {
-            let mut texture_pool = self.texture_pool.lock();
+            let mut image_pool = self.image_pool.lock();
 
             if let VulkanSwapchainState::Occupied {
                 width: _,
@@ -2054,13 +2048,13 @@ impl<'driver> Device for VulkanDevice<'driver> {
             {
                 let mut vulkan_image_views = Vec::new();
                 for &image_view in image_views.iter() {
-                    match texture_pool.remove(image_view.0) {
-                        Some(VulkanTextureHolder::Swapchain(VulkanTextureSwapchain {
+                    match image_pool.remove(image_view.0) {
+                        Some(VulkanImageHolder::Swapchain(VulkanImageSwapchain {
                             window: _,
                             image: _,
                             view,
                         })) => vulkan_image_views.push(view),
-                        _ => panic!("swapchain texture in wrong state"),
+                        _ => panic!("swapchain image in wrong state"),
                     }
                 }
 
@@ -2078,8 +2072,8 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         frame: &Frame,
         window: Window,
-        format: TextureFormat,
-    ) -> (u32, u32, Texture) {
+        format: ImageFormat,
+    ) -> (u32, u32, Image) {
         let format = vulkan_format(format);
 
         let mut swapchains = self.swapchains.lock();
@@ -2148,7 +2142,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         assert_eq!(format, vulkan_swapchain.surface_format.format);
 
         let frame = self.frame(frame);
-        let mut texture_pool = self.texture_pool.lock();
+        let mut image_pool = self.image_pool.lock();
 
         let mut present_swapchains = frame.present_swapchains.lock();
         let present_info = match present_swapchains.entry(window) {
@@ -2249,14 +2243,14 @@ impl<'driver> Device for VulkanDevice<'driver> {
                                 &mut view,
                             ));
 
-                            let handle = texture_pool.insert(VulkanTextureHolder::Swapchain(
-                                VulkanTextureSwapchain {
+                            let handle = image_pool.insert(VulkanImageHolder::Swapchain(
+                                VulkanImageSwapchain {
                                     window,
                                     image,
                                     view,
                                 },
                             ));
-                            Texture(handle)
+                            Image(handle)
                         })
                         .collect::<Box<_>>();
 
@@ -2278,25 +2272,23 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     image_views,
                 } => {
                     let destroy_image_views =
-                        |textures: &mut Pool<VulkanTextureHolder>| -> Box<[vk::ImageView]> {
+                        |images: &mut Pool<VulkanImageHolder>| -> Box<[vk::ImageView]> {
                             let mut vulkan_image_views = Vec::new();
                             for &image_view in image_views.iter() {
-                                match textures.remove(image_view.0) {
-                                    Some(VulkanTextureHolder::Swapchain(
-                                        VulkanTextureSwapchain {
-                                            window: _,
-                                            image: _,
-                                            view,
-                                        },
-                                    )) => vulkan_image_views.push(view),
-                                    _ => panic!("swapchain texture in wrong state"),
+                                match images.remove(image_view.0) {
+                                    Some(VulkanImageHolder::Swapchain(VulkanImageSwapchain {
+                                        window: _,
+                                        image: _,
+                                        view,
+                                    })) => vulkan_image_views.push(view),
+                                    _ => panic!("swapchain image in wrong state"),
                                 }
                             }
                             vulkan_image_views.into_boxed_slice()
                         };
 
                     if *width != desired_width || *height != desired_height || *suboptimal {
-                        let image_views = destroy_image_views(&mut texture_pool);
+                        let image_views = destroy_image_views(&mut image_pool);
                         old_swapchain = *swapchain;
                         if !old_swapchain.is_null() {
                             self.destroyed_swapchains.lock().push((
@@ -2332,7 +2324,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                         }
                         vk::Result::ErrorOutOfDateKHR => {
                             old_swapchain = *swapchain;
-                            let image_views = destroy_image_views(&mut texture_pool);
+                            let image_views = destroy_image_views(&mut image_pool);
                             if !old_swapchain.is_null() {
                                 self.destroyed_swapchains.lock().push((
                                     Window::default(),
@@ -2409,7 +2401,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
         &self,
         cmd_buffer: &mut CmdBuffer,
         global_barrier: Option<&GlobalBarrier>,
-        texture_barriers: &[TextureBarrier],
+        image_barriers: &[ImageBarrier],
     ) {
         let arena = HybridArena::<4096>::new();
 
@@ -2420,12 +2412,12 @@ impl<'driver> Device for VulkanDevice<'driver> {
         );
 
         let image_memory_barriers =
-            arena.alloc_slice_fill_iter(texture_barriers.iter().map(|texture_barrier| {
+            arena.alloc_slice_fill_iter(image_barriers.iter().map(|image_barrier| {
                 let image = self
-                    .texture_pool
+                    .image_pool
                     .lock()
-                    .get(texture_barrier.texture.0)
-                    .expect("invalid texture handle")
+                    .get(image_barrier.image.0)
+                    .expect("invalid image handle")
                     .image();
 
                 // TODO: This needs to be pulled from somewhere useful.
@@ -2436,7 +2428,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     base_array_layer: 0,
                     layer_count: 1,
                 };
-                vulkan_image_memory_barrier(texture_barrier, image, subresource_range)
+                vulkan_image_memory_barrier(image_barrier, image, subresource_range)
             }));
 
         let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
@@ -2452,13 +2444,13 @@ impl<'driver> Device for VulkanDevice<'driver> {
         }
     }
 
-    fn cmd_copy_buffer_to_texture(
+    fn cmd_copy_buffer_to_image(
         &self,
         cmd_buffer: &mut CmdBuffer,
         src_buffer: Buffer,
-        dst_texture: Texture,
-        dst_texture_layout: TextureLayout,
-        copies: &[BufferTextureCopy],
+        dst_image: Image,
+        dst_image_layout: ImageLayout,
+        copies: &[BufferImageCopy],
     ) {
         let arena = HybridArena::<4096>::new();
 
@@ -2466,9 +2458,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
             buffer_offset: copy.buffer_offset,
             buffer_row_length: copy.buffer_row_length,
             buffer_image_height: copy.buffer_image_height,
-            image_subresource: vulkan_subresource_layers(&copy.texture_subresource_layers),
-            image_offset: copy.texture_offset.into(),
-            image_extent: copy.texture_extent.into(),
+            image_subresource: vulkan_subresource_layers(&copy.image_subresource_layers),
+            image_offset: copy.image_offset.into(),
+            image_extent: copy.image_extent.into(),
         }));
 
         let src_buffer = self
@@ -2479,15 +2471,15 @@ impl<'driver> Device for VulkanDevice<'driver> {
             .buffer;
 
         let dst_image = self
-            .texture_pool
+            .image_pool
             .lock()
-            .get(dst_texture.0)
-            .expect("invalid texture handle")
+            .get(dst_image.0)
+            .expect("invalid image handle")
             .image();
 
-        let dst_image_layout = match dst_texture_layout {
-            TextureLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
-            TextureLayout::General => vk::ImageLayout::General,
+        let dst_image_layout = match dst_image_layout {
+            ImageLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
+            ImageLayout::General => vk::ImageLayout::General,
         };
 
         let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
@@ -2573,14 +2565,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     ..default()
                 }
             }
-            TypedBind::Texture(textures) => {
-                let image_infos_iter = textures.iter().map(|texture| {
-                    let image_view = self
-                        .texture_pool
-                        .lock()
-                        .get(texture.0)
-                        .unwrap()
-                        .image_view();
+            TypedBind::Image(images) => {
+                let image_infos_iter = images.iter().map(|image| {
+                    let image_view = self.image_pool.lock().get(image.0).unwrap().image_view();
                     vk::DescriptorImageInfo {
                         image_layout: vk::ImageLayout::ShaderReadOnlyOptimal, // TODO: Determine appropriate layout here.
                         image_view,
@@ -2715,18 +2702,18 @@ impl<'driver> Device for VulkanDevice<'driver> {
             .color_attachments
             .iter()
             .map(|attachment| {
-                let image_view = match self.texture_pool.lock().get(attachment.texture.0).unwrap() {
-                    VulkanTextureHolder::Unique(texture) => texture.view,
-                    VulkanTextureHolder::Shared(texture) => texture.view,
-                    VulkanTextureHolder::Swapchain(texture) => {
+                let image_view = match self.image_pool.lock().get(attachment.image.0).unwrap() {
+                    VulkanImageHolder::Unique(image) => image.view,
+                    VulkanImageHolder::Shared(image) => image.view,
+                    VulkanImageHolder::Swapchain(image) => {
                         assert!(
-                            !cmd_buffer.swapchains_touched.contains_key(&texture.window),
+                            !cmd_buffer.swapchains_touched.contains_key(&image.window),
                             "swapchain attached multiple times in a command buffer"
                         );
                         cmd_buffer.swapchains_touched.insert(
-                            texture.window,
+                            image.window,
                             (
-                                texture.image,
+                                image.image,
                                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                             ),
                         );
@@ -2741,7 +2728,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                             dst_queue_family_index: self.universal_queue_family_index,
                             old_layout: vk::ImageLayout::Undefined,
                             new_layout: vk::ImageLayout::AttachmentOptimal,
-                            image: texture.image,
+                            image: image.image,
                             subresource_range: vk::ImageSubresourceRange {
                                 aspect_mask: vk::ImageAspectFlags::COLOR,
                                 base_mip_level: 0,
@@ -2762,7 +2749,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                                 .cmd_pipeline_barrier2(cmd_buffer.command_buffer, &dependency_info)
                         };
 
-                        texture.view
+                        image.view
                     }
                 };
 
@@ -2781,10 +2768,10 @@ impl<'driver> Device for VulkanDevice<'driver> {
             .collect::<Vec<_>>();
 
         let depth_attachment = desc.depth_attachment.as_ref().map(|attachment| {
-            let image_view = match self.texture_pool.lock().get(attachment.texture.0).unwrap() {
-                VulkanTextureHolder::Unique(texture) => texture.view,
-                VulkanTextureHolder::Shared(texture) => texture.view,
-                VulkanTextureHolder::Swapchain(_) => panic!(),
+            let image_view = match self.image_pool.lock().get(attachment.image.0).unwrap() {
+                VulkanImageHolder::Unique(image) => image.view,
+                VulkanImageHolder::Shared(image) => image.view,
+                VulkanImageHolder::Swapchain(_) => panic!(),
             };
 
             let (load_op, clear_value) = vulkan_load_op(attachment.load_op);
@@ -3184,18 +3171,18 @@ impl<'app> Drop for VulkanDevice<'app> {
             let mut image_views = Vec::new();
             let mut images = Vec::new();
             let mut memories = Vec::new();
-            for texture in self.texture_pool.get_mut().values() {
-                match texture {
-                    VulkanTextureHolder::Unique(texture) => {
-                        image_views.push(texture.view);
-                        images.push(texture.texture.image);
-                        memories.push(texture.texture.memory.memory);
+            for image in self.image_pool.get_mut().values() {
+                match image {
+                    VulkanImageHolder::Unique(image) => {
+                        image_views.push(image.view);
+                        images.push(image.image.image);
+                        memories.push(image.image.memory.memory);
                     }
-                    VulkanTextureHolder::Shared(texture) => {
-                        image_views.push(texture.view);
+                    VulkanImageHolder::Shared(image) => {
+                        image_views.push(image.view);
                     }
-                    VulkanTextureHolder::Swapchain(texture) => {
-                        image_views.push(texture.view);
+                    VulkanImageHolder::Swapchain(image) => {
+                        image_views.push(image.view);
                     }
                 }
             }
