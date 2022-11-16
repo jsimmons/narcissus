@@ -6,9 +6,8 @@ use narcissus_gpu::{
     create_vulkan_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
     Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
     Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, Image,
-    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
-    ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, IndexType, LoadOp,
-    MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
+    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageUsageFlags, IndexType,
+    LoadOp, MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
     SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
     ThreadToken, Topology, TypedBind, Viewport,
 };
@@ -469,7 +468,7 @@ pub fn main() {
             device.acquire_swapchain(&frame, main_window, ImageFormat::BGRA8_SRGB);
 
         let frame_start = Instant::now() - start_time;
-        let frame_start = frame_start.as_secs_f32() * 0.01;
+        let frame_start = frame_start.as_secs_f32() * 0.125;
 
         for (i, transform) in shark_transforms.iter_mut().enumerate() {
             let direction = if i & 1 == 0 { 1.0 } else { -1.0 };
