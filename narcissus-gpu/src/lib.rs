@@ -421,7 +421,7 @@ pub struct Bind<'a> {
 
 pub enum TypedBind<'a> {
     Sampler(&'a [Sampler]),
-    Image(&'a [Image]),
+    Image(&'a [(ImageLayout, Image)]),
     UniformBuffer(&'a [Buffer]),
     StorageBuffer(&'a [Buffer]),
 }
@@ -543,6 +543,7 @@ impl Access {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ImageLayout {
     Optimal,
     General,

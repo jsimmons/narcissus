@@ -2419,15 +2419,7 @@ impl<'driver> Device for VulkanDevice<'driver> {
                     .get(image_barrier.image.0)
                     .expect("invalid image handle")
                     .image();
-
-                // TODO: This needs to be pulled from somewhere useful.
-                let subresource_range = vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                };
+                let subresource_range = vulkan_subresource_range(&image_barrier.subresource_range);
                 vulkan_image_memory_barrier(image_barrier, image, subresource_range)
             }));
 
@@ -2566,10 +2558,13 @@ impl<'driver> Device for VulkanDevice<'driver> {
                 }
             }
             TypedBind::Image(images) => {
-                let image_infos_iter = images.iter().map(|image| {
+                let image_infos_iter = images.iter().map(|(image_layout, image)| {
                     let image_view = self.image_pool.lock().get(image.0).unwrap().image_view();
                     vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::ShaderReadOnlyOptimal, // TODO: Determine appropriate layout here.
+                        image_layout: match image_layout {
+                            ImageLayout::Optimal => vk::ImageLayout::ReadOnlyOptimal,
+                            ImageLayout::General => vk::ImageLayout::General,
+                        },
                         image_view,
                         sampler: vk::Sampler::null(),
                     }
@@ -2732,9 +2727,9 @@ impl<'driver> Device for VulkanDevice<'driver> {
                             subresource_range: vk::ImageSubresourceRange {
                                 aspect_mask: vk::ImageAspectFlags::COLOR,
                                 base_mip_level: 0,
-                                level_count: 1,
+                                level_count: !0,
                                 base_array_layer: 0,
-                                layer_count: 1,
+                                layer_count: !0,
                             },
                             ..default()
                         }];

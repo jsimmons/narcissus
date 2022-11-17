@@ -545,7 +545,7 @@ pub fn main() {
                 Bind {
                     binding: 3,
                     array_element: 0,
-                    typed: TypedBind::Image(&[blåhaj_image]),
+                    typed: TypedBind::Image(&[(ImageLayout::Optimal, blåhaj_image)]),
                 },
             ],
         );
