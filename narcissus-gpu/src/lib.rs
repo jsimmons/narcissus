@@ -139,14 +139,20 @@ pub struct ImageSubresourceRange {
     pub array_layer_count: u32,
 }
 
+impl ImageSubresourceRange {
+    /// Constant that can be used to represent "all remaining mip levels / array layers" in an
+    /// `ImageSubresourceRange`
+    pub const ALL_REMAINING: u32 = !0;
+}
+
 impl Default for ImageSubresourceRange {
     fn default() -> Self {
         Self {
             aspect: ImageAspectFlags::COLOR,
             base_mip_level: 0,
-            mip_level_count: 1,
+            mip_level_count: ImageSubresourceRange::ALL_REMAINING,
             base_array_layer: 0,
-            array_layer_count: 1,
+            array_layer_count: ImageSubresourceRange::ALL_REMAINING,
         }
     }
 }
