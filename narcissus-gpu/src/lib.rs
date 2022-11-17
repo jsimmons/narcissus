@@ -1,7 +1,7 @@
 use std::{ffi::CStr, marker::PhantomData};
 
 use narcissus_app::{App, Window};
-use narcissus_core::{flags_def, thread_token_def, Handle, PhantomUnsend};
+use narcissus_core::{default, flags_def, thread_token_def, Handle, PhantomUnsend};
 
 mod delay_queue;
 mod vulkan;
@@ -560,6 +560,23 @@ pub struct ImageBarrier<'a> {
     pub next_layout: ImageLayout,
     pub image: Image,
     pub subresource_range: ImageSubresourceRange,
+}
+
+impl<'a> ImageBarrier<'a> {
+    pub fn with_access_optimal(
+        prev_access: &'a [Access],
+        next_access: &'a [Access],
+        image: Image,
+    ) -> ImageBarrier<'a> {
+        Self {
+            prev_access,
+            next_access,
+            prev_layout: ImageLayout::Optimal,
+            next_layout: ImageLayout::Optimal,
+            image,
+            subresource_range: default(),
+        }
+    }
 }
 
 thread_token_def!(ThreadToken, GpuConcurrent, 8);

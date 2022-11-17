@@ -175,14 +175,11 @@ fn create_image_with_data(
     device.cmd_barrier(
         &mut cmd_buffer,
         None,
-        &[ImageBarrier {
-            prev_access: &[Access::None],
-            next_access: &[Access::TransferWrite],
-            prev_layout: ImageLayout::Optimal,
-            next_layout: ImageLayout::Optimal,
+        &[ImageBarrier::with_access_optimal(
+            &[Access::None],
+            &[Access::TransferWrite],
             image,
-            subresource_range: default(),
-        }],
+        )],
     );
 
     device.cmd_copy_buffer_to_image(
@@ -207,14 +204,11 @@ fn create_image_with_data(
     device.cmd_barrier(
         &mut cmd_buffer,
         None,
-        &[ImageBarrier {
-            prev_access: &[Access::TransferWrite],
-            next_access: &[Access::FragmentShaderSampledImageRead],
-            prev_layout: ImageLayout::Optimal,
-            next_layout: ImageLayout::Optimal,
+        &[ImageBarrier::with_access_optimal(
+            &[Access::TransferWrite],
+            &[Access::FragmentShaderSampledImageRead],
             image,
-            subresource_range: default(),
-        }],
+        )],
     );
 
     device.submit(&frame, cmd_buffer);
