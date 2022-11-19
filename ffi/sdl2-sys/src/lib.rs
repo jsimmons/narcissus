@@ -1226,6 +1226,16 @@ pub struct Version {
     pub patch: u8,
 }
 
+impl Version {
+    pub const fn current() -> Self {
+        Self {
+            major: MAJOR_VERSION,
+            minor: MINOR_VERSION,
+            patch: PATCH_VERSION,
+        }
+    }
+}
+
 #[repr(C)]
 pub enum SysWMType {
     UNKNOWN,
