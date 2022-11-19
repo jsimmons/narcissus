@@ -68,6 +68,12 @@ pub struct ComponentMapping {
 }
 
 #[repr(C)]
+pub struct ExtensionProperties {
+    pub extension_name: [u8; 256],
+    pub spec_version: u32,
+}
+
+#[repr(C)]
 pub struct AllocationCallbacks {
     user_data: *mut c_void,
     allocation: Option<FnAllocationFunction>,
@@ -146,6 +152,57 @@ impl<'a> Default for InstanceCreateInfo<'a> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::InstanceCreateInfo;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct XcbSurfaceCreateInfoKHR {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub flags: XcbSurfaceCreateFlagsKHR,
+    pub connection: *mut c_void, // xcb_connection_t*
+    pub window: i32,             // xcb_window_t
+}
+
+impl Default for XcbSurfaceCreateInfoKHR {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::XcbSurfaceCreateInfoKHR;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct XlibSurfaceCreateInfoKHR {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub flags: XlibSurfaceCreateFlagsKHR,
+    pub display: *mut c_void, // Display*
+    pub window: i32,          // Window
+}
+
+impl Default for XlibSurfaceCreateInfoKHR {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::XlibSurfaceCreateInfoKHR;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct WaylandSurfaceCreateInfoKHR {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub flags: WaylandSurfaceCreateFlagsKHR,
+    pub display: *mut c_void, // wl_display*
+    pub surface: *mut c_void, // wl_surface*
+}
+
+impl Default for WaylandSurfaceCreateInfoKHR {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::WaylandSurfaceCreateInfoKHR;
         x
     }
 }

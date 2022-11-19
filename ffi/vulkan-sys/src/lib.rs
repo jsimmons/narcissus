@@ -303,6 +303,7 @@ fn vulkan_device_version_not_supported() {
 pub struct GlobalFunctions {
     get_instance_proc_addr: FnGetInstanceProcAddr,
     enumerate_instance_version: Option<FnEnumerateInstanceVersion>,
+    enumerate_instance_extension_properties: FnEnumerateInstanceExtensionProperties,
     create_instance: FnCreateInstance,
 }
 
@@ -314,6 +315,10 @@ impl GlobalFunctions {
             enumerate_instance_version: transmute::<_, _>(get_instance_proc_addr(
                 Instance::null(),
                 cstr!("vkEnumerateInstanceVersion").as_ptr(),
+            )),
+            enumerate_instance_extension_properties: transmute::<_, _>(get_instance_proc_addr(
+                Instance::null(),
+                cstr!("vkEnumerateInstanceExtensionProperties").as_ptr(),
             )),
             create_instance: transmute::<_, _>(
                 get_instance_proc_addr(Instance::null(), cstr!("vkCreateInstance").as_ptr())
@@ -339,6 +344,16 @@ impl GlobalFunctions {
             *api_version = VERSION_1_0;
             Result::Success
         }
+    }
+
+    #[inline]
+    pub unsafe fn enumerate_instance_extension_properties(
+        &self,
+        layer_name: *const c_char,
+        property_count: &mut u32,
+        properties: *mut ExtensionProperties,
+    ) -> Result {
+        (self.enumerate_instance_extension_properties)(layer_name, property_count, properties)
     }
 
     #[inline]
@@ -2432,6 +2447,102 @@ impl SurfaceKHRFunctions {
             present_mode_count,
             present_modes,
         )
+    }
+}
+
+pub struct XcbSurfaceKHRFunctions {
+    create_xcb_surface: FnCreateXcbSurfaceKHR,
+}
+
+impl XcbSurfaceKHRFunctions {
+    pub fn new(global_functions: &GlobalFunctions, instance: Instance) -> Self {
+        unsafe {
+            let load = |name: &CStr| {
+                global_functions
+                    .get_instance_proc_addr(instance, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || panic!("failed to load device function {}", name.to_string_lossy()),
+                    )
+            };
+            Self {
+                create_xcb_surface: transmute::<_, _>(load(cstr!("vkCreateXcbSurfaceKHR"))),
+            }
+        }
+    }
+
+    pub fn create_xcb_surface(
+        &self,
+        instance: Instance,
+        create_info: &XcbSurfaceCreateInfoKHR,
+        allocator: Option<&AllocationCallbacks>,
+        surface: &mut SurfaceKHR,
+    ) -> Result {
+        (self.create_xcb_surface)(instance, create_info, allocator, surface)
+    }
+}
+
+pub struct XlibSurfaceKHRFunctions {
+    create_xlib_surface: FnCreateXlibSurfaceKHR,
+}
+
+impl XlibSurfaceKHRFunctions {
+    pub fn new(global_functions: &GlobalFunctions, instance: Instance) -> Self {
+        unsafe {
+            let load = |name: &CStr| {
+                global_functions
+                    .get_instance_proc_addr(instance, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || panic!("failed to load device function {}", name.to_string_lossy()),
+                    )
+            };
+            Self {
+                create_xlib_surface: transmute::<_, _>(load(cstr!("vkCreateXlibSurfaceKHR"))),
+            }
+        }
+    }
+
+    pub fn create_xlib_surface(
+        &self,
+        instance: Instance,
+        create_info: &XlibSurfaceCreateInfoKHR,
+        allocator: Option<&AllocationCallbacks>,
+        surface: &mut SurfaceKHR,
+    ) -> Result {
+        (self.create_xlib_surface)(instance, create_info, allocator, surface)
+    }
+}
+
+pub struct WaylandSurfaceKHRFunctions {
+    create_wayland_surface: FnCreateWaylandSurfaceKHR,
+}
+
+impl WaylandSurfaceKHRFunctions {
+    pub fn new(global_functions: &GlobalFunctions, instance: Instance) -> Self {
+        unsafe {
+            let load = |name: &CStr| {
+                global_functions
+                    .get_instance_proc_addr(instance, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || panic!("failed to load device function {}", name.to_string_lossy()),
+                    )
+            };
+            Self {
+                create_wayland_surface: transmute::<_, _>(load(cstr!("vkCreateWaylandSurfaceKHR"))),
+            }
+        }
+    }
+
+    pub fn create_wayland_surface(
+        &self,
+        instance: Instance,
+        create_info: &WaylandSurfaceCreateInfoKHR,
+        allocator: Option<&AllocationCallbacks>,
+        surface: &mut SurfaceKHR,
+    ) -> Result {
+        (self.create_wayland_surface)(instance, create_info, allocator, surface)
     }
 }
 

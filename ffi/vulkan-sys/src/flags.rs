@@ -2,6 +2,15 @@
 pub struct InstanceCreateFlags(u32);
 
 #[repr(C)]
+pub struct XcbSurfaceCreateFlagsKHR(u32);
+
+#[repr(C)]
+pub struct XlibSurfaceCreateFlagsKHR(u32);
+
+#[repr(C)]
+pub struct WaylandSurfaceCreateFlagsKHR(u32);
+
+#[repr(C)]
 #[derive(Debug)]
 pub struct DeviceCreateFlags(u32);
 
@@ -864,6 +873,9 @@ impl PipelineStageFlags2 {
 // Impls
 
 // InstanceCreateFlags
+// XcbSurfaceCreateFlagsKHR
+// XlibSurfaceCreateFlagsKHR
+// WaylandSurfaceCreateFlagsKHR
 // SampleCountFlags
 // MemoryPropertyFlags
 // MemoryHeapFlags
@@ -1017,6 +1029,270 @@ impl PipelineStageFlags2 {
 //         self.0 ^= rhs.0
 //     }
 // }
+
+impl XcbSurfaceCreateFlagsKHR {
+    #[inline]
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub fn as_raw(self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub fn intersects(self, rhs: Self) -> bool {
+        self.0 & rhs.0 != 0
+    }
+
+    #[inline]
+    pub fn contains(self, rhs: Self) -> bool {
+        self.0 & rhs.0 == rhs.0
+    }
+
+    #[inline]
+    pub fn cardinality(self) -> u32 {
+        self.0.count_ones()
+    }
+}
+
+impl Clone for XcbSurfaceCreateFlagsKHR {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl Copy for XcbSurfaceCreateFlagsKHR {}
+
+impl Default for XcbSurfaceCreateFlagsKHR {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
+impl PartialEq for XcbSurfaceCreateFlagsKHR {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.0 == rhs.0
+    }
+}
+
+impl Eq for XcbSurfaceCreateFlagsKHR {}
+
+impl std::ops::BitOr for XcbSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for XcbSurfaceCreateFlagsKHR {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0
+    }
+}
+
+impl std::ops::BitAnd for XcbSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0 & rhs.0)
+    }
+}
+
+impl std::ops::BitAndAssign for XcbSurfaceCreateFlagsKHR {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0
+    }
+}
+
+impl std::ops::BitXor for XcbSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
+impl std::ops::BitXorAssign for XcbSurfaceCreateFlagsKHR {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0
+    }
+}
+
+impl XlibSurfaceCreateFlagsKHR {
+    #[inline]
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub fn as_raw(self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub fn intersects(self, rhs: Self) -> bool {
+        self.0 & rhs.0 != 0
+    }
+
+    #[inline]
+    pub fn contains(self, rhs: Self) -> bool {
+        self.0 & rhs.0 == rhs.0
+    }
+
+    #[inline]
+    pub fn cardinality(self) -> u32 {
+        self.0.count_ones()
+    }
+}
+
+impl Clone for XlibSurfaceCreateFlagsKHR {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl Copy for XlibSurfaceCreateFlagsKHR {}
+
+impl Default for XlibSurfaceCreateFlagsKHR {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
+impl PartialEq for XlibSurfaceCreateFlagsKHR {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.0 == rhs.0
+    }
+}
+
+impl Eq for XlibSurfaceCreateFlagsKHR {}
+
+impl std::ops::BitOr for XlibSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for XlibSurfaceCreateFlagsKHR {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0
+    }
+}
+
+impl std::ops::BitAnd for XlibSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0 & rhs.0)
+    }
+}
+
+impl std::ops::BitAndAssign for XlibSurfaceCreateFlagsKHR {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0
+    }
+}
+
+impl std::ops::BitXor for XlibSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
+impl std::ops::BitXorAssign for XlibSurfaceCreateFlagsKHR {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0
+    }
+}
+
+impl WaylandSurfaceCreateFlagsKHR {
+    #[inline]
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub fn as_raw(self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub fn intersects(self, rhs: Self) -> bool {
+        self.0 & rhs.0 != 0
+    }
+
+    #[inline]
+    pub fn contains(self, rhs: Self) -> bool {
+        self.0 & rhs.0 == rhs.0
+    }
+
+    #[inline]
+    pub fn cardinality(self) -> u32 {
+        self.0.count_ones()
+    }
+}
+
+impl Clone for WaylandSurfaceCreateFlagsKHR {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl Copy for WaylandSurfaceCreateFlagsKHR {}
+
+impl Default for WaylandSurfaceCreateFlagsKHR {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
+impl PartialEq for WaylandSurfaceCreateFlagsKHR {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.0 == rhs.0
+    }
+}
+
+impl Eq for WaylandSurfaceCreateFlagsKHR {}
+
+impl std::ops::BitOr for WaylandSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for WaylandSurfaceCreateFlagsKHR {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0
+    }
+}
+
+impl std::ops::BitAnd for WaylandSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0 & rhs.0)
+    }
+}
+
+impl std::ops::BitAndAssign for WaylandSurfaceCreateFlagsKHR {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0
+    }
+}
+
+impl std::ops::BitXor for WaylandSurfaceCreateFlagsKHR {
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
+impl std::ops::BitXorAssign for WaylandSurfaceCreateFlagsKHR {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0
+    }
+}
 
 impl PipelineStageFlags {
     #[inline]

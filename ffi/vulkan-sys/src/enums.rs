@@ -1026,6 +1026,12 @@ pub enum StructureType {
     DisplayModeCreateInfoKhr = 1000002000,
     DisplaySurfaceCreateInfoKhr = 1000002001,
     DisplayPresentInfoKhr = 1000003000,
+    // Provided by VK_KHR_xlib_surface
+    XlibSurfaceCreateInfoKHR = 1000004000,
+    // Provided by VK_KHR_xcb_surface
+    XcbSurfaceCreateInfoKHR = 1000005000,
+    // Provided by VK_KHR_wayland_surface
+    WaylandSurfaceCreateInfoKHR = 1000006000,
     DebugReportCallbackCreateInfoExt = 1000011000,
     PipelineRasterizationStateRasterizationOrderAmd = 1000018000,
     DebugMarkerObjectNameInfoExt = 1000022000,

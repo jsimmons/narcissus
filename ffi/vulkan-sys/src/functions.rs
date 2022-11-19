@@ -40,6 +40,12 @@ pub type FnGetInstanceProcAddr =
 
 pub type FnEnumerateInstanceVersion = extern "system" fn(api_version: &mut u32) -> Result;
 
+pub type FnEnumerateInstanceExtensionProperties = extern "system" fn(
+    layer_name: *const c_char,
+    property_count: &mut u32,
+    properties: *mut ExtensionProperties,
+) -> Result;
+
 pub type FnCreateInstance = extern "system" fn(
     create_info: &InstanceCreateInfo,
     allocator: Option<&AllocationCallbacks>,
@@ -125,6 +131,27 @@ pub type FnGetPhysicalDeviceSurfacePresentModesKHR = extern "system" fn(
     surface: SurfaceKHR,
     present_mode_count: &mut u32,
     present_modes: *mut PresentModeKHR,
+) -> Result;
+
+pub type FnCreateXcbSurfaceKHR = extern "system" fn(
+    instance: Instance,
+    create_info: &XcbSurfaceCreateInfoKHR,
+    allocator: Option<&AllocationCallbacks>,
+    surface: &mut SurfaceKHR,
+) -> Result;
+
+pub type FnCreateXlibSurfaceKHR = extern "system" fn(
+    instance: Instance,
+    create_info: &XlibSurfaceCreateInfoKHR,
+    allocator: Option<&AllocationCallbacks>,
+    surface: &mut SurfaceKHR,
+) -> Result;
+
+pub type FnCreateWaylandSurfaceKHR = extern "system" fn(
+    instance: Instance,
+    create_info: &WaylandSurfaceCreateInfoKHR,
+    allocator: Option<&AllocationCallbacks>,
+    surface: &mut SurfaceKHR,
 ) -> Result;
 
 pub type FnCreateDevice = extern "system" fn(
