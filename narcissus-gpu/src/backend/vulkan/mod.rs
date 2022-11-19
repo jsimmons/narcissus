@@ -4,7 +4,7 @@ use std::{
     marker::PhantomData,
     os::raw::{c_char, c_void},
     ptr::NonNull,
-    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use narcissus_core::{
@@ -17,15 +17,15 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    delay_queue::DelayQueue, Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType,
-    Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp,
-    ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier,
-    GpuConcurrent, GraphicsPipelineDesc, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
-    ImageDimension, ImageFormat, ImageLayout, ImageSubresourceLayers, ImageSubresourceRange,
-    ImageUsageFlags, ImageViewDesc, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
-    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
-    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, SwapchainOutOfDateError,
-    ThreadToken, Topology, TypedBind,
+    delay_queue::DelayQueue, frame_counter::FrameCounter, Access, Bind, BindGroupLayout,
+    BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags,
+    ClearValue, CmdBuffer, CompareOp, ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d,
+    Frame, FrontFace, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageAspectFlags,
+    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceLayers,
+    ImageSubresourceRange, ImageUsageFlags, ImageViewDesc, IndexType, LoadOp, MemoryLocation,
+    Offset2d, Offset3d, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
+    SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp,
+    SwapchainOutOfDateError, ThreadToken, Topology, TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -781,61 +781,6 @@ struct VulkanCmdBufferPool {
     command_buffers: Vec<vk::CommandBuffer>,
 }
 
-impl<'device> Frame<'device> {
-    fn check_device(&self, device: &VulkanDevice) {
-        let device_address = device as *const _ as usize;
-        assert_eq!(self.device_addr, device_address, "frame device mismatch")
-    }
-
-    fn check_frame_counter(&self, frame_counter_value: usize) {
-        assert!(frame_counter_value & 1 == 0, "frame counter isn't acquired");
-        assert_eq!(
-            self.frame_index,
-            frame_counter_value >> 1,
-            "frame does not match device frame"
-        );
-    }
-}
-
-struct FrameCounter {
-    value: AtomicUsize,
-}
-
-impl FrameCounter {
-    fn new() -> Self {
-        Self {
-            // Start the frame id at 1 so that the first `begin_frame` ticks us over to a new frame index.
-            value: AtomicUsize::new(1),
-        }
-    }
-
-    fn load(&self) -> usize {
-        self.value.load(Ordering::Relaxed)
-    }
-
-    fn acquire(&self, device: &VulkanDevice) -> Frame {
-        let old_frame_counter = self.value.fetch_add(1, Ordering::SeqCst);
-        assert!(
-            old_frame_counter & 1 == 1,
-            "acquiring a frame before previous frame has been released"
-        );
-
-        let frame_counter = old_frame_counter + 1;
-        let frame_index = frame_counter >> 1;
-
-        Frame {
-            device_addr: device as *const _ as usize,
-            frame_index,
-            _phantom: &PhantomData,
-        }
-    }
-
-    fn release(&self, frame: Frame) {
-        let old_frame_counter = self.value.fetch_add(1, Ordering::SeqCst);
-        frame.check_frame_counter(old_frame_counter);
-    }
-}
-
 struct VulkanPerThread {
     cmd_buffer_pool: VulkanCmdBufferPool,
     descriptor_pool: vk::DescriptorPool,
@@ -1271,7 +1216,7 @@ impl VulkanDevice {
     }
 
     fn frame<'token>(&self, frame: &'token Frame) -> &'token VulkanFrame {
-        frame.check_device(self);
+        frame.check_device(self as *const _ as usize);
         frame.check_frame_counter(self.frame_counter.load());
         // Safety: Reference is bound to the frame exposed by the API. only one frame can be valid
         // at a time. The returned VulkanFrame is only valid so long as we have a ref on the frame.
@@ -1279,7 +1224,7 @@ impl VulkanDevice {
     }
 
     fn frame_mut<'token>(&self, frame: &'token mut Frame) -> &'token mut VulkanFrame {
-        frame.check_device(self);
+        frame.check_device(self as *const _ as usize);
         frame.check_frame_counter(self.frame_counter.load());
         // Safety: Reference is bound to the frame exposed by the API. only one frame can be valid
         // at a time. The returned VulkanFrame is only valid so long as we have a ref on the frame.
@@ -2710,7 +2655,7 @@ impl Device for VulkanDevice {
         let device_fn = &self.device_fn;
         let device = self.device;
 
-        let mut frame = self.frame_counter.acquire(self);
+        let mut frame = self.frame_counter.acquire(self as *const _ as usize);
         {
             let frame = self.frame_mut(&mut frame);
 

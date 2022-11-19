@@ -7,6 +7,7 @@ use narcissus_core::{
 
 mod backend;
 mod delay_queue;
+mod frame_counter;
 
 pub enum DeviceBackend {
     Vulkan,
@@ -598,6 +599,21 @@ pub struct Frame<'a> {
     device_addr: usize,
     frame_index: usize,
     _phantom: &'a PhantomData<()>,
+}
+
+impl<'a> Frame<'a> {
+    fn check_device(&self, device_addr: usize) {
+        assert_eq!(self.device_addr, device_addr, "frame device mismatch")
+    }
+
+    fn check_frame_counter(&self, frame_counter_value: usize) {
+        assert!(frame_counter_value & 1 == 0, "frame counter isn't acquired");
+        assert_eq!(
+            self.frame_index,
+            frame_counter_value >> 1,
+            "frame does not match device frame"
+        );
+    }
 }
 
 pub struct CmdBuffer<'a> {
