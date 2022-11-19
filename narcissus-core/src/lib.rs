@@ -113,6 +113,7 @@ macro_rules! thread_token_def {
 #[macro_export]
 macro_rules! flags_def {
     ($name:ident) => {
+        #[derive(PartialEq, Hash, Debug)]
         pub struct $name(u32);
 
         impl $name {
@@ -153,12 +154,6 @@ macro_rules! flags_def {
         impl Default for $name {
             fn default() -> Self {
                 Self(0)
-            }
-        }
-
-        impl PartialEq for $name {
-            fn eq(&self, rhs: &Self) -> bool {
-                self.0 == rhs.0
             }
         }
 
