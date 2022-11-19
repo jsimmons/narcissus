@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 fast-float = "0.2"
+memchr = { version = "2" }
 stb_image-sys = { path = "../ffi/stb_image-sys" }
