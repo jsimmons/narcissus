@@ -116,7 +116,7 @@ impl App for SdlApp {
         let window = windows.get(window.0).unwrap();
         let mut surface = !0;
         let ret = unsafe { sdl::SDL_Vulkan_CreateSurface(window.0, instance, &mut surface) };
-        assert_eq!(ret, 1, "failed to create vulkan surface");
+        assert_eq!(ret, sdl::Bool::True, "failed to create vulkan surface");
         surface
     }
 

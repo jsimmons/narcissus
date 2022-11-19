@@ -1,9 +1,20 @@
 #![allow(non_camel_case_types)]
 use std::{ffi::c_void, os::raw::c_char};
 
+pub const MAJOR_VERSION: u8 = 2;
+pub const MINOR_VERSION: u8 = 24;
+pub const PATCH_VERSION: u8 = 2;
+
 #[repr(C)]
 pub struct Window {
     _unused: [u8; 0],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Bool {
+    False = 0,
+    True = 1,
 }
 
 pub type JoystickID = i32;
@@ -1208,6 +1219,66 @@ pub union Event {
     pub r#drop: DropEvent,
 }
 
+#[repr(C)]
+pub struct Version {
+    pub major: u8,
+    pub minor: u8,
+    pub patch: u8,
+}
+
+#[repr(C)]
+pub enum SysWMType {
+    UNKNOWN,
+    WINDOWS,
+    X11,
+    DIRECTFB,
+    COCOA,
+    UIKIT,
+    WAYLAND,
+    MIR, /* no longer available, left for API/ABI compatibility. Remove in 2.1! */
+    WINRT,
+    ANDROID,
+    VIVANTE,
+    OS2,
+    HAIKU,
+    KMSDRM,
+    RISCOS,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SysWMTypeX11 {
+    pub display: *mut c_void,
+    pub window: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SysWMTypeWayland {
+    pub display: *mut c_void,
+    pub surface: *mut c_void,
+    pub shell_surface: *mut c_void,
+    pub egl_window: *mut c_void,
+    pub xdg_surface: *mut c_void,
+    pub xdg_toplevel: *mut c_void,
+    pub xdg_popup: *mut c_void,
+    pub xdg_positioner: *mut c_void,
+}
+
+#[repr(C)]
+pub union SysWMTypeUnion {
+    pub x11: SysWMTypeX11,
+    pub wayland: SysWMTypeWayland,
+    dummy: [u8; 64],
+}
+
+#[repr(C)]
+pub struct SysWMinfo {
+    pub version: Version,
+    pub subsystem: SysWMType,
+    pub info: SysWMTypeUnion,
+}
+
 extern "C" {
     pub fn SDL_Init(flags: u32) -> i32;
     pub fn SDL_Quit();
@@ -1229,6 +1300,8 @@ extern "C" {
 
     pub fn SDL_PollEvent(event: *mut Event) -> i32;
 
+    pub fn SDL_GetWindowWMInfo(window: *mut Window, info: *mut SysWMinfo) -> Bool;
+
     pub fn SDL_Vulkan_LoadLibrary(path: *const c_char) -> i32;
     pub fn SDL_Vulkan_GetInstanceExtensions(
         window: *mut Window,
@@ -1236,7 +1309,7 @@ extern "C" {
         names: *mut *const c_char,
     ) -> i32;
     pub fn SDL_Vulkan_GetVkGetInstanceProcAddr() -> *mut c_void;
-    pub fn SDL_Vulkan_CreateSurface(window: *mut Window, instance: u64, surface: *mut u64) -> i32;
+    pub fn SDL_Vulkan_CreateSurface(window: *mut Window, instance: u64, surface: *mut u64) -> Bool;
     pub fn SDL_Vulkan_GetDrawableSize(window: *mut Window, w: *mut i32, h: *mut i32);
 }
 
