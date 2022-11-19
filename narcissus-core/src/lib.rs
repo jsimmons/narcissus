@@ -7,6 +7,7 @@ mod mutex;
 pub mod obj;
 mod pool;
 pub mod rand;
+pub mod raw_window;
 mod ref_count;
 pub mod slice;
 mod texture;
