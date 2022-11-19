@@ -1,51 +1,93 @@
-use std::{
-    collections::HashMap,
-    ffi::{c_void, CStr, CString},
-    mem::MaybeUninit,
-    os::raw::c_char,
+use std::{collections::HashMap, ffi::CString, mem::MaybeUninit, sync::Arc};
+
+use crate::{App, Button, Event, Key, ModifierFlags, PressedState, Window, WindowId};
+
+use narcissus_core::{
+    raw_window::{AsRawWindow, RawWindow, WaylandWindow, XlibWindow},
+    Mutex, Upcast,
 };
-
-use crate::{App, Button, Event, Key, ModifierFlags, PressedState, Window};
-
-use narcissus_core::{Handle, Mutex, Pool};
 use sdl2_sys as sdl;
 
-struct SdlWindow(*mut sdl::Window);
+fn sdl_window_id(window_id: u32) -> WindowId {
+    WindowId(window_id as u64)
+}
+
+struct SdlWindow {
+    window: *mut sdl::Window,
+}
+
+impl Window for SdlWindow {
+    fn id(&self) -> WindowId {
+        sdl_window_id(unsafe { sdl::SDL_GetWindowID(self.window) })
+    }
+
+    fn extent(&self) -> (u32, u32) {
+        let mut width = 0;
+        let mut height = 0;
+        unsafe {
+            sdl::SDL_Vulkan_GetDrawableSize(self.window, &mut width, &mut height);
+        }
+        (width as u32, height as u32)
+    }
+}
+
+impl AsRawWindow for SdlWindow {
+    fn as_raw_window(&self) -> RawWindow {
+        let wm_info = unsafe {
+            let mut wm_info = MaybeUninit::<sdl::SysWMinfo>::zeroed();
+            std::ptr::write(
+                std::ptr::addr_of_mut!((*wm_info.as_mut_ptr()).version),
+                sdl::Version::current(),
+            );
+            let res = sdl::SDL_GetWindowWMInfo(self.window, wm_info.as_mut_ptr());
+            assert_eq!(res, sdl::Bool::True);
+            wm_info.assume_init()
+        };
+
+        match wm_info.subsystem {
+            sdl::SysWMType::X11 => RawWindow::Xlib(XlibWindow {
+                display: unsafe { wm_info.info.x11.display },
+                window: unsafe { wm_info.info.x11.window },
+            }),
+            sdl::SysWMType::WAYLAND => RawWindow::Wayland(WaylandWindow {
+                display: unsafe { wm_info.info.wayland.display },
+                surface: unsafe { wm_info.info.wayland.surface },
+            }),
+            _ => panic!("unspported wm system"),
+        }
+    }
+}
+
+impl Upcast<dyn AsRawWindow> for SdlWindow {
+    fn upcast(&self) -> &(dyn AsRawWindow + 'static) {
+        self
+    }
+}
 
 pub struct SdlApp {
-    windows: Mutex<Pool<SdlWindow>>,
-    window_id_to_handle: Mutex<HashMap<u32, Window>>,
+    windows: Mutex<HashMap<WindowId, Arc<SdlWindow>>>,
 }
 
 impl SdlApp {
     pub fn new() -> Result<Self, ()> {
         unsafe { sdl::SDL_Init(sdl::INIT_VIDEO) };
         Ok(Self {
-            windows: Mutex::new(Pool::new()),
-            window_id_to_handle: Mutex::new(HashMap::new()),
+            windows: Mutex::new(HashMap::new()),
         })
-    }
-
-    fn window_from_window_id(&self, window_id: u32) -> Window {
-        self.window_id_to_handle
-            .lock()
-            .get(&window_id)
-            .copied()
-            .unwrap_or_else(|| Window(Handle::null()))
     }
 }
 
 impl Drop for SdlApp {
     fn drop(&mut self) {
         for window in self.windows.get_mut().values() {
-            unsafe { sdl::SDL_DestroyWindow(window.0) };
+            unsafe { sdl::SDL_DestroyWindow(window.window) };
         }
         unsafe { sdl::SDL_Quit() };
     }
 }
 
 impl App for SdlApp {
-    fn create_window(&self, desc: &crate::WindowDesc) -> Window {
+    fn create_window(&self, desc: &crate::WindowDesc) -> Arc<dyn Window> {
         let title = CString::new(desc.title).unwrap();
         let window = unsafe {
             sdl::SDL_CreateWindow(
@@ -58,77 +100,20 @@ impl App for SdlApp {
             )
         };
         assert!(!window.is_null());
-        let window_id = unsafe { sdl::SDL_GetWindowID(window) };
-
-        let mut window_id_to_handle = self.window_id_to_handle.lock();
-        let mut windows = self.windows.lock();
-
-        let handle = Window(windows.insert(SdlWindow(window)));
-        window_id_to_handle.insert(window_id, handle);
-        handle
+        let window_id = WindowId(unsafe { sdl::SDL_GetWindowID(window) } as u64);
+        let window = Arc::new(SdlWindow { window });
+        self.windows.lock().insert(window_id, window.clone());
+        window
     }
 
-    fn destroy_window(&self, window: Window) {
-        if let Some(window) = self.windows.lock().remove(window.0) {
-            unsafe { sdl::SDL_DestroyWindow(window.0) };
+    fn destroy_window(&self, window: Arc<dyn Window>) {
+        let window_id = window.id();
+        drop(window);
+        if let Some(mut window) = self.windows.lock().remove(&window_id) {
+            let window = Arc::get_mut(&mut window)
+                .expect("tried to destroy a window while there are outstanding references");
+            unsafe { sdl::SDL_DestroyWindow(window.window) };
         }
-    }
-
-    fn vk_get_loader(&self) -> *mut c_void {
-        unsafe {
-            sdl::SDL_Vulkan_LoadLibrary(std::ptr::null());
-            sdl::SDL_Vulkan_GetVkGetInstanceProcAddr()
-        }
-    }
-
-    fn vk_instance_extensions(&self) -> Vec<&'static CStr> {
-        let mut count: u32 = 0;
-        let ret = unsafe {
-            sdl::SDL_Vulkan_GetInstanceExtensions(
-                std::ptr::null_mut(),
-                &mut count,
-                std::ptr::null_mut(),
-            )
-        };
-        assert_eq!(ret, 1, "failed to query instance extensions");
-        if count == 0 {
-            return Vec::new();
-        }
-
-        let mut names: Vec<*const c_char> = vec![std::ptr::null(); count as usize];
-        let ret = unsafe {
-            sdl::SDL_Vulkan_GetInstanceExtensions(
-                std::ptr::null_mut(),
-                &mut count,
-                names.as_mut_ptr(),
-            )
-        };
-        assert_eq!(ret, 1, "failed to query instance extensions");
-
-        names
-            .iter()
-            .map(|&val| unsafe { CStr::from_ptr(val) })
-            .collect()
-    }
-
-    fn vk_create_surface(&self, window: Window, instance: u64) -> u64 {
-        let windows = self.windows.lock();
-        let window = windows.get(window.0).unwrap();
-        let mut surface = !0;
-        let ret = unsafe { sdl::SDL_Vulkan_CreateSurface(window.0, instance, &mut surface) };
-        assert_eq!(ret, sdl::Bool::True, "failed to create vulkan surface");
-        surface
-    }
-
-    fn vk_get_surface_extent(&self, window: Window) -> (u32, u32) {
-        let windows = self.windows.lock();
-        let window = windows.get(window.0).unwrap();
-        let mut w = 0;
-        let mut h = 0;
-        unsafe {
-            sdl::SDL_Vulkan_GetDrawableSize(window.0, &mut w, &mut h);
-        }
-        (w as u32, h as u32)
     }
 
     fn poll_event(&self) -> Option<Event> {
@@ -146,53 +131,40 @@ impl App for SdlApp {
                 sdl::WindowEventId::Hidden => Event::Unknown,
                 sdl::WindowEventId::Exposed => Event::Unknown,
                 sdl::WindowEventId::Moved => Event::Unknown,
-                sdl::WindowEventId::Resized => {
-                    let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                    Event::Resize {
-                        window: handle,
-                        width: unsafe { event.window.data1 } as u32,
-                        height: unsafe { event.window.data2 } as u32,
-                    }
-                }
+                sdl::WindowEventId::Resized => Event::Resize {
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                    width: unsafe { event.window.data1 } as u32,
+                    height: unsafe { event.window.data2 } as u32,
+                },
                 sdl::WindowEventId::SizeChanged => Event::Unknown,
                 sdl::WindowEventId::Minimized => Event::Unknown,
                 sdl::WindowEventId::Maximized => Event::Unknown,
                 sdl::WindowEventId::Restored => Event::Unknown,
-                sdl::WindowEventId::Enter => {
-                    let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                    Event::MouseEnter {
-                        window: handle,
-                        x: unsafe { event.window.data1 },
-                        y: unsafe { event.window.data2 },
-                    }
-                }
-                sdl::WindowEventId::Leave => {
-                    let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                    Event::MouseLeave {
-                        window: handle,
-                        x: unsafe { event.window.data1 },
-                        y: unsafe { event.window.data2 },
-                    }
-                }
-                sdl::WindowEventId::FocusGained => {
-                    let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                    Event::FocusIn { window: handle }
-                }
-                sdl::WindowEventId::FocusLost => {
-                    let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                    Event::FocusOut { window: handle }
-                }
-                sdl::WindowEventId::Close => {
-                    let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                    Event::Close { window: handle }
-                }
+                sdl::WindowEventId::Enter => Event::MouseEnter {
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                    x: unsafe { event.window.data1 },
+                    y: unsafe { event.window.data2 },
+                },
+                sdl::WindowEventId::Leave => Event::MouseLeave {
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                    x: unsafe { event.window.data1 },
+                    y: unsafe { event.window.data2 },
+                },
+                sdl::WindowEventId::FocusGained => Event::FocusIn {
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                },
+                sdl::WindowEventId::FocusLost => Event::FocusOut {
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                },
+                sdl::WindowEventId::Close => Event::Close {
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                },
                 sdl::WindowEventId::TakeFocus => Event::Unknown,
                 sdl::WindowEventId::HitTest => Event::Unknown,
                 sdl::WindowEventId::IccprofChanged => Event::Unknown,
                 sdl::WindowEventId::DisplayChanged => Event::Unknown,
             },
             sdl::EventType::KEYUP | sdl::EventType::KEYDOWN => {
-                let handle = self.window_from_window_id(unsafe { event.key.window_id });
                 let scancode = unsafe { event.key.keysym.scancode };
                 let modifiers = unsafe { event.key.keysym.modifiers };
                 let state = unsafe { event.key.state };
@@ -200,36 +172,36 @@ impl App for SdlApp {
                 let modifiers = map_sdl_modifiers(modifiers);
                 let pressed = map_sdl_pressed_state(state);
                 Event::KeyPress {
-                    window: handle,
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
                     key,
                     pressed,
                     modifiers,
                 }
             }
             sdl::EventType::MOUSEBUTTONUP | sdl::EventType::MOUSEBUTTONDOWN => {
-                let handle = self.window_from_window_id(unsafe { event.button.window_id });
                 let button = unsafe { event.button.button };
                 let state = unsafe { event.button.state };
                 let button = map_sdl_button(button);
                 let pressed = map_sdl_pressed_state(state);
                 Event::ButtonPress {
-                    window: handle,
+                    window_id: sdl_window_id(unsafe { event.window.window_id }),
                     button,
                     pressed,
                 }
             }
-            sdl::EventType::MOUSEMOTION => {
-                let handle = self.window_from_window_id(unsafe { event.window.window_id });
-                Event::MouseMotion {
-                    window: handle,
-                    x: unsafe { event.window.data1 },
-                    y: unsafe { event.window.data2 },
-                }
-            }
+            sdl::EventType::MOUSEMOTION => Event::MouseMotion {
+                window_id: sdl_window_id(unsafe { event.window.window_id }),
+                x: unsafe { event.window.data1 },
+                y: unsafe { event.window.data2 },
+            },
             _ => Event::Unknown,
         };
 
         Some(e)
+    }
+
+    fn window(&self, window_id: WindowId) -> Arc<dyn Window> {
+        self.windows.lock().get(&window_id).unwrap().clone()
     }
 }
 

@@ -25,6 +25,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68783febc7782c6c5cb401fbda4de5a9898be1762314da0bb2c10ced61f18b0c"
 
 [[package]]
+name = "memchr"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
+
+[[package]]
 name = "narcissus"
 version = "0.1.0"
 dependencies = [
@@ -47,6 +53,7 @@ name = "narcissus-core"
 version = "0.1.0"
 dependencies = [
  "fast-float",
+ "memchr",
  "stb_image-sys",
 ]
 
@@ -54,7 +61,6 @@ dependencies = [
 name = "narcissus-gpu"
 version = "0.1.0"
 dependencies = [
- "narcissus-app",
  "narcissus-core",
  "vulkan-sys",
 ]

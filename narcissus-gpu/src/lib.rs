@@ -1,10 +1,22 @@
 use std::{ffi::CStr, marker::PhantomData};
 
-use narcissus_app::{App, Window};
-use narcissus_core::{default, flags_def, thread_token_def, Handle, PhantomUnsend};
+use backend::vulkan;
+use narcissus_core::{
+    default, flags_def, raw_window::AsRawWindow, thread_token_def, Handle, PhantomUnsend,
+};
 
+mod backend;
 mod delay_queue;
-mod vulkan;
+
+pub enum DeviceBackend {
+    Vulkan,
+}
+
+pub fn create_device(backend: DeviceBackend) -> Box<dyn Device> {
+    match backend {
+        DeviceBackend::Vulkan => Box::new(vulkan::VulkanDevice::new()),
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Offset2d {
@@ -594,6 +606,17 @@ pub struct CmdBuffer<'a> {
     phantom_unsend: PhantomUnsend,
 }
 
+#[derive(Debug)]
+pub struct SwapchainOutOfDateError(());
+
+impl std::fmt::Display for SwapchainOutOfDateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "swapchain out of date")
+    }
+}
+
+impl std::error::Error for SwapchainOutOfDateError {}
+
 pub trait Device {
     fn create_buffer(&self, desc: &BufferDesc) -> Buffer;
     fn create_image(&self, desc: &ImageDesc) -> Image;
@@ -609,6 +632,17 @@ pub trait Device {
     fn destroy_bind_group_layout(&self, frame: &Frame, bind_group_layout: BindGroupLayout);
     fn destroy_pipeline(&self, frame: &Frame, pipeline: Pipeline);
 
+    fn acquire_swapchain(
+        &self,
+        frame: &Frame,
+        window: &dyn AsRawWindow,
+        width: u32,
+        height: u32,
+        format: ImageFormat,
+    ) -> Result<(u32, u32, Image), SwapchainOutOfDateError>;
+
+    fn destroy_swapchain(&self, window: &dyn AsRawWindow);
+
     /// Map the given buffer in its entirety to system memory and return a pointer to it.
     ///
     /// # Safety
@@ -623,14 +657,6 @@ pub trait Device {
     /// This will invalidate the pointer returned previously from `map_buffer`, so there must not be
     /// any remaining references derived from that address.
     unsafe fn unmap_buffer(&self, buffer: Buffer);
-
-    fn acquire_swapchain(
-        &self,
-        frame: &Frame,
-        window: Window,
-        format: ImageFormat,
-    ) -> (u32, u32, Image);
-    fn destroy_window(&self, window: Window);
 
     #[must_use]
     fn create_cmd_buffer<'a, 'thread>(
@@ -707,8 +733,4 @@ pub trait Device {
     fn begin_frame(&self) -> Frame;
 
     fn end_frame<'device>(&'device self, frame: Frame<'device>);
-}
-
-pub fn create_vulkan_device<'app>(app: &'app dyn App) -> Box<dyn Device + 'app> {
-    Box::new(vulkan::VulkanDevice::new(app))
 }

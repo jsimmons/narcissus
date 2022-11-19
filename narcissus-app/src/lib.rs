@@ -2,14 +2,14 @@ mod button;
 mod key;
 mod sdl;
 
-use std::ffi::{c_void, CStr};
+use std::sync::Arc;
 
-use narcissus_core::{flags_def, Handle};
+use narcissus_core::{flags_def, raw_window::AsRawWindow, Upcast};
 
 pub use button::Button;
 pub use key::Key;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum PressedState {
     Released,
     Pressed,
@@ -23,97 +23,95 @@ impl ModifierFlags {
     pub const META: Self = Self(1 << 3);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Debug)]
-pub struct Window(Handle);
-
-impl Window {
-    pub const fn is_null(&self) -> bool {
-        self.0.is_null()
-    }
-}
-
 pub struct WindowDesc<'a> {
     pub title: &'a str,
     pub width: u32,
     pub height: u32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct WindowId(u64);
+
+pub trait Window: AsRawWindow + Upcast<dyn AsRawWindow> {
+    fn id(&self) -> WindowId;
+
+    fn extent(&self) -> (u32, u32);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[non_exhaustive]
 pub enum Event {
     Unknown,
     Quit,
 
     KeyPress {
-        window: Window,
+        window_id: WindowId,
         key: Key,
         pressed: PressedState,
         modifiers: ModifierFlags,
     },
 
     ButtonPress {
-        window: Window,
+        window_id: WindowId,
         button: Button,
         pressed: PressedState,
     },
 
     MouseMotion {
-        window: Window,
+        window_id: WindowId,
         x: i32,
         y: i32,
     },
 
     /// A window has gained mouse focus.
     MouseEnter {
-        window: Window,
+        window_id: WindowId,
         x: i32,
         y: i32,
     },
 
     /// A window has lost moust focus.
     MouseLeave {
-        window: Window,
+        window_id: WindowId,
         x: i32,
         y: i32,
     },
 
     /// A window has gained keyboard focus.
     FocusIn {
-        window: Window,
+        window_id: WindowId,
     },
 
     /// A window has lost keyboard focus.
     FocusOut {
-        window: Window,
+        window_id: WindowId,
     },
 
     /// The window has been resized.
     Resize {
-        window: Window,
+        window_id: WindowId,
         width: u32,
         height: u32,
     },
 
     // The close button has been pressed on the window.
     Close {
-        window: Window,
+        window_id: WindowId,
     },
 
     // The window has been destroyed.
     Destroy {
-        window: Window,
+        window_id: WindowId,
     },
 }
 
 pub trait App {
-    fn create_window(&self, desc: &WindowDesc) -> Window;
-    fn destroy_window(&self, window: Window);
+    fn create_window(&self, desc: &WindowDesc) -> Arc<dyn Window>;
+    fn destroy_window(&self, window: Arc<dyn Window>);
+
+    fn window(&self, window_id: WindowId) -> Arc<dyn Window>;
 
     fn poll_event(&self) -> Option<Event>;
-
-    fn vk_get_loader(&self) -> *mut c_void;
-    fn vk_instance_extensions(&self) -> Vec<&'static CStr>;
-    fn vk_create_surface(&self, window: Window, instance: u64) -> u64;
-    fn vk_get_surface_extent(&self, window: Window) -> (u32, u32);
 }
 
 pub fn create_app() -> Box<dyn App> {

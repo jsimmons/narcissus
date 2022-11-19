@@ -3,7 +3,7 @@ use std::{path::Path, time::Instant};
 use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{cstr, default, obj, rand::Pcg64, Texture};
 use narcissus_gpu::{
-    create_vulkan_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
+    create_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
     Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
     Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, Image,
     ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageUsageFlags, IndexType,
@@ -283,17 +283,14 @@ impl<'a> Drop for MappedBuffer<'a> {
 }
 
 pub fn main() {
-    let blåhaj_image = load_texture("narcissus/data/blåhaj.png");
-    let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
-
     let app = create_app();
     let main_window = app.create_window(&WindowDesc {
         title: "narcissus",
         width: 800,
         height: 600,
     });
+    let device = create_device(narcissus_gpu::DeviceBackend::Vulkan);
 
-    let device = create_vulkan_device(app.as_ref());
     let mut thread_token = ThreadToken::new();
 
     #[repr(align(4))]
@@ -368,6 +365,9 @@ pub fn main() {
         stencil_front: default(),
     });
 
+    let blåhaj_image = load_texture("narcissus/data/blåhaj.png");
+    let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
+
     let blåhaj_vertex_buffer = create_buffer_with_data(
         device.as_ref(),
         BufferUsageFlags::STORAGE,
@@ -437,7 +437,7 @@ pub fn main() {
             use Event::*;
             match event {
                 KeyPress {
-                    window: _,
+                    window_id: _,
                     key,
                     pressed: _,
                     modifiers: _,
@@ -449,17 +449,26 @@ pub fn main() {
                 Quit => {
                     break 'main;
                 }
-                Close { window } => {
-                    assert_eq!(window, main_window);
-                    device.destroy_window(window);
-                    break 'main;
+                Close { window_id } => {
+                    let window = app.window(window_id);
+                    device.destroy_swapchain(window.upcast());
                 }
                 _ => {}
             }
         }
 
-        let (width, height, swapchain_image) =
-            device.acquire_swapchain(&frame, main_window, ImageFormat::BGRA8_SRGB);
+        let (width, height, swapchain_image) = loop {
+            let (width, height) = main_window.extent();
+            if let Ok(result) = device.acquire_swapchain(
+                &frame,
+                main_window.upcast(),
+                width,
+                height,
+                ImageFormat::BGRA8_SRGB,
+            ) {
+                break result;
+            }
+        };
 
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.125;
