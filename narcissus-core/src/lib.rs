@@ -264,6 +264,10 @@ pub fn zeroed_box<T>() -> Box<MaybeUninit<T>> {
 /// Negative traits aren't stable yet, so use a dummy PhantomData marker to implement !Send
 pub type PhantomUnsend = std::marker::PhantomData<*mut ()>;
 
+pub trait Upcast<T: ?Sized> {
+    fn upcast(&self) -> &T;
+}
+
 #[must_use]
 pub fn align_offset(x: usize, align: usize) -> usize {
     debug_assert!(align.is_power_of_two());
