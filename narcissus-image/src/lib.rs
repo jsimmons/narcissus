@@ -101,11 +101,3 @@ impl Drop for Image {
         unsafe { stbi_image_free(self.buffer.as_ptr() as *mut _) }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {}
-}
