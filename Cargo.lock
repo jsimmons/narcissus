@@ -37,6 +37,7 @@ dependencies = [
  "narcissus-app",
  "narcissus-core",
  "narcissus-gpu",
+ "narcissus-image",
  "narcissus-maths",
 ]
 
@@ -63,6 +64,13 @@ version = "0.1.0"
 dependencies = [
  "narcissus-core",
  "vulkan-sys",
+]
+
+[[package]]
+name = "narcissus-image"
+version = "0.1.0"
+dependencies = [
+ "stb_image-sys",
 ]
 
 [[package]]

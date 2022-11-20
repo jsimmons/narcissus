@@ -1,7 +1,7 @@
 use std::{path::Path, time::Instant};
 
 use narcissus_app::{create_app, Event, Key, WindowDesc};
-use narcissus_core::{cstr, default, obj, rand::Pcg64, Texture};
+use narcissus_core::{cstr, default, obj, rand::Pcg64};
 use narcissus_gpu::{
     create_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
     Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
@@ -11,6 +11,7 @@ use narcissus_gpu::{
     SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
     ThreadToken, Topology, TypedBind, Viewport,
 };
+use narcissus_image as image;
 use narcissus_maths::{
     sin_cos_pi_f32, vec2, vec3, vec4, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec2, Vec3,
 };
@@ -113,11 +114,11 @@ fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
     (vertices, indices)
 }
 
-fn load_texture<P: AsRef<Path>>(path: P) -> Texture {
+fn load_image<P: AsRef<Path>>(path: P) -> image::Image {
     let start = std::time::Instant::now();
     let path = path.as_ref();
     let texture =
-        Texture::from_buffer(std::fs::read(path).expect("failed to read file").as_slice())
+        image::Image::from_buffer(std::fs::read(path).expect("failed to read file").as_slice())
             .expect("failed to load image");
     println!(
         "loading image {path:?} took {:?}",
@@ -365,7 +366,7 @@ pub fn main() {
         stencil_front: default(),
     });
 
-    let blåhaj_image = load_texture("narcissus/data/blåhaj.png");
+    let blåhaj_image = load_image("narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
 
     let blåhaj_vertex_buffer = create_buffer_with_data(

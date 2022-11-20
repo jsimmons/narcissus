@@ -13,7 +13,7 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-pub struct Texture {
+pub struct Image {
     width: usize,
     height: usize,
     components: usize,
@@ -21,8 +21,8 @@ pub struct Texture {
     buffer: NonNull<u8>,
 }
 
-impl Texture {
-    pub fn from_buffer(buffer: &[u8]) -> Result<Texture, LoadError> {
+impl Image {
+    pub fn from_buffer(buffer: &[u8]) -> Result<Image, LoadError> {
         let mut x = 0;
         let mut y = 0;
         let mut components = 0;
@@ -47,7 +47,7 @@ impl Texture {
         let components = components as usize;
         let len = x * y * components;
 
-        Ok(Texture {
+        Ok(Image {
             width: x,
             height: y,
             components,
@@ -95,9 +95,17 @@ impl Texture {
     }
 }
 
-impl Drop for Texture {
+impl Drop for Image {
     fn drop(&mut self) {
         // Safety: Always allocated by `stbi_load_xxx` functions.
         unsafe { stbi_image_free(self.buffer.as_ptr() as *mut _) }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {}
 }

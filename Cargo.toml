@@ -9,6 +9,7 @@ members = [
     "narcissus-app",
     "narcissus-core",
     "narcissus-gpu",
+    "narcissus-image",
     "narcissus-maths",
     "narcissus-world",
 ]
