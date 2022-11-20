@@ -1258,9 +1258,8 @@ impl VulkanDevice {
 
     fn allocate_memory(&self, desc: &VulkanMemoryDesc) -> VulkanMemory {
         let memory_property_flags = match desc.memory_location {
-            MemoryLocation::Auto => vk::MemoryPropertyFlags::default(),
-            MemoryLocation::PreferHost => vk::MemoryPropertyFlags::HOST_VISIBLE,
-            MemoryLocation::PreferDevice => vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            MemoryLocation::HostMapped => vk::MemoryPropertyFlags::HOST_VISIBLE,
+            MemoryLocation::Device => vk::MemoryPropertyFlags::DEVICE_LOCAL,
         };
 
         let memory_type_index =
@@ -1469,7 +1468,7 @@ impl Device for VulkanDevice {
             .device_fn
             .create_buffer(self.device, &create_info, None, &mut buffer));
 
-        let memory = self.allocate_memory_for_buffer(buffer, desc.memory_location);
+        let memory = self.allocate_memory_for_buffer(buffer, desc.location);
 
         unsafe {
             self.device_fn.bind_buffer_memory2(
@@ -1569,7 +1568,7 @@ impl Device for VulkanDevice {
             .device_fn
             .create_image(self.device, &create_info, None, &mut image));
 
-        let memory = self.allocate_memory_for_image(image, desc.memory_location);
+        let memory = self.allocate_memory_for_image(image, desc.location);
 
         unsafe {
             self.device_fn.bind_image_memory2(

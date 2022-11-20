@@ -62,9 +62,8 @@ pub struct Pipeline(Handle);
 
 #[derive(Clone, Copy, Debug)]
 pub enum MemoryLocation {
-    Auto,
-    PreferHost,
-    PreferDevice,
+    HostMapped,
+    Device,
 }
 
 #[repr(C)]
@@ -180,13 +179,13 @@ impl BufferUsageFlags {
 }
 
 pub struct BufferDesc {
-    pub memory_location: MemoryLocation,
+    pub location: MemoryLocation,
     pub usage: BufferUsageFlags,
     pub size: usize,
 }
 
 pub struct ImageDesc {
-    pub memory_location: MemoryLocation,
+    pub location: MemoryLocation,
     pub usage: ImageUsageFlags,
     pub dimension: ImageDimension,
     pub format: ImageFormat,

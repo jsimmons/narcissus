@@ -133,7 +133,7 @@ where
 {
     let len = data.len() * std::mem::size_of::<T>();
     let buffer = device.create_buffer(&BufferDesc {
-        memory_location: MemoryLocation::PreferHost,
+        location: MemoryLocation::HostMapped,
         usage,
         size: len,
     });
@@ -159,7 +159,7 @@ fn create_image_with_data(
     let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER_SRC, data);
 
     let image = device.create_image(&ImageDesc {
-        memory_location: MemoryLocation::PreferDevice,
+        location: MemoryLocation::Device,
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::RGBA8_SRGB,
@@ -230,7 +230,7 @@ struct MappedBuffer<'a> {
 impl<'a> MappedBuffer<'a> {
     pub fn new(device: &'a dyn Device, usage: BufferUsageFlags, len: usize) -> Self {
         let buffer = device.create_buffer(&BufferDesc {
-            memory_location: MemoryLocation::PreferHost,
+            location: MemoryLocation::HostMapped,
             usage,
             size: len,
         });
@@ -498,7 +498,7 @@ pub fn main() {
         if width != depth_width || height != depth_height {
             device.destroy_image(&frame, depth_image);
             depth_image = device.create_image(&ImageDesc {
-                memory_location: MemoryLocation::PreferDevice,
+                location: MemoryLocation::HostMapped,
                 usage: ImageUsageFlags::DEPTH_STENCIL,
                 dimension: ImageDimension::Type2d,
                 format: ImageFormat::DEPTH_F32,
