@@ -4,6 +4,7 @@ members = [
     "ffi/renderdoc-sys",
     "ffi/sdl2-sys",
     "ffi/stb_image-sys",
+    "ffi/stb_truetype-sys",
     "ffi/vulkan-sys",
     "narcissus",
     "narcissus-app",
