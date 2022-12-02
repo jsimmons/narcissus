@@ -1490,6 +1490,22 @@ impl Device for VulkanDevice {
         Buffer(handle)
     }
 
+    fn create_buffer_with_data(&self, desc: &BufferDesc, initial_data: &[u8]) -> Buffer {
+        let len = initial_data.len();
+
+        assert!(len <= desc.size, "initial data larger than buffer");
+        assert!(desc.location == MemoryLocation::HostMapped);
+        let buffer = self.create_buffer(desc);
+
+        unsafe {
+            let dst = std::slice::from_raw_parts_mut(self.map_buffer(buffer), len);
+            dst.copy_from_slice(initial_data);
+            self.unmap_buffer(buffer);
+        }
+
+        buffer
+    }
+
     fn create_image(&self, desc: &ImageDesc) -> Image {
         debug_assert_ne!(desc.layer_count, 0, "layers must be at least one");
         debug_assert_ne!(desc.width, 0, "width must be at least one");

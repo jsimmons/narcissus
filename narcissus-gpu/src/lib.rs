@@ -634,6 +634,7 @@ impl std::error::Error for SwapchainOutOfDateError {}
 
 pub trait Device {
     fn create_buffer(&self, desc: &BufferDesc) -> Buffer;
+    fn create_buffer_with_data(&self, desc: &BufferDesc, inital_data: &[u8]) -> Buffer;
     fn create_image(&self, desc: &ImageDesc) -> Image;
     fn create_image_view(&self, desc: &ImageViewDesc) -> Image;
     fn create_sampler(&self, desc: &SamplerDesc) -> Sampler;
