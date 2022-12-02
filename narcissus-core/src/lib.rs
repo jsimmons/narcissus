@@ -199,6 +199,15 @@ macro_rules! flags_def {
     };
 }
 
+#[macro_export]
+macro_rules! include_bytes_align {
+    ($align:literal, $path:literal) => {{
+        #[repr(align($align))]
+        struct AlignedBytes<const LEN: usize>([u8; LEN]);
+        &AlignedBytes(*include_bytes!($path)).0
+    }};
+}
+
 /// Avoid the awful `Default::default()` spam.
 #[inline(always)]
 pub fn default<T: Default>() -> T {
