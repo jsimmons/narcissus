@@ -55,7 +55,6 @@ version = "0.1.0"
 dependencies = [
  "fast-float",
  "memchr",
- "stb_image-sys",
 ]
 
 [[package]]
