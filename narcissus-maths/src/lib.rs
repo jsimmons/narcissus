@@ -193,6 +193,24 @@ fn round_ties_to_even(x: f32) -> f32 {
     x.round()
 }
 
+pub fn quantize_centered(x: f32, n: u32) -> u32 {
+    (x * ((n - 1) as f32) + 0.5) as u32
+}
+
+pub fn dequantize_centered(x: u32, n: u32) -> f32 {
+    x as f32 / ((n - 1) as f32)
+}
+
+#[inline(always)]
+pub fn quantize_unorm_u8(x: f32) -> u8 {
+    (x * 255.0 + 0.5) as u8
+}
+
+#[inline(always)]
+pub fn dequantize_unorm_u8(x: u8) -> f32 {
+    x as f32 / 255.0
+}
+
 #[macro_export]
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
@@ -393,4 +411,17 @@ macro_rules! impl_vector {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{dequantize_unorm_u8, quantize_unorm_u8};
+
+    #[test]
+    fn quantize_dequantize() {
+        assert_eq!(quantize_unorm_u8(1.0), 255);
+        assert_eq!(quantize_unorm_u8(0.0), 0);
+        assert_eq!(dequantize_unorm_u8(255), 1.0);
+        assert_eq!(dequantize_unorm_u8(0), 0.0);
+    }
 }
