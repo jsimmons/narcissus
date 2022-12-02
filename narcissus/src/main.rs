@@ -4,12 +4,13 @@ use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{cstr, default, obj, rand::Pcg64};
 use narcissus_gpu::{
     create_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
-    Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp, CullingMode,
-    Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, Image,
-    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageUsageFlags, IndexType,
-    LoadOp, MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
-    ThreadToken, Topology, TypedBind, Viewport,
+    BlendMode, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp,
+    CullingMode, Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc,
+    GraphicsPipelineLayout, Image, ImageBarrier, ImageDesc, ImageDimension, ImageFormat,
+    ImageLayout, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
+    PolygonMode, RenderingAttachment, RenderingDesc, SamplerAddressMode, SamplerDesc,
+    SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp, ThreadToken, Topology,
+    TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -192,7 +193,7 @@ fn create_image_with_data(
             buffer_offset: 0,
             buffer_row_length: 0,
             buffer_image_height: 0,
-            image_subresource_layers: default(),
+            image_subresource: default(),
             image_offset: Offset3d { x: 0, y: 0, z: 0 },
             image_extent: Extent3d {
                 width,
@@ -357,6 +358,7 @@ pub fn main() {
         polygon_mode: PolygonMode::Fill,
         culling_mode: CullingMode::Back,
         front_face: FrontFace::CounterClockwise,
+        blend_mode: BlendMode::Opaque,
         depth_bias: None,
         depth_compare_op: CompareOp::GreaterOrEqual,
         depth_test_enable: true,
@@ -499,7 +501,7 @@ pub fn main() {
             device.destroy_image(&frame, depth_image);
             depth_image = device.create_image(&ImageDesc {
                 location: MemoryLocation::HostMapped,
-                usage: ImageUsageFlags::DEPTH_STENCIL,
+                usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 dimension: ImageDimension::Type2d,
                 format: ImageFormat::DEPTH_F32,
                 initial_layout: ImageLayout::Optimal,

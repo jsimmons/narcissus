@@ -18,14 +18,14 @@ use vulkan_sys as vk;
 
 use crate::{
     delay_queue::DelayQueue, frame_counter::FrameCounter, Access, Bind, BindGroupLayout,
-    BindGroupLayoutDesc, BindingType, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags,
-    ClearValue, CmdBuffer, CompareOp, ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d,
-    Frame, FrontFace, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageAspectFlags,
-    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceLayers,
-    ImageSubresourceRange, ImageUsageFlags, ImageViewDesc, IndexType, LoadOp, MemoryLocation,
-    Offset2d, Offset3d, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
-    SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp,
-    SwapchainOutOfDateError, ThreadToken, Topology, TypedBind,
+    BindGroupLayoutDesc, BindingType, BlendMode, Buffer, BufferDesc, BufferImageCopy,
+    BufferUsageFlags, ClearValue, CmdBuffer, CompareOp, ComputePipelineDesc, CullingMode, Device,
+    Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc,
+    Image, ImageAspectFlags, ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageFormat,
+    ImageLayout, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageViewDesc,
+    IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d, Pipeline, PolygonMode, Sampler,
+    SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp,
+    StencilOpState, StoreOp, SwapchainOutOfDateError, ThreadToken, Topology, TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -300,6 +300,48 @@ fn vulkan_stencil_op_state(stencil_op_state: StencilOpState) -> vk::StencilOpSta
         compare_mask: stencil_op_state.compare_mask,
         write_mask: stencil_op_state.write_mask,
         reference: stencil_op_state.reference,
+    }
+}
+
+#[must_use]
+fn vulkan_blend_mode(blend_mode: BlendMode) -> vk::PipelineColorBlendAttachmentState {
+    match blend_mode {
+        BlendMode::Opaque => vk::PipelineColorBlendAttachmentState {
+            color_write_mask: vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+            ..default()
+        },
+        BlendMode::Mask => todo!(),
+        BlendMode::Translucent => vk::PipelineColorBlendAttachmentState {
+            blend_enable: vk::Bool32::True,
+            src_color_blend_factor: vk::BlendFactor::SrcAlpha,
+            dst_color_blend_factor: vk::BlendFactor::OneMinusSrcAlpha,
+            color_blend_op: vk::BlendOp::Add,
+            src_alpha_blend_factor: vk::BlendFactor::One,
+            dst_alpha_blend_factor: vk::BlendFactor::Zero,
+            alpha_blend_op: vk::BlendOp::Add,
+            color_write_mask: vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        },
+        BlendMode::Premultiplied => vk::PipelineColorBlendAttachmentState {
+            blend_enable: vk::Bool32::True,
+            src_color_blend_factor: vk::BlendFactor::One,
+            dst_color_blend_factor: vk::BlendFactor::OneMinusSrcAlpha,
+            color_blend_op: vk::BlendOp::Add,
+            src_alpha_blend_factor: vk::BlendFactor::One,
+            dst_alpha_blend_factor: vk::BlendFactor::Zero,
+            alpha_blend_op: vk::BlendOp::Add,
+            color_write_mask: vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        },
+        BlendMode::Additive => todo!(),
+        BlendMode::Modulate => todo!(),
     }
 }
 
@@ -698,7 +740,7 @@ impl VulkanImageHolder {
         match self {
             VulkanImageHolder::Unique(x) => x.image.image,
             VulkanImageHolder::Shared(_) => panic!(),
-            VulkanImageHolder::Swapchain(_) => panic!(),
+            VulkanImageHolder::Swapchain(x) => x.image,
         }
     }
 
@@ -1549,10 +1591,13 @@ impl Device for VulkanDevice {
         if desc.usage.contains(ImageUsageFlags::STORAGE) {
             usage |= vk::ImageUsageFlags::STORAGE;
         }
-        if desc.usage.contains(ImageUsageFlags::DEPTH_STENCIL) {
+        if desc
+            .usage
+            .contains(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+        {
             usage |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
         }
-        if desc.usage.contains(ImageUsageFlags::RENDER_TARGET) {
+        if desc.usage.contains(ImageUsageFlags::COLOR_ATTACHMENT) {
             usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
         }
         if desc.usage.contains(ImageUsageFlags::TRANSFER_DST) {
@@ -1888,13 +1933,7 @@ impl Device for VulkanDevice {
             front,
             ..default()
         };
-        let color_blend_attachments = &[vk::PipelineColorBlendAttachmentState {
-            color_write_mask: vk::ColorComponentFlags::R
-                | vk::ColorComponentFlags::G
-                | vk::ColorComponentFlags::B
-                | vk::ColorComponentFlags::A,
-            ..default()
-        }];
+        let color_blend_attachments = &[vulkan_blend_mode(desc.blend_mode)];
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo {
             attachments: color_blend_attachments.into(),
             ..default()
@@ -2150,7 +2189,7 @@ impl Device for VulkanDevice {
             buffer_offset: copy.buffer_offset,
             buffer_row_length: copy.buffer_row_length,
             buffer_image_height: copy.buffer_image_height,
-            image_subresource: vulkan_subresource_layers(&copy.image_subresource_layers),
+            image_subresource: vulkan_subresource_layers(&copy.image_subresource),
             image_offset: copy.image_offset.into(),
             image_extent: copy.image_extent.into(),
         }));
@@ -2183,6 +2222,62 @@ impl Device for VulkanDevice {
                 dst_image_layout,
                 regions,
             )
+        }
+    }
+
+    fn cmd_blit_image(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        src_image: Image,
+        src_image_layout: ImageLayout,
+        dst_image: Image,
+        dst_image_layout: ImageLayout,
+        regions: &[ImageBlit],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let regions = arena.alloc_slice_fill_iter(regions.iter().map(|blit| vk::ImageBlit {
+            src_subresource: vulkan_subresource_layers(&blit.src_subresource),
+            src_offsets: [blit.src_offset_min.into(), blit.src_offset_max.into()],
+            dst_subresource: vulkan_subresource_layers(&blit.dst_subresource),
+            dst_offsets: [blit.dst_offset_min.into(), blit.dst_offset_max.into()],
+        }));
+
+        let src_image = self
+            .image_pool
+            .lock()
+            .get(src_image.0)
+            .expect("invalid src image handle")
+            .image();
+
+        let src_image_layout = match src_image_layout {
+            ImageLayout::Optimal => vk::ImageLayout::TransferSrcOptimal,
+            ImageLayout::General => vk::ImageLayout::General,
+        };
+
+        let dst_image = self
+            .image_pool
+            .lock()
+            .get(dst_image.0)
+            .expect("invalid dst image handle")
+            .image();
+
+        let dst_image_layout = match dst_image_layout {
+            ImageLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
+            ImageLayout::General => vk::ImageLayout::General,
+        };
+
+        let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
+        unsafe {
+            self.device_fn.cmd_blit_image(
+                command_buffer,
+                src_image,
+                src_image_layout,
+                dst_image,
+                dst_image_layout,
+                regions,
+                vk::Filter::Linear,
+            );
         }
     }
 
@@ -2626,7 +2721,10 @@ impl Device for VulkanDevice {
                     .get_mut(&swapchain)
                     .expect("presenting a swapchain that hasn't been acquired this frame");
 
-                assert!(!present_swapchain.acquire.is_null());
+                assert!(
+                    !present_swapchain.acquire.is_null(),
+                    "acquiring a swapchain image multiple times"
+                );
                 present_swapchain.release = self.request_transient_semaphore(frame);
 
                 wait_semaphores.push(vk::SemaphoreSubmitInfo {
@@ -2734,8 +2832,17 @@ impl Device for VulkanDevice {
         {
             let frame = self.frame_mut(&mut frame);
 
+            self.swapchains.lock();
+
             let present_swapchains = frame.present_swapchains.get_mut();
             if !present_swapchains.is_empty() {
+                for present_info in present_swapchains.values() {
+                    assert!(
+                        !present_info.release.is_null(),
+                        "swapchain image was acquired, but not consumed"
+                    );
+                }
+
                 let windows = arena.alloc_slice_fill_iter(present_swapchains.keys().copied());
                 let wait_semaphores =
                     arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.release));
@@ -2984,7 +3091,9 @@ impl VulkanDevice {
                         image_format: vulkan_swapchain.surface_format.format,
                         image_color_space: vulkan_swapchain.surface_format.color_space,
                         image_extent: vk::Extent2d { width, height },
-                        image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                        image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
+                            | vk::ImageUsageFlags::TRANSFER_SRC
+                            | vk::ImageUsageFlags::TRANSFER_DST,
                         image_array_layers: 1,
                         image_sharing_mode: vk::SharingMode::Exclusive,
                         pre_transform: vk::SurfaceTransformFlagsKHR::IDENTITY,

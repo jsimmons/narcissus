@@ -60,7 +60,7 @@ pub struct BindGroupLayout(Handle);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pipeline(Handle);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryLocation {
     HostMapped,
     Device,
@@ -80,6 +80,15 @@ pub struct Viewport {
 pub struct Scissor {
     pub offset: Offset2d,
     pub extent: Extent2d,
+}
+
+impl Scissor {
+    pub const fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self {
+            offset: Offset2d { x, y },
+            extent: Extent2d { width, height },
+        }
+    }
 }
 
 flags_def!(ShaderStageFlags);
@@ -119,8 +128,8 @@ flags_def!(ImageUsageFlags);
 impl ImageUsageFlags {
     pub const SAMPLED: Self = Self(1 << 0);
     pub const STORAGE: Self = Self(1 << 1);
-    pub const DEPTH_STENCIL: Self = Self(1 << 2);
-    pub const RENDER_TARGET: Self = Self(1 << 3);
+    pub const COLOR_ATTACHMENT: Self = Self(1 << 2);
+    pub const DEPTH_STENCIL_ATTACHMENT: Self = Self(1 << 3);
     pub const TRANSFER_SRC: Self = Self(1 << 4);
     pub const TRANSFER_DST: Self = Self(1 << 5);
 }
@@ -208,9 +217,18 @@ pub struct BufferImageCopy {
     pub buffer_offset: u64,
     pub buffer_row_length: u32,
     pub buffer_image_height: u32,
-    pub image_subresource_layers: ImageSubresourceLayers,
+    pub image_subresource: ImageSubresourceLayers,
     pub image_offset: Offset3d,
     pub image_extent: Extent3d,
+}
+
+pub struct ImageBlit {
+    pub src_subresource: ImageSubresourceLayers,
+    pub src_offset_min: Offset3d,
+    pub src_offset_max: Offset3d,
+    pub dst_subresource: ImageSubresourceLayers,
+    pub dst_offset_min: Offset3d,
+    pub dst_offset_max: Offset3d,
 }
 
 pub struct ShaderDesc<'a> {
@@ -276,6 +294,16 @@ pub enum CullingMode {
 pub enum FrontFace {
     Clockwise,
     CounterClockwise,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum BlendMode {
+    Opaque,
+    Mask,
+    Translucent,
+    Premultiplied,
+    Additive,
+    Modulate,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -348,6 +376,7 @@ pub struct GraphicsPipelineDesc<'a> {
     pub polygon_mode: PolygonMode,
     pub culling_mode: CullingMode,
     pub front_face: FrontFace,
+    pub blend_mode: BlendMode,
     pub depth_bias: Option<DepthBias>,
     pub depth_compare_op: CompareOp,
     pub depth_test_enable: bool,
@@ -719,6 +748,16 @@ pub trait Device {
         dst_image: Image,
         dst_image_layout: ImageLayout,
         copies: &[BufferImageCopy],
+    );
+
+    fn cmd_blit_image(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        src_image: Image,
+        src_image_layout: ImageLayout,
+        dst_image: Image,
+        dst_image_layout: ImageLayout,
+        regions: &[ImageBlit],
     );
 
     fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &RenderingDesc);
