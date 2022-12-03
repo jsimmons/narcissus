@@ -8,7 +8,7 @@ use std::{
 };
 
 use narcissus_core::{
-    cstr, cstr_from_bytes_until_nul, default, manual_arc,
+    cstr, cstr_from_bytes_until_nul, default, is_aligned_to, manual_arc,
     manual_arc::ManualArc,
     raw_window::{AsRawWindow, RawWindow},
     Arena, HybridArena, Mutex, PhantomUnsend, Pool,
@@ -1843,6 +1843,10 @@ impl Device for VulkanDevice {
         };
 
         let shader_module = |code: &[u8]| {
+            assert!(
+                is_aligned_to(code.as_ptr(), 4),
+                "spir-v must be aligned on a 4 byte boundary"
+            );
             let create_info = vk::ShaderModuleCreateInfo {
                 code: code.into(),
                 ..default()

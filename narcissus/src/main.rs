@@ -1,7 +1,7 @@
 use std::{path::Path, time::Instant};
 
 use narcissus_app::{create_app, Event, Key, WindowDesc};
-use narcissus_core::{cstr, default, obj, rand::Pcg64};
+use narcissus_core::{cstr, default, include_bytes_align, obj, rand::Pcg64};
 use narcissus_gpu::{
     create_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
     BlendMode, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp,
@@ -295,11 +295,8 @@ pub fn main() {
 
     let mut thread_token = ThreadToken::new();
 
-    #[repr(align(4))]
-    struct Spirv<const LEN: usize>([u8; LEN]);
-
-    let vert_spv = Spirv(*include_bytes!("shaders/basic.vert.spv"));
-    let frag_spv = Spirv(*include_bytes!("shaders/basic.frag.spv"));
+    let vert_spv = include_bytes_align!(4, "shaders/basic.vert.spv");
+    let frag_spv = include_bytes_align!(4, "shaders/basic.frag.spv");
 
     let uniform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
         entries: &[BindGroupLayoutEntryDesc {
@@ -342,11 +339,11 @@ pub fn main() {
     let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
         vertex_shader: ShaderDesc {
             entry: cstr!("main"),
-            code: &vert_spv.0,
+            code: vert_spv,
         },
         fragment_shader: ShaderDesc {
             entry: cstr!("main"),
-            code: &frag_spv.0,
+            code: frag_spv,
         },
         bind_group_layouts: &[uniform_bind_group_layout, storage_bind_group_layout],
         layout: GraphicsPipelineLayout {
