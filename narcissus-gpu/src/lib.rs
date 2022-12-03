@@ -783,6 +783,14 @@ pub trait Device {
         first_instance: u32,
     );
 
+    fn cmd_dispatch(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        group_count_x: u32,
+        group_count_y: u32,
+        group_count_z: u32,
+    );
+
     fn submit(&self, frame: &Frame, cmd_buffer: CmdBuffer);
 
     fn begin_frame(&self) -> Frame;

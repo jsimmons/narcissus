@@ -2669,6 +2669,20 @@ impl Device for VulkanDevice {
         }
     }
 
+    fn cmd_dispatch(
+        &self,
+        cmd_buffer: &mut CmdBuffer,
+        group_count_x: u32,
+        group_count_y: u32,
+        group_count_z: u32,
+    ) {
+        let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
+        unsafe {
+            self.device_fn
+                .cmd_dispatch(command_buffer, group_count_x, group_count_y, group_count_z)
+        }
+    }
+
     fn submit(&self, frame: &Frame, mut cmd_buffer: CmdBuffer) {
         let fence = self.universal_queue_fence.fetch_add(1, Ordering::SeqCst) + 1;
 
