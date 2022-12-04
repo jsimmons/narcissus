@@ -380,6 +380,24 @@ fn vulkan_subresource_range(subresource: &ImageSubresourceRange) -> vk::ImageSub
     }
 }
 
+fn vulkan_shader_module(
+    device_fn: &vk::DeviceFunctions,
+    device: vk::Device,
+    spirv: &[u8],
+) -> vk::ShaderModule {
+    assert!(
+        is_aligned_to(spirv.as_ptr(), 4),
+        "spir-v must be aligned on a 4 byte boundary"
+    );
+    let create_info = vk::ShaderModuleCreateInfo {
+        code: spirv.into(),
+        ..default()
+    };
+    let mut shader_module = vk::ShaderModule::null();
+    vk_check!(device_fn.create_shader_module(device, &create_info, None, &mut shader_module));
+    shader_module
+}
+
 struct VulkanAccessInfo {
     stages: vk::PipelineStageFlags2,
     access: vk::AccessFlags2,
@@ -1842,27 +1860,10 @@ impl Device for VulkanDevice {
             pipeline_layout
         };
 
-        let shader_module = |code: &[u8]| {
-            assert!(
-                is_aligned_to(code.as_ptr(), 4),
-                "spir-v must be aligned on a 4 byte boundary"
-            );
-            let create_info = vk::ShaderModuleCreateInfo {
-                code: code.into(),
-                ..default()
-            };
-            let mut shader_module = vk::ShaderModule::null();
-            vk_check!(self.device_fn.create_shader_module(
-                self.device,
-                &create_info,
-                None,
-                &mut shader_module
-            ));
-            shader_module
-        };
-
-        let vertex_module = shader_module(desc.vertex_shader.code);
-        let fragment_module = shader_module(desc.fragment_shader.code);
+        let vertex_module =
+            vulkan_shader_module(&self.device_fn, self.device, desc.vertex_shader.code);
+        let fragment_module =
+            vulkan_shader_module(&self.device_fn, self.device, desc.fragment_shader.code);
 
         let stages = &[
             vk::PipelineShaderStageCreateInfo {
@@ -2015,8 +2016,66 @@ impl Device for VulkanDevice {
         Pipeline(handle)
     }
 
-    fn create_compute_pipeline(&self, _desc: &ComputePipelineDesc) -> Pipeline {
-        todo!()
+    fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline {
+        let arena = HybridArena::<1024>::new();
+        let bind_group_layout_pool = self.bind_group_layout_pool.lock();
+        let set_layouts_iter = desc
+            .bind_group_layouts
+            .iter()
+            .map(|bind_group_layout| bind_group_layout_pool.get(bind_group_layout.0).unwrap().0);
+        let set_layouts = arena.alloc_slice_fill_iter(set_layouts_iter);
+
+        let layout = {
+            let create_info = vk::PipelineLayoutCreateInfo {
+                set_layouts: set_layouts.into(),
+                ..default()
+            };
+            let mut pipeline_layout = vk::PipelineLayout::null();
+            vk_check!(self.device_fn.create_pipeline_layout(
+                self.device,
+                &create_info,
+                None,
+                &mut pipeline_layout,
+            ));
+            pipeline_layout
+        };
+
+        let module = vulkan_shader_module(&self.device_fn, self.device, desc.shader.code);
+
+        let stage = vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::COMPUTE,
+            name: desc.shader.entry.as_ptr(),
+            module,
+            ..default()
+        };
+
+        let create_infos = &[vk::ComputePipelineCreateInfo {
+            layout,
+            stage,
+            ..default()
+        }];
+
+        let mut pipelines = [vk::Pipeline::null()];
+        vk_check!(self.device_fn.create_compute_pipelines(
+            self.device,
+            vk::PipelineCache::null(),
+            create_infos,
+            None,
+            &mut pipelines
+        ));
+
+        unsafe {
+            self.device_fn
+                .destroy_shader_module(self.device, module, None)
+        };
+
+        let handle = self.pipeline_pool.lock().insert(VulkanPipeline {
+            pipeline: pipelines[0],
+            pipeline_layout: layout,
+            pipeline_bind_point: vk::PipelineBindPoint::Compute,
+        });
+
+        Pipeline(handle)
     }
 
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer) {

@@ -388,6 +388,7 @@ pub struct GraphicsPipelineDesc<'a> {
 
 pub struct ComputePipelineDesc<'a> {
     pub shader: ShaderDesc<'a>,
+    pub bind_group_layouts: &'a [BindGroupLayout],
 }
 
 #[derive(Clone, Copy, Debug)]
