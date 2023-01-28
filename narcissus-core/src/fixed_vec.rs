@@ -109,8 +109,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
         #[inline(never)]
         fn assert_failed(index: usize, len: usize) -> ! {
             panic!(
-                "swap_remove index (is {}) should be < len (is {})",
-                index, len
+                "swap_remove index (is {index}) should be < len (is {len})"
             );
         }
 
@@ -135,8 +134,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
         #[inline(never)]
         fn assert_failed(index: usize, len: usize) -> ! {
             panic!(
-                "insertion index (is {}) should be <= len (is {})",
-                index, len
+                "insertion index (is {index}) should be <= len (is {len})"
             );
         }
 
@@ -147,7 +145,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
 
         // space for the new element
         if len == CAP {
-            panic!("buffer is full (capacity is {})", CAP);
+            panic!("buffer is full (capacity is {CAP})");
         }
 
         unsafe {
@@ -172,7 +170,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
         #[inline(never)]
         #[track_caller]
         fn assert_failed(index: usize, len: usize) -> ! {
-            panic!("removal index (is {}) should be < len (is {})", index, len);
+            panic!("removal index (is {index}) should be < len (is {len})");
         }
 
         let len = self.len();
@@ -439,7 +437,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
     #[inline]
     pub fn push(&mut self, value: T) {
         if self.len == CAP {
-            panic!("capacity overflow (is {})", CAP);
+            panic!("capacity overflow (is {CAP})");
         }
         unsafe {
             let end = self.as_mut_ptr().add(self.len);

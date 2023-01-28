@@ -182,7 +182,7 @@ fn round_ties_to_even(x: f32) -> f32 {
         use std::arch::x86_64::{
             _mm_load_ss, _mm_round_ss, _MM_FROUND_NO_EXC, _MM_FROUND_TO_NEAREST_INT,
         };
-        const ROUNDING: i32 = (_MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC) as i32;
+        const ROUNDING: i32 = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC;
         let x = _mm_load_ss(&x);
         let x = _mm_round_ss::<ROUNDING>(x, x);
         std::arch::x86_64::_mm_cvtss_f32(x)

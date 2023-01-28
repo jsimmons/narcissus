@@ -10,7 +10,7 @@ impl std::fmt::Debug for Mat2 {
         if f.alternate() {
             writeln!(f, "Mat2 [")?;
             for row in self.as_rows() {
-                writeln!(f, "\t{:?}", row)?;
+                writeln!(f, "\t{row:?}")?;
             }
             writeln!(f, "]")
         } else {

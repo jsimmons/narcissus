@@ -422,7 +422,7 @@ fn ref_tan_pi_f32(x: &mut Float, pi: &Float) -> i32 {
 #[ignore]
 pub fn exhaustive_sin_pi() {
     let errors = check_exhaustive_f32(ref_sin_pi_f32, |a| sin_cos_pi_f32(a).0, false);
-    println!("SIN: {:?}", errors);
+    println!("SIN: {errors:?}");
     assert_eq!(errors.max_error_ulp, 1);
     assert_eq!(errors.num_errors, 55_943_962);
 }
@@ -431,7 +431,7 @@ pub fn exhaustive_sin_pi() {
 #[ignore]
 pub fn exhaustive_cos_pi() {
     let errors = check_exhaustive_f32(ref_cos_pi_f32, |a| sin_cos_pi_f32(a).1, false);
-    println!("COS: {:?}", errors);
+    println!("COS: {errors:?}");
     assert_eq!(errors.num_errors, 45_896_848);
     assert_eq!(errors.max_error_ulp, 1);
 }
@@ -440,7 +440,7 @@ pub fn exhaustive_cos_pi() {
 #[ignore]
 pub fn exhaustive_tan_pi() {
     let errors = check_exhaustive_f32(ref_tan_pi_f32, tan_pi_f32, true);
-    println!("TAN: {:?}", errors);
+    println!("TAN: {errors:?}");
     assert_eq!(errors.num_errors, 100_555_422);
     assert_eq!(errors.max_error_ulp, 2);
 }
