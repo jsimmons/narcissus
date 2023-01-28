@@ -150,7 +150,7 @@ where
 
 fn create_image_with_data(
     device: &dyn Device,
-    thread_token: &mut ThreadToken,
+    thread_token: &ThreadToken,
     width: u32,
     height: u32,
     data: &[u8],
@@ -293,7 +293,7 @@ pub fn main() {
     });
     let device = create_device(narcissus_gpu::DeviceBackend::Vulkan);
 
-    let mut thread_token = ThreadToken::new();
+    let thread_token = ThreadToken::new();
 
     let vert_spv = include_bytes_align!(4, "shaders/basic.vert.spv");
     let frag_spv = include_bytes_align!(4, "shaders/basic.frag.spv");
@@ -382,7 +382,7 @@ pub fn main() {
 
     let blåhaj_image = create_image_with_data(
         device.as_ref(),
-        &mut thread_token,
+        &thread_token,
         blåhaj_image.width() as u32,
         blåhaj_image.height() as u32,
         blåhaj_image.as_slice(),
@@ -512,13 +512,12 @@ pub fn main() {
             depth_height = height;
         }
 
-        let mut cmd_buffer = device.create_cmd_buffer(&frame, &mut thread_token);
+        let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
 
         device.cmd_set_pipeline(&mut cmd_buffer, pipeline);
 
         device.cmd_set_bind_group(
             &frame,
-            &mut thread_token,
             &mut cmd_buffer,
             uniform_bind_group_layout,
             0,
@@ -531,7 +530,6 @@ pub fn main() {
 
         device.cmd_set_bind_group(
             &frame,
-            &mut thread_token,
             &mut cmd_buffer,
             storage_bind_group_layout,
             1,

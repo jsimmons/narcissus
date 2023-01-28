@@ -1,5 +1,5 @@
 use std::{
-    cell::UnsafeCell,
+    cell::{Cell, RefCell, UnsafeCell},
     collections::{hash_map::Entry, HashMap, VecDeque},
     marker::PhantomData,
     os::raw::{c_char, c_void},
@@ -842,8 +842,8 @@ struct VulkanCmdBufferPool {
 }
 
 struct VulkanPerThread {
-    cmd_buffer_pool: VulkanCmdBufferPool,
-    descriptor_pool: vk::DescriptorPool,
+    cmd_buffer_pool: RefCell<VulkanCmdBufferPool>,
+    descriptor_pool: Cell<vk::DescriptorPool>,
     arena: Arena,
 }
 
@@ -1213,8 +1213,8 @@ impl VulkanDevice {
                     next_free_index: 0,
                 };
                 VulkanPerThread {
-                    cmd_buffer_pool,
-                    descriptor_pool: vk::DescriptorPool::null(),
+                    cmd_buffer_pool: RefCell::new(cmd_buffer_pool),
+                    descriptor_pool: Cell::new(vk::DescriptorPool::null()),
                     arena: Arena::new(),
                 }
             });
@@ -2152,10 +2152,14 @@ impl Device for VulkanDevice {
         }
     }
 
-    fn create_cmd_buffer(&self, frame: &Frame, thread_token: &mut ThreadToken) -> CmdBuffer {
+    fn create_cmd_buffer<'a, 'thread>(
+        &self,
+        frame: &'a Frame,
+        thread_token: &'thread ThreadToken,
+    ) -> CmdBuffer<'a, 'thread> {
         let frame = self.frame(frame);
-        let per_thread = frame.per_thread.get_mut(thread_token);
-        let cmd_buffer_pool = &mut per_thread.cmd_buffer_pool;
+        let per_thread = frame.per_thread.get(thread_token);
+        let mut cmd_buffer_pool = per_thread.cmd_buffer_pool.borrow_mut();
 
         // We have consumed all available command buffers, need to allocate a new one.
         if cmd_buffer_pool.next_free_index >= cmd_buffer_pool.command_buffers.len() {
@@ -2195,6 +2199,8 @@ impl Device for VulkanDevice {
         CmdBuffer {
             cmd_buffer_addr: vulkan_cmd_buffer as *mut _ as usize,
             _phantom: &PhantomData,
+
+            thread_token,
             phantom_unsend: PhantomUnsend {},
         }
     }
@@ -2347,7 +2353,6 @@ impl Device for VulkanDevice {
     fn cmd_set_bind_group(
         &self,
         frame: &Frame,
-        thread_token: &mut ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         layout: BindGroupLayout,
         bind_group_index: u32,
@@ -2358,16 +2363,16 @@ impl Device for VulkanDevice {
         let descriptor_set_layout = self.bind_group_layout_pool.lock().get(layout.0).unwrap().0;
 
         let frame = self.frame(frame);
-        let per_thread = frame.per_thread.get_mut(thread_token);
+        let per_thread = frame.per_thread.get(cmd_buffer.thread_token);
 
-        let mut descriptor_pool = per_thread.descriptor_pool;
+        let mut descriptor_pool = per_thread.descriptor_pool.get();
         let mut allocated_pool = false;
         let descriptor_set = loop {
             if descriptor_pool.is_null() {
                 // Need to fetch a new descriptor pool
                 descriptor_pool = self.request_descriptor_pool();
+                per_thread.descriptor_pool.set(descriptor_pool);
                 frame.recycle_descriptor_pool(descriptor_pool);
-                per_thread.descriptor_pool = descriptor_pool;
                 allocated_pool = true;
             }
             let allocate_info = vk::DescriptorSetAllocateInfo {
@@ -2862,15 +2867,15 @@ impl Device for VulkanDevice {
             }
 
             for per_thread in frame.per_thread.slots_mut() {
-                per_thread.descriptor_pool = vk::DescriptorPool::null();
-                if per_thread.cmd_buffer_pool.next_free_index != 0 {
+                per_thread.descriptor_pool.set(vk::DescriptorPool::null());
+                let cmd_buffer_pool = per_thread.cmd_buffer_pool.get_mut();
+                if cmd_buffer_pool.next_free_index != 0 {
                     vk_check!(device_fn.reset_command_pool(
                         device,
-                        per_thread.cmd_buffer_pool.command_pool,
+                        cmd_buffer_pool.command_pool,
                         vk::CommandPoolResetFlags::default()
                     ));
-
-                    per_thread.cmd_buffer_pool.next_free_index = 0;
+                    cmd_buffer_pool.next_free_index = 0;
                 }
                 per_thread.arena.reset()
             }
@@ -3390,25 +3395,21 @@ impl Drop for VulkanDevice {
             let mut arena = HybridArena::<512>::new();
 
             for per_thread in frame.per_thread.slots_mut() {
-                if !per_thread.cmd_buffer_pool.command_buffers.is_empty() {
+                let cmd_buffer_pool = per_thread.cmd_buffer_pool.get_mut();
+                if !cmd_buffer_pool.command_buffers.is_empty() {
                     arena.reset();
-                    let command_buffers = arena.alloc_slice_fill_iter(
-                        per_thread.cmd_buffer_pool.command_buffers.iter().copied(),
-                    );
+                    let command_buffers = arena
+                        .alloc_slice_fill_iter(cmd_buffer_pool.command_buffers.iter().copied());
                     unsafe {
                         device_fn.free_command_buffers(
                             device,
-                            per_thread.cmd_buffer_pool.command_pool,
+                            cmd_buffer_pool.command_pool,
                             command_buffers,
                         )
                     };
                 }
                 unsafe {
-                    device_fn.destroy_command_pool(
-                        device,
-                        per_thread.cmd_buffer_pool.command_pool,
-                        None,
-                    )
+                    device_fn.destroy_command_pool(device, cmd_buffer_pool.command_pool, None)
                 }
             }
         }

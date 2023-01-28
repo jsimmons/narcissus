@@ -645,8 +645,9 @@ impl<'a> Frame<'a> {
     }
 }
 
-pub struct CmdBuffer<'a> {
+pub struct CmdBuffer<'a, 'thread> {
     cmd_buffer_addr: usize,
+    thread_token: &'thread ThreadToken,
     _phantom: &'a PhantomData<()>,
     phantom_unsend: PhantomUnsend,
 }
@@ -708,13 +709,12 @@ pub trait Device {
     fn create_cmd_buffer<'a, 'thread>(
         &'a self,
         frame: &'a Frame,
-        thread_token: &'thread mut ThreadToken,
-    ) -> CmdBuffer<'a>;
+        thread_token: &'thread ThreadToken,
+    ) -> CmdBuffer<'a, 'thread>;
 
     fn cmd_set_bind_group(
         &self,
         frame: &Frame,
-        thread_token: &mut ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         layout: BindGroupLayout,
         bind_group_index: u32,
