@@ -6,11 +6,11 @@ use narcissus_gpu::{
     create_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
     BlendMode, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp,
     CullingMode, Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc,
-    GraphicsPipelineLayout, Image, ImageBarrier, ImageDesc, ImageDimension, ImageFormat,
-    ImageLayout, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
-    PolygonMode, RenderingAttachment, RenderingDesc, SamplerAddressMode, SamplerDesc,
-    SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp, ThreadToken, Topology,
-    TypedBind, Viewport,
+    GraphicsPipelineLayout, Image, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension,
+    ImageFormat, ImageLayout, ImageSubresourceRange, ImageUsageFlags, IndexType, LoadOp,
+    MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
+    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
+    ThreadToken, Topology, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -497,7 +497,7 @@ pub fn main() {
         if width != depth_width || height != depth_height {
             device.destroy_image(&frame, depth_image);
             depth_image = device.create_image(&ImageDesc {
-                location: MemoryLocation::HostMapped,
+                location: MemoryLocation::Device,
                 usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 dimension: ImageDimension::Type2d,
                 format: ImageFormat::DEPTH_F32,
@@ -508,6 +508,30 @@ pub fn main() {
                 layer_count: 1,
                 mip_levels: 1,
             });
+
+            let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
+
+            device.cmd_barrier(
+                &mut cmd_buffer,
+                None,
+                &[ImageBarrier {
+                    prev_access: &[Access::None],
+                    next_access: &[Access::DepthStencilAttachmentWrite],
+                    prev_layout: ImageLayout::Optimal,
+                    next_layout: ImageLayout::Optimal,
+                    image: depth_image,
+                    subresource_range: ImageSubresourceRange {
+                        aspect: ImageAspectFlags::DEPTH,
+                        base_mip_level: 0,
+                        mip_level_count: 1,
+                        base_array_layer: 0,
+                        array_layer_count: 1,
+                    },
+                }],
+            );
+
+            device.submit(&frame, cmd_buffer);
+
             depth_width = width;
             depth_height = height;
         }
