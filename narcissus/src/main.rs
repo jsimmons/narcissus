@@ -7,10 +7,10 @@ use narcissus_gpu::{
     BlendMode, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp,
     CullingMode, Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc,
     GraphicsPipelineLayout, Image, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension,
-    ImageFormat, ImageLayout, ImageSubresourceRange, ImageUsageFlags, IndexType, LoadOp,
-    MemoryLocation, Offset2d, Offset3d, PolygonMode, RenderingAttachment, RenderingDesc,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp,
-    ThreadToken, Topology, TypedBind, Viewport,
+    ImageFormat, ImageLayout, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d,
+    Offset3d, PolygonMode, RenderingAttachment, RenderingDesc, SamplerAddressMode, SamplerDesc,
+    SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp, ThreadToken, Topology,
+    TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -177,10 +177,11 @@ fn create_image_with_data(
     device.cmd_barrier(
         &mut cmd_buffer,
         None,
-        &[ImageBarrier::with_access_optimal(
+        &[ImageBarrier::layout_optimal(
             &[Access::None],
             &[Access::TransferWrite],
             image,
+            ImageAspectFlags::COLOR,
         )],
     );
 
@@ -206,10 +207,11 @@ fn create_image_with_data(
     device.cmd_barrier(
         &mut cmd_buffer,
         None,
-        &[ImageBarrier::with_access_optimal(
+        &[ImageBarrier::layout_optimal(
             &[Access::TransferWrite],
             &[Access::FragmentShaderSampledImageRead],
             image,
+            ImageAspectFlags::COLOR,
         )],
     );
 
@@ -470,6 +472,38 @@ pub fn main() {
             }
         };
 
+        let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
+
+        if width != depth_width || height != depth_height {
+            device.destroy_image(&frame, depth_image);
+            depth_image = device.create_image(&ImageDesc {
+                location: MemoryLocation::Device,
+                usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                dimension: ImageDimension::Type2d,
+                format: ImageFormat::DEPTH_F32,
+                initial_layout: ImageLayout::Optimal,
+                width,
+                height,
+                depth: 1,
+                layer_count: 1,
+                mip_levels: 1,
+            });
+
+            device.cmd_barrier(
+                &mut cmd_buffer,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::None],
+                    &[Access::DepthStencilAttachmentWrite],
+                    depth_image,
+                    ImageAspectFlags::DEPTH,
+                )],
+            );
+
+            depth_width = width;
+            depth_height = height;
+        }
+
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.125;
 
@@ -493,50 +527,6 @@ pub fn main() {
         let clip_from_model = clip_from_camera * camera_from_model;
 
         uniforms.write(Uniforms { clip_from_model });
-
-        if width != depth_width || height != depth_height {
-            device.destroy_image(&frame, depth_image);
-            depth_image = device.create_image(&ImageDesc {
-                location: MemoryLocation::Device,
-                usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-                dimension: ImageDimension::Type2d,
-                format: ImageFormat::DEPTH_F32,
-                initial_layout: ImageLayout::Optimal,
-                width,
-                height,
-                depth: 1,
-                layer_count: 1,
-                mip_levels: 1,
-            });
-
-            let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
-
-            device.cmd_barrier(
-                &mut cmd_buffer,
-                None,
-                &[ImageBarrier {
-                    prev_access: &[Access::None],
-                    next_access: &[Access::DepthStencilAttachmentWrite],
-                    prev_layout: ImageLayout::Optimal,
-                    next_layout: ImageLayout::Optimal,
-                    image: depth_image,
-                    subresource_range: ImageSubresourceRange {
-                        aspect: ImageAspectFlags::DEPTH,
-                        base_mip_level: 0,
-                        mip_level_count: 1,
-                        base_array_layer: 0,
-                        array_layer_count: 1,
-                    },
-                }],
-            );
-
-            device.submit(&frame, cmd_buffer);
-
-            depth_width = width;
-            depth_height = height;
-        }
-
-        let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
 
         device.cmd_set_pipeline(&mut cmd_buffer, pipeline);
 

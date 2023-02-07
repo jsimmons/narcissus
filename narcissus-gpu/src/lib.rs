@@ -606,10 +606,11 @@ pub struct ImageBarrier<'a> {
 }
 
 impl<'a> ImageBarrier<'a> {
-    pub fn with_access_optimal(
+    pub fn layout_optimal(
         prev_access: &'a [Access],
         next_access: &'a [Access],
         image: Image,
+        aspect: ImageAspectFlags,
     ) -> ImageBarrier<'a> {
         Self {
             prev_access,
@@ -617,7 +618,10 @@ impl<'a> ImageBarrier<'a> {
             prev_layout: ImageLayout::Optimal,
             next_layout: ImageLayout::Optimal,
             image,
-            subresource_range: default(),
+            subresource_range: ImageSubresourceRange {
+                aspect,
+                ..default()
+            },
         }
     }
 }
