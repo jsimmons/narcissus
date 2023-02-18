@@ -108,9 +108,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
         #[cold]
         #[inline(never)]
         fn assert_failed(index: usize, len: usize) -> ! {
-            panic!(
-                "swap_remove index (is {index}) should be < len (is {len})"
-            );
+            panic!("swap_remove index (is {index}) should be < len (is {len})");
         }
 
         let len = self.len();
@@ -133,9 +131,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
         #[cold]
         #[inline(never)]
         fn assert_failed(index: usize, len: usize) -> ! {
-            panic!(
-                "insertion index (is {index}) should be <= len (is {len})"
-            );
+            panic!("insertion index (is {index}) should be <= len (is {len})");
         }
 
         let len = self.len();
@@ -492,6 +488,19 @@ impl<T: Clone, const CAP: usize> FixedVec<T, CAP> {
         } else {
             self.truncate(new_len);
         }
+    }
+}
+
+impl<T, const CAP: usize> Clone for FixedVec<T, CAP>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        let mut v = Self::new();
+        for i in self {
+            v.push(i.clone())
+        }
+        v
     }
 }
 
