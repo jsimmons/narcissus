@@ -62,7 +62,7 @@ fn constant_time_ne(a: &[u8], b: &[u8]) -> u8 {
 /// # Examples
 ///
 /// ```
-/// use constant_time_eq::constant_time_eq;
+/// use narcissus_core::blake3::constant_time_eq::constant_time_eq;
 ///
 /// assert!(constant_time_eq(b"foo", b"foo"));
 /// assert!(!constant_time_eq(b"foo", b"bar"));
@@ -95,7 +95,7 @@ fn constant_time_ne_n<const N: usize>(a: &[u8; N], b: &[u8; N]) -> u8 {
 /// # Examples
 ///
 /// ```
-/// use constant_time_eq::constant_time_eq_n;
+/// use narcissus_core::blake3::constant_time_eq::constant_time_eq_n;
 ///
 /// assert!(constant_time_eq_n(&[3; 20], &[3; 20]));
 /// assert!(!constant_time_eq_n(&[3; 20], &[7; 20]));
@@ -112,7 +112,7 @@ pub fn constant_time_eq_n<const N: usize>(a: &[u8; N], b: &[u8; N]) -> bool {
 /// # Examples
 ///
 /// ```
-/// use constant_time_eq::constant_time_eq_16;
+/// use narcissus_core::blake3::constant_time_eq::constant_time_eq_16;
 ///
 /// assert!(constant_time_eq_16(&[3; 16], &[3; 16]));
 /// assert!(!constant_time_eq_16(&[3; 16], &[7; 16]));
@@ -127,7 +127,7 @@ pub fn constant_time_eq_16(a: &[u8; 16], b: &[u8; 16]) -> bool {
 /// # Examples
 ///
 /// ```
-/// use constant_time_eq::constant_time_eq_32;
+/// use narcissus_core::blake3::constant_time_eq::constant_time_eq_32;
 ///
 /// assert!(constant_time_eq_32(&[3; 32], &[3; 32]));
 /// assert!(!constant_time_eq_32(&[3; 32], &[7; 32]));
@@ -142,7 +142,7 @@ pub fn constant_time_eq_32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// # Examples
 ///
 /// ```
-/// use constant_time_eq::constant_time_eq_64;
+/// use narcissus_core::blake3::constant_time_eq::constant_time_eq_64;
 ///
 /// assert!(constant_time_eq_64(&[3; 64], &[3; 64]));
 /// assert!(!constant_time_eq_64(&[3; 64], &[7; 64]));

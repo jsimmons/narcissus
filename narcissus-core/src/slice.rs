@@ -466,32 +466,6 @@ pub fn as_chunks_mut<T, const N: usize>(slice: &mut [T]) -> (&mut [[T; N]], &mut
 /// # Panics
 ///
 /// Panics if `N > len`.
-///
-/// # Examples
-///
-/// ```
-/// #![feature(split_array)]
-///
-/// let v = &[1, 2, 3, 4, 5, 6][..];
-///
-/// {
-///    let (left, right) = v.split_array_ref::<0>();
-///    assert_eq!(left, &[]);
-///    assert_eq!(right, [1, 2, 3, 4, 5, 6]);
-/// }
-///
-/// {
-///     let (left, right) = v.split_array_ref::<2>();
-///     assert_eq!(left, &[1, 2]);
-///     assert_eq!(right, [3, 4, 5, 6]);
-/// }
-///
-/// {
-///     let (left, right) = v.split_array_ref::<6>();
-///     assert_eq!(left, &[1, 2, 3, 4, 5, 6]);
-///     assert_eq!(right, []);
-/// }
-/// ```
 #[inline]
 #[track_caller]
 #[must_use]
@@ -510,20 +484,6 @@ pub fn split_array_ref<T, const N: usize>(slice: &[T]) -> (&[T; N], &[T]) {
 /// # Panics
 ///
 /// Panics if `N > len`.
-///
-/// # Examples
-///
-/// ```
-/// #![feature(split_array)]
-///
-/// let mut v = &mut [1, 0, 3, 0, 5, 6][..];
-/// let (left, right) = v.split_array_mut::<2>();
-/// assert_eq!(left, &mut [1, 0]);
-/// assert_eq!(right, [3, 0, 5, 6]);
-/// left[1] = 2;
-/// right[1] = 4;
-/// assert_eq!(v, [1, 2, 3, 4, 5, 6]);
-/// ```
 #[inline]
 #[track_caller]
 #[must_use]
@@ -543,32 +503,6 @@ pub fn split_array_mut<T, const N: usize>(slice: &mut [T]) -> (&mut [T; N], &mut
 /// # Panics
 ///
 /// Panics if `N > len`.
-///
-/// # Examples
-///
-/// ```
-/// #![feature(split_array)]
-///
-/// let v = &[1, 2, 3, 4, 5, 6][..];
-///
-/// {
-///    let (left, right) = v.rsplit_array_ref::<0>();
-///    assert_eq!(left, [1, 2, 3, 4, 5, 6]);
-///    assert_eq!(right, &[]);
-/// }
-///
-/// {
-///     let (left, right) = v.rsplit_array_ref::<2>();
-///     assert_eq!(left, [1, 2, 3, 4]);
-///     assert_eq!(right, &[5, 6]);
-/// }
-///
-/// {
-///     let (left, right) = v.rsplit_array_ref::<6>();
-///     assert_eq!(left, []);
-///     assert_eq!(right, &[1, 2, 3, 4, 5, 6]);
-/// }
-/// ```
 #[inline]
 #[must_use]
 pub fn rsplit_array_ref<T, const N: usize>(slice: &[T]) -> (&[T], &[T; N]) {
@@ -588,20 +522,6 @@ pub fn rsplit_array_ref<T, const N: usize>(slice: &[T]) -> (&[T], &[T; N]) {
 /// # Panics
 ///
 /// Panics if `N > len`.
-///
-/// # Examples
-///
-/// ```
-/// #![feature(split_array)]
-///
-/// let mut v = &mut [1, 0, 3, 0, 5, 6][..];
-/// let (left, right) = v.rsplit_array_mut::<4>();
-/// assert_eq!(left, [1, 0]);
-/// assert_eq!(right, &mut [3, 0, 5, 6]);
-/// left[1] = 2;
-/// right[1] = 4;
-/// assert_eq!(v, [1, 2, 3, 4, 5, 6]);
-/// ```
 #[inline]
 #[must_use]
 pub fn rsplit_array_mut<T, const N: usize>(slice: &mut [T]) -> (&mut [T], &mut [T; N]) {

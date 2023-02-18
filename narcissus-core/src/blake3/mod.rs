@@ -6,18 +6,15 @@
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Hash an input all at once.
-//! let hash1 = blake3::hash(b"foobarbaz");
+//! let hash1 = narcissus_core::blake3::hash(b"foobarbaz");
 //!
 //! // Hash an input incrementally.
-//! let mut hasher = blake3::Hasher::new();
+//! let mut hasher = narcissus_core::blake3::Hasher::new();
 //! hasher.update(b"foo");
 //! hasher.update(b"bar");
 //! hasher.update(b"baz");
 //! let hash2 = hasher.finalize();
 //! assert_eq!(hash1, hash2);
-//!
-//! // Print a hash as hex.
-//! println!("{}", hash1);
 //! # Ok(())
 //! # }
 //! ```
@@ -753,11 +750,11 @@ fn parent_node_output(
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Hash an input incrementally.
-/// let mut hasher = blake3::Hasher::new();
+/// let mut hasher = narcissus_core::blake3::Hasher::new();
 /// hasher.update(b"foo");
 /// hasher.update(b"bar");
 /// hasher.update(b"baz");
-/// assert_eq!(hasher.finalize(), blake3::hash(b"foobarbaz"));
+/// assert_eq!(hasher.finalize(), narcissus_core::blake3::hash(b"foobarbaz"));
 ///
 /// # Ok(())
 /// # }
