@@ -1,6 +1,5 @@
 mod arena;
 mod bitset;
-pub mod blake3;
 mod fixed_vec;
 mod libc;
 pub mod manual_arc;
