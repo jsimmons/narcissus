@@ -1,0 +1,13 @@
+[package]
+name = "narcissus"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+narcissus-core = { path = "../../libs/narcissus-core" }
+narcissus-maths = { path = "../../libs/narcissus-maths" }
+narcissus-image = { path = "../../libs/narcissus-image" }
+narcissus-app = { path = "../../libs/narcissus-app" }
+narcissus-gpu = { path = "../../libs/narcissus-gpu" }

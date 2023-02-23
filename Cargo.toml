@@ -1,18 +1,18 @@
 [workspace]
 
 members = [
-    "ffi/renderdoc-sys",
-    "ffi/sdl2-sys",
-    "ffi/stb_image-sys",
-    "ffi/stb_truetype-sys",
-    "ffi/vulkan-sys",
-    "narcissus",
-    "narcissus-app",
-    "narcissus-core",
-    "narcissus-gpu",
-    "narcissus-image",
-    "narcissus-maths",
-    "narcissus-world",
+    "bins/narcissus",
+    "libs/ffi/renderdoc-sys",
+    "libs/ffi/sdl2-sys",
+    "libs/ffi/stb_image-sys",
+    "libs/ffi/stb_truetype-sys",
+    "libs/ffi/vulkan-sys",
+    "libs/narcissus-app",
+    "libs/narcissus-core",
+    "libs/narcissus-gpu",
+    "libs/narcissus-image",
+    "libs/narcissus-maths",
+    "libs/narcissus-world",
 ]
 
 [profile.release]

@@ -367,8 +367,8 @@ pub fn main() {
         stencil_front: default(),
     });
 
-    let blåhaj_image = load_image("narcissus/data/blåhaj.png");
-    let (blåhaj_vertices, blåhaj_indices) = load_obj("narcissus/data/blåhaj.obj");
+    let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
+    let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
 
     let blåhaj_vertex_buffer = create_buffer_with_data(
         device.as_ref(),
