@@ -3,12 +3,18 @@ use std::{path::Path, process::Command};
 fn main() {
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let opt_level = std::env::var("OPT_LEVEL").unwrap();
+    let debug = match std::env::var("DEBUG").unwrap().as_str() {
+        "true" | "2" => "",
+        "1" => "line-tables-only",
+        _ => "0",
+    };
 
     Command::new("clang")
         .args([
             "src/stb_image.c",
             "-c",
             &format!("-O{opt_level}"),
+            &format!("-g{debug}"),
             "-fPIC",
             "-o",
         ])
