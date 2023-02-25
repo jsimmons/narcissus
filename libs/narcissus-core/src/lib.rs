@@ -300,36 +300,6 @@ pub fn page_size() -> usize {
     4096
 }
 
-/// Returns the base 2 logarithm of the number, rounded down.
-///
-/// # Panics
-///
-/// Panics in debug mode when given a value of zero.
-pub fn log2_u32(value: u32) -> u32 {
-    debug_assert_ne!(value, 0);
-    u32::BITS - 1 - value.leading_zeros()
-}
-
-/// Returns the base 2 logarithm of the number, rounded down.
-///
-/// # Panics
-///
-/// Panics in debug mode when given a value of zero.
-pub fn log2_u64(value: u64) -> u32 {
-    debug_assert_ne!(value, 0);
-    u64::BITS - 1 - value.leading_zeros()
-}
-
-/// Returns the base 2 logarithm of the number, rounded down.
-///
-/// # Panics
-///
-/// Panics in debug mode when given a value of zero.
-pub fn log2_usize(value: usize) -> u32 {
-    debug_assert_ne!(value, 0);
-    usize::BITS - 1 - value.leading_zeros()
-}
-
 /// Returns the multiplicative inverse of the number.
 ///
 /// The multiplicative inverse of a number is a number such that `x * mod_inverse(x) = 1` for any
@@ -512,10 +482,6 @@ pub fn cstr_from_bytes_until_nul(bytes: &[u8]) -> Result<&CStr, FromBytesUntilNu
 mod tests {
     use std::ffi::CStr;
 
-    use super::log2_u32;
-    use super::log2_u64;
-    use super::log2_usize;
-
     use super::cstr;
     use super::mod_inverse_u32;
     use super::mod_inverse_u64;
@@ -526,27 +492,6 @@ mod tests {
             cstr!("hello"),
             CStr::from_bytes_with_nul(b"hello\0").unwrap()
         );
-    }
-
-    #[test]
-    fn test_log2() {
-        let mut x = 0;
-        for i in 0..u32::BITS {
-            x = (x << 1) | 1;
-            assert_eq!(log2_u32(x), i);
-        }
-
-        let mut x = 0;
-        for i in 0..u64::BITS {
-            x = (x << 1) | 1;
-            assert_eq!(log2_u64(x), i);
-        }
-
-        let mut x = 0;
-        for i in 0..usize::BITS {
-            x = (x << 1) | 1;
-            assert_eq!(log2_usize(x), i);
-        }
     }
 
     // Test is exhaustive and quite slow in debug mode. So ignore by default.
