@@ -110,6 +110,8 @@ pub enum ImageDimension {
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum ImageFormat {
+    R8_SRGB,
+    R8_UNORM,
     BGRA8_SRGB,
     BGRA8_UNORM,
     RGBA8_SRGB,

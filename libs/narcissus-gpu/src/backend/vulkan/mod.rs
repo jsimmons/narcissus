@@ -121,6 +121,8 @@ fn vulkan_bool32(b: bool) -> vk::Bool32 {
 #[must_use]
 fn vulkan_format(format: ImageFormat) -> vk::Format {
     match format {
+        ImageFormat::R8_SRGB => vk::Format::R8_SRGB,
+        ImageFormat::R8_UNORM => vk::Format::R8_UNORM,
         ImageFormat::RGBA8_SRGB => vk::Format::R8G8B8A8_SRGB,
         ImageFormat::RGBA8_UNORM => vk::Format::R8G8B8A8_UNORM,
         ImageFormat::BGRA8_SRGB => vk::Format::B8G8R8A8_SRGB,
@@ -131,7 +133,9 @@ fn vulkan_format(format: ImageFormat) -> vk::Format {
 
 fn vulkan_aspect_for_format(format: ImageFormat) -> vk::ImageAspectFlags {
     match format {
-        ImageFormat::BGRA8_SRGB
+        ImageFormat::R8_SRGB
+        | ImageFormat::R8_UNORM
+        | ImageFormat::BGRA8_SRGB
         | ImageFormat::BGRA8_UNORM
         | ImageFormat::RGBA8_SRGB
         | ImageFormat::RGBA8_UNORM => vk::ImageAspectFlags::COLOR,
