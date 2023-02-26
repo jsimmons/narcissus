@@ -1,0 +1,11 @@
+[package]
+name = "narcissus-font"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+stb_truetype-sys = { path = "../ffi/stb_truetype-sys" }
+narcissus-core = { path = "../narcissus-core" }
+rustc-hash = "1.1.0"

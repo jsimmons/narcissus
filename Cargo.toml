@@ -9,6 +9,7 @@ members = [
     "libs/ffi/vulkan-sys",
     "libs/narcissus-app",
     "libs/narcissus-core",
+    "libs/narcissus-font",
     "libs/narcissus-gpu",
     "libs/narcissus-image",
     "libs/narcissus-maths",
