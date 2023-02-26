@@ -2,7 +2,7 @@ use std::{path::Path, time::Instant};
 
 use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{default, obj, rand::Pcg64};
-use narcissus_font::{CachedGlyph, CachedGlyphIndex, FontCollection, GlyphCache, Oversample};
+use narcissus_font::{CachedGlyph, CachedGlyphIndex, FontCollection, GlyphCache};
 use narcissus_gpu::{
     create_device, Access, Bind, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue,
     Device, Extent2d, Extent3d, Image, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension,
@@ -27,7 +27,7 @@ const MAX_SHARKS: usize = 262_144;
 const NUM_SHARKS: usize = 50;
 
 const MAX_GLYPH_INSTANCES: usize = 262_144;
-const MAX_GLYPHS: usize = 1024;
+const MAX_GLYPHS: usize = 8192;
 
 /// Marker trait indicates it's safe to convert a given type directly to an array of bytes.
 ///
@@ -335,7 +335,7 @@ pub fn main() {
     let text_pipeline = TextPipeline::new(device.as_ref());
 
     let fonts = Fonts::new();
-    let mut glyph_cache = GlyphCache::new(&fonts, 512, 512, 1, Oversample::X2, Oversample::X2);
+    let mut glyph_cache = GlyphCache::new(&fonts, 1024, 512, 1);
 
     let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
@@ -526,63 +526,60 @@ pub fn main() {
         basic_uniforms.write(BasicUniforms { clip_from_model });
 
         // Do some Font Shit.'
-        let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½ Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½";
-        let line1 = "加盟国は、国際連合と協力して";
+        let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½ Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½ Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½";
+        let line1 = "加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して";
 
         let mut glyph_instances = Vec::new();
-        let mut glyphs = Vec::new();
+        let mut glyph_indices = Vec::new();
 
+        let mut x;
         let mut y = 0.0;
 
         let mut rng = Pcg64::new();
 
-        for line in 0..100 {
-            let font_family = if line & 1 == 0 {
-                FontFamily::RobotoRegular
+        for line in 0..34 {
+            let (font_family, font_size_px, text) = if line & 1 == 0 {
+                (FontFamily::RobotoRegular, 10.0, line0)
             } else {
-                FontFamily::NotoSansJapanese
+                (FontFamily::NotoSansJapanese, 20.0, line1)
             };
+
+            let font_size_px = font_size_px + (line / 2) as f32 * 2.0;
+
             let font = fonts.font(font_family);
+            let scale = font.scale_for_size_px(font_size_px);
 
-            let v_metrics = font.vertical_metrics();
-            let font_scale = font.scale_for_pixel_height(if line & 1 == 0 { 25.0 } else { 40.0 });
-
-            y += v_metrics.ascent * font_scale - v_metrics.descent * font_scale
-                + v_metrics.line_gap * font_scale;
+            x = 0.0;
+            y += (font.ascent() - font.descent() + font.line_gap()) * scale;
             y = y.trunc();
 
-            let mut x = 0.0;
-
-            glyphs.clear();
-
-            let text = if line & 1 == 0 { line0 } else { line1 };
-
-            glyphs.extend(text.chars().map(|c| {
-                font.glyph_id(c)
-                    .unwrap_or_else(|| font.glyph_id('□').unwrap())
+            glyph_indices.clear();
+            glyph_indices.extend(text.chars().map(|c| {
+                font.glyph_index(c)
+                    .unwrap_or_else(|| font.glyph_index('□').unwrap())
             }));
 
             let mut prev_glyph_index = None;
-            for glyph_index in glyphs.iter().copied() {
-                let cached_glyph_index =
-                    glyph_cache.cache_glyph(font_family, glyph_index, font_scale);
-
-                if let Some(prev_glyph_index) = prev_glyph_index {
-                    x += font.kerning_advance(prev_glyph_index, glyph_index) * font_scale;
+            for glyph_index in glyph_indices.iter().copied() {
+                if let Some(prev_glyph_index) = prev_glyph_index.replace(glyph_index) {
+                    x += font.kerning_advance(prev_glyph_index, glyph_index) * scale;
                 }
 
+                let cached_glyph_index =
+                    glyph_cache.cache_glyph(font_family, glyph_index, font_size_px);
+
                 const COLOR_SERIES: [u32; 4] = [0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63];
+                let color = COLOR_SERIES[rng.next_bound_u64(4) as usize];
 
                 glyph_instances.push(GlyphInstance {
                     cached_glyph_index,
                     x,
                     y,
-                    color: COLOR_SERIES[rng.next_bound_u64(4) as usize],
+                    color,
                 });
 
                 let h_metrics = font.horizontal_metrics(glyph_index);
-                x += h_metrics.advance_width * font_scale;
-                prev_glyph_index = Some(glyph_index);
+                x += h_metrics.advance_width * scale;
             }
         }
 

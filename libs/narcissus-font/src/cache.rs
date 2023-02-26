@@ -31,14 +31,14 @@ pub struct CachedGlyph {
 struct GlyphKey<Family> {
     family: Family,
     glyph_index: GlyphIndex,
-    scale: FiniteF32,
+    size_px: FiniteF32,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct Glyph<F> {
     family: F,
     glyph_index: GlyphIndex,
-    scale: FiniteF32,
+    size_px: FiniteF32,
     cached_glyph_index: CachedGlyphIndex,
 }
 
@@ -49,8 +49,6 @@ where
     fonts: &'a F,
 
     padding: usize,
-    oversample_h: Oversample,
-    oversample_v: Oversample,
 
     next_cached_glyph_index: u32,
     cached_glyph_lookup: FxHashMap<GlyphKey<F::Family>, CachedGlyphIndex>,
@@ -71,20 +69,11 @@ impl<'a, F> GlyphCache<'a, F>
 where
     F: FontCollection<'a>,
 {
-    pub fn new(
-        fonts: &'a F,
-        width: usize,
-        height: usize,
-        padding: usize,
-        oversample_h: Oversample,
-        oversample_v: Oversample,
-    ) -> Self {
+    pub fn new(fonts: &'a F, width: usize, height: usize, padding: usize) -> Self {
         Self {
             fonts,
 
             padding,
-            oversample_h,
-            oversample_v,
 
             glyphs: Vec::new(),
 
@@ -110,16 +99,24 @@ where
         self.height
     }
 
+    fn oversample_for_size(size_px: f32) -> Oversample {
+        if size_px <= 25.0 {
+            Oversample::X2
+        } else {
+            Oversample::None
+        }
+    }
+
     pub fn cache_glyph(
         &mut self,
         family: F::Family,
         glyph_index: GlyphIndex,
-        scale: f32,
+        size_px: f32,
     ) -> CachedGlyphIndex {
         let key = GlyphKey {
             family,
             glyph_index,
-            scale: FiniteF32::new(scale).unwrap(),
+            size_px: FiniteF32::new(size_px).unwrap(),
         };
 
         *self.cached_glyph_lookup.entry(key).or_insert_with(|| {
@@ -138,7 +135,7 @@ where
             |(glyph_key, &cached_glyph_index)| Glyph {
                 family: glyph_key.family,
                 glyph_index: glyph_key.glyph_index,
-                scale: glyph_key.scale,
+                size_px: glyph_key.size_px,
                 cached_glyph_index,
             },
         ));
@@ -147,23 +144,24 @@ where
         self.glyphs.sort_unstable();
 
         let padding = self.padding as i32;
-        let oversample_h = self.oversample_h.as_i32();
-        let oversample_v = self.oversample_v.as_i32();
 
         self.rects.clear();
         self.rects.extend(self.glyphs.iter().map(|glyph| {
-            let scale = glyph.scale.get();
+            let font = self.fonts.font(glyph.family);
+            let size_px = glyph.size_px.get();
+            let scale = font.scale_for_size_px(size_px);
+            let oversample = Self::oversample_for_size(size_px);
 
-            let bitmap_box = self.fonts.font(glyph.family).glyph_bitmap_box(
+            let bitmap_box = font.glyph_bitmap_box(
                 glyph.glyph_index,
-                scale * oversample_h as f32,
-                scale * oversample_v as f32,
+                scale * oversample.as_f32(),
+                scale * oversample.as_f32(),
                 0.0,
                 0.0,
             );
 
-            let w = bitmap_box.x1 - bitmap_box.x0 + padding + oversample_h - 1;
-            let h = bitmap_box.y1 - bitmap_box.y0 + padding + oversample_v - 1;
+            let w = bitmap_box.x1 - bitmap_box.x0 + padding + oversample.as_i32() - 1;
+            let h = bitmap_box.y1 - bitmap_box.y0 + padding + oversample.as_i32() - 1;
 
             Rect {
                 id: glyph.cached_glyph_index.0 as i32,
@@ -176,15 +174,13 @@ where
         }));
 
         self.packer.clear();
-        self.packer.pack(&mut self.rects);
+        assert!(self.packer.pack(&mut self.rects));
 
         self.texture.fill(0);
         self.cached_glyphs
             .resize(self.glyphs.len(), CachedGlyph::default());
 
         let padding = self.padding as i32;
-        let oversample_h = oversample_h as f32;
-        let oversample_v = oversample_v as f32;
 
         for (glyph, rect) in self.glyphs.iter().zip(self.rects.iter_mut()) {
             let font = self.fonts.font(glyph.family);
@@ -195,9 +191,12 @@ where
             rect.w -= padding;
             rect.h -= padding;
 
-            let scale = glyph.scale.get();
-            let scale_x = scale * oversample_h;
-            let scale_y = scale * oversample_v;
+            let size_px = glyph.size_px.get();
+            let scale = font.scale_for_size_px(size_px);
+            let oversample = Self::oversample_for_size(size_px);
+
+            let scale_x = scale * oversample.as_f32();
+            let scale_y = scale * oversample.as_f32();
 
             let (sub_x, sub_y) = font.render_glyph_bitmap(
                 &mut self.texture,
@@ -210,8 +209,8 @@ where
                 scale_y,
                 0.0,
                 0.0,
-                self.oversample_h,
-                self.oversample_v,
+                oversample,
+                oversample,
                 glyph.glyph_index,
             );
 
@@ -229,16 +228,16 @@ where
                 y1: _,
             } = font.glyph_bitmap_box(
                 glyph.glyph_index,
-                scale * oversample_h,
-                scale * oversample_v,
+                scale * oversample.as_f32(),
+                scale * oversample.as_f32(),
                 0.0,
                 0.0,
             );
 
-            cached_glyph.offset_x0 = x0 as f32 / oversample_h + sub_x;
-            cached_glyph.offset_y0 = y0 as f32 / oversample_v + sub_y;
-            cached_glyph.offset_x1 = (x0 + rect.w) as f32 / oversample_h + sub_x;
-            cached_glyph.offset_y1 = (y0 + rect.h) as f32 / oversample_v + sub_y;
+            cached_glyph.offset_x0 = x0 as f32 / oversample.as_f32() + sub_x;
+            cached_glyph.offset_y0 = y0 as f32 / oversample.as_f32() + sub_y;
+            cached_glyph.offset_x1 = (x0 + rect.w) as f32 / oversample.as_f32() + sub_x;
+            cached_glyph.offset_y1 = (y0 + rect.h) as f32 / oversample.as_f32() + sub_y;
         }
 
         (&self.cached_glyphs, &self.texture)

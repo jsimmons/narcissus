@@ -3,12 +3,12 @@ use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
 use stb_truetype_sys::{
     stbtt_FindGlyphIndex, stbtt_GetFontOffsetForIndex, stbtt_GetFontVMetrics,
     stbtt_GetGlyphBitmapBoxSubpixel, stbtt_GetGlyphHMetrics, stbtt_GetGlyphKernAdvance,
-    stbtt_InitFont, stbtt_MakeGlyphBitmapSubpixelPrefilter, stbtt_ScaleForPixelHeight, truetype,
+    stbtt_InitFont, stbtt_MakeGlyphBitmapSubpixelPrefilter, truetype,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Oversample {
-    X1,
+    None,
     X2,
     X3,
     X4,
@@ -21,6 +21,10 @@ pub enum Oversample {
 impl Oversample {
     pub fn as_i32(self) -> i32 {
         self as i32 + 1
+    }
+
+    pub fn as_f32(self) -> f32 {
+        (self as i32) as f32 + 1.0
     }
 }
 
@@ -75,6 +79,7 @@ pub struct GlyphBitmapBox {
 pub struct Font<'a> {
     info: truetype::FontInfo,
     phantom: PhantomData<&'a [u8]>,
+    vertical_metrics: VerticalMetrics,
 }
 
 impl<'a> Font<'a> {
@@ -90,33 +95,52 @@ impl<'a> Font<'a> {
             info.assume_init()
         };
 
+        let vertical_metrics = {
+            let mut ascent = 0;
+            let mut descent = 0;
+            let mut line_gap = 0;
+            // Safety: We've just initialized the font info above.
+            unsafe { stbtt_GetFontVMetrics(&info, &mut ascent, &mut descent, &mut line_gap) };
+            VerticalMetrics {
+                ascent: ascent as f32,
+                descent: descent as f32,
+                line_gap: line_gap as f32,
+            }
+        };
+
         Self {
             info,
             phantom: PhantomData,
+            vertical_metrics,
         }
     }
 
-    pub fn scale_for_pixel_height(&self, height: f32) -> f32 {
-        unsafe { stbtt_ScaleForPixelHeight(&self.info, height) }
+    /// Returns a scale factor to produce a font whose "height" is `size_px` pixels tall.
+    ///
+    /// Height is measured as the distance from the highest ascender to the lowest descender.
+    pub fn scale_for_size_px(&self, size_px: f32) -> f32 {
+        size_px / (self.vertical_metrics.ascent - self.vertical_metrics.descent)
     }
 
-    pub fn vertical_metrics(&self) -> VerticalMetrics {
-        let mut ascent = 0;
-        let mut descent = 0;
-        let mut line_gap = 0;
-        unsafe {
-            stbtt_GetFontVMetrics(&self.info, &mut ascent, &mut descent, &mut line_gap);
-        }
-        VerticalMetrics {
-            ascent: ascent as f32,
-            descent: descent as f32,
-            line_gap: line_gap as f32,
-        }
+    /// Return the font's vertical ascent in unscaled coordinates.
+    pub fn ascent(&self) -> f32 {
+        self.vertical_metrics.ascent
     }
 
-    pub fn glyph_id(&self, c: char) -> Option<GlyphIndex> {
-        let glyph_id = unsafe { stbtt_FindGlyphIndex(&self.info, c as i32) };
-        NonZeroI32::new(glyph_id).map(|glyph_id| GlyphIndex(glyph_id))
+    /// Return the font's vertical descent in unscaled coordinates.
+    pub fn descent(&self) -> f32 {
+        self.vertical_metrics.descent
+    }
+
+    /// Return the font's line gap in unscaled coordinates.
+    pub fn line_gap(&self) -> f32 {
+        self.vertical_metrics.line_gap
+    }
+
+    /// Return the `GlyphIndex` for the character, or `None` if the font has no matching glyph.
+    pub fn glyph_index(&self, c: char) -> Option<GlyphIndex> {
+        let glyph_index = unsafe { stbtt_FindGlyphIndex(&self.info, c as i32) };
+        NonZeroI32::new(glyph_index).map(|glyph_index| GlyphIndex(glyph_index))
     }
 
     pub fn glyph_bitmap_box(
