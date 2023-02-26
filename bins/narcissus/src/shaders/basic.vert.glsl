@@ -1,9 +1,5 @@
 #version 460
 
-layout(set = 0, binding = 0) uniform uniformBuffer {
-    mat4 viewProj;
-};
-
 struct VertexData {
     vec4 position;
     vec4 normal;
@@ -14,6 +10,10 @@ struct TransformData {
     vec4 transform[3];
 };
 
+layout(set = 0, binding = 0) uniform uniformBuffer {
+    mat4 viewProj;
+};
+
 layout(std430, set = 1, binding = 0) readonly buffer vertexBuffer {
     VertexData vertices[];
 };
@@ -22,8 +22,8 @@ layout(std430, set = 1, binding = 1) readonly buffer transformBuffer {
     TransformData transforms[];
 };
 
-layout(location = 0) out vec2 texcoord;
-layout(location = 1) out vec3 normal;
+layout(location = 0) out vec2 outTexcoord;
+layout(location = 1) out vec3 outNormal;
 
 void main() {
     TransformData td = transforms[gl_InstanceIndex];
@@ -39,6 +39,6 @@ void main() {
     vec4 posClip = transpose(viewProj) * vec4(posWorld, 1.0);
     gl_Position = posClip;
 
-    normal = vd.normal.xyz;
-    texcoord = vec2(vd.texcoord.x, 1.0 - vd.texcoord.y);
+    outNormal = vd.normal.xyz;
+    outTexcoord = vec2(vd.texcoord.x, 1.0 - vd.texcoord.y);
 }

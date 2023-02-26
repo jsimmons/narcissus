@@ -1,24 +1,33 @@
 use std::{path::Path, time::Instant};
 
 use narcissus_app::{create_app, Event, Key, WindowDesc};
-use narcissus_core::{cstr, default, include_bytes_align, obj, rand::Pcg64};
+use narcissus_core::{default, obj, rand::Pcg64};
+use narcissus_font::{CachedGlyph, CachedGlyphIndex, FontCollection, GlyphCache, Oversample};
 use narcissus_gpu::{
-    create_device, Access, Bind, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
-    BlendMode, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CompareOp,
-    CullingMode, Device, Extent2d, Extent3d, FrontFace, GraphicsPipelineDesc,
-    GraphicsPipelineLayout, Image, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension,
+    create_device, Access, Bind, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue,
+    Device, Extent2d, Extent3d, Image, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension,
     ImageFormat, ImageLayout, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d,
-    Offset3d, PolygonMode, RenderingAttachment, RenderingDesc, SamplerAddressMode, SamplerDesc,
-    SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags, StoreOp, ThreadToken, Topology,
-    TypedBind, Viewport,
+    Offset3d, RenderingAttachment, RenderingDesc, SamplerAddressMode, SamplerDesc, SamplerFilter,
+    Scissor, StoreOp, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
     sin_cos_pi_f32, vec2, vec3, vec4, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec2, Vec3,
 };
 
+use crate::{
+    fonts::{FontFamily, Fonts},
+    pipelines::{BasicPipeline, TextPipeline},
+};
+
+mod fonts;
+mod pipelines;
+
 const MAX_SHARKS: usize = 262_144;
 const NUM_SHARKS: usize = 50;
+
+const MAX_GLYPH_INSTANCES: usize = 262_144;
+const MAX_GLYPHS: usize = 1024;
 
 /// Marker trait indicates it's safe to convert a given type directly to an array of bytes.
 ///
@@ -28,18 +37,43 @@ const NUM_SHARKS: usize = 50;
 unsafe trait Blittable: Sized {}
 
 #[allow(unused)]
-struct Uniforms {
+#[repr(C)]
+struct BasicUniforms {
     clip_from_model: Mat4,
 }
 
-unsafe impl Blittable for Uniforms {}
+unsafe impl Blittable for BasicUniforms {}
 
 #[allow(unused)]
+#[repr(C)]
 struct Vertex {
     position: [f32; 4],
     normal: [f32; 4],
     texcoord: [f32; 4],
 }
+
+#[allow(unused)]
+#[repr(C)]
+struct TextUniforms {
+    screen_width: u32,
+    screen_height: u32,
+    atlas_width: u32,
+    atlas_height: u32,
+}
+
+unsafe impl Blittable for TextUniforms {}
+
+#[allow(unused)]
+#[repr(C)]
+struct GlyphInstance {
+    cached_glyph_index: CachedGlyphIndex,
+    x: f32,
+    y: f32,
+    color: u32,
+}
+
+unsafe impl Blittable for CachedGlyph {}
+unsafe impl Blittable for GlyphInstance {}
 
 unsafe impl Blittable for Vertex {}
 unsafe impl Blittable for u8 {}
@@ -297,75 +331,11 @@ pub fn main() {
 
     let thread_token = ThreadToken::new();
 
-    let vert_spv = include_bytes_align!(4, "shaders/basic.vert.spv");
-    let frag_spv = include_bytes_align!(4, "shaders/basic.frag.spv");
+    let basic_pipeline = BasicPipeline::new(device.as_ref());
+    let text_pipeline = TextPipeline::new(device.as_ref());
 
-    let uniform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
-        entries: &[BindGroupLayoutEntryDesc {
-            slot: 0,
-            stages: ShaderStageFlags::ALL,
-            binding_type: BindingType::UniformBuffer,
-            count: 1,
-        }],
-    });
-
-    let storage_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
-        entries: &[
-            BindGroupLayoutEntryDesc {
-                slot: 0,
-                stages: ShaderStageFlags::ALL,
-                binding_type: BindingType::StorageBuffer,
-                count: 1,
-            },
-            BindGroupLayoutEntryDesc {
-                slot: 1,
-                stages: ShaderStageFlags::ALL,
-                binding_type: BindingType::StorageBuffer,
-                count: 1,
-            },
-            BindGroupLayoutEntryDesc {
-                slot: 2,
-                stages: ShaderStageFlags::ALL,
-                binding_type: BindingType::Sampler,
-                count: 1,
-            },
-            BindGroupLayoutEntryDesc {
-                slot: 3,
-                stages: ShaderStageFlags::ALL,
-                binding_type: BindingType::Image,
-                count: 1,
-            },
-        ],
-    });
-
-    let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
-        vertex_shader: ShaderDesc {
-            entry: cstr!("main"),
-            code: vert_spv,
-        },
-        fragment_shader: ShaderDesc {
-            entry: cstr!("main"),
-            code: frag_spv,
-        },
-        bind_group_layouts: &[uniform_bind_group_layout, storage_bind_group_layout],
-        layout: GraphicsPipelineLayout {
-            color_attachment_formats: &[ImageFormat::BGRA8_SRGB],
-            depth_attachment_format: Some(ImageFormat::DEPTH_F32),
-            stencil_attachment_format: None,
-        },
-        topology: Topology::Triangles,
-        polygon_mode: PolygonMode::Fill,
-        culling_mode: CullingMode::Back,
-        front_face: FrontFace::CounterClockwise,
-        blend_mode: BlendMode::Opaque,
-        depth_bias: None,
-        depth_compare_op: CompareOp::GreaterOrEqual,
-        depth_test_enable: true,
-        depth_write_enable: true,
-        stencil_test_enable: false,
-        stencil_back: default(),
-        stencil_front: default(),
-    });
+    let fonts = Fonts::new();
+    let mut glyph_cache = GlyphCache::new(&fonts, 512, 512, Oversample::X2, Oversample::X2);
 
     let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
@@ -390,25 +360,52 @@ pub fn main() {
         blåhaj_image.as_slice(),
     );
 
-    let mut uniforms = MappedBuffer::new(
+    let mut basic_uniforms = MappedBuffer::new(
         device.as_ref(),
         BufferUsageFlags::UNIFORM,
-        std::mem::size_of::<Uniforms>(),
+        std::mem::size_of::<BasicUniforms>(),
     );
 
-    let mut transforms = MappedBuffer::new(
+    let mut basic_transforms = MappedBuffer::new(
         device.as_ref(),
         BufferUsageFlags::STORAGE,
         std::mem::size_of::<Affine3>() * MAX_SHARKS,
     );
 
-    let sampler = device.create_sampler(&SamplerDesc {
+    let basic_sampler = device.create_sampler(&SamplerDesc {
         filter: SamplerFilter::Point,
         address_mode: SamplerAddressMode::Clamp,
         compare_op: None,
         mip_lod_bias: 0.0,
         min_lod: 0.0,
         max_lod: 1000.0,
+    });
+
+    let mut text_uniforms = MappedBuffer::new(
+        device.as_ref(),
+        BufferUsageFlags::UNIFORM,
+        std::mem::size_of::<TextUniforms>(),
+    );
+
+    let mut glyph_instance_buffer = MappedBuffer::new(
+        device.as_ref(),
+        BufferUsageFlags::STORAGE,
+        std::mem::size_of::<GlyphInstance>() * MAX_GLYPH_INSTANCES,
+    );
+
+    let mut cached_glyph_buffer = MappedBuffer::new(
+        device.as_ref(),
+        BufferUsageFlags::STORAGE,
+        std::mem::size_of::<CachedGlyph>() * MAX_GLYPHS,
+    );
+
+    let text_sampler = device.create_sampler(&SamplerDesc {
+        filter: SamplerFilter::Bilinear,
+        address_mode: SamplerAddressMode::Clamp,
+        compare_op: None,
+        mip_lod_bias: 0.0,
+        min_lod: 0.0,
+        max_lod: 0.0,
     });
 
     let mut depth_width = 0;
@@ -514,7 +511,7 @@ pub fn main() {
             transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.002 * direction))
         }
 
-        transforms.write_slice(&shark_transforms);
+        basic_transforms.write_slice(&shark_transforms);
 
         let (s, c) = sin_cos_pi_f32(frame_start * 0.2);
         let camera_height = c * 8.0;
@@ -526,52 +523,150 @@ pub fn main() {
             Mat4::perspective_rev_inf_zo(Deg::new(45.0).into(), width as f32 / height as f32, 0.01);
         let clip_from_model = clip_from_camera * camera_from_model;
 
-        uniforms.write(Uniforms { clip_from_model });
+        basic_uniforms.write(BasicUniforms { clip_from_model });
 
-        device.cmd_set_pipeline(&mut cmd_buffer, pipeline);
+        // Do some Font Shit.'
+        let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½ Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½";
+        let line1 = "加盟国は、国際連合と協力して";
 
-        device.cmd_set_bind_group(
-            &frame,
-            &mut cmd_buffer,
-            uniform_bind_group_layout,
-            0,
-            &[Bind {
-                binding: 0,
-                array_element: 0,
-                typed: TypedBind::UniformBuffer(&[uniforms.buffer()]),
-            }],
-        );
+        let mut glyph_instances = Vec::new();
+        let mut glyphs = Vec::new();
 
-        device.cmd_set_bind_group(
-            &frame,
-            &mut cmd_buffer,
-            storage_bind_group_layout,
-            1,
-            &[
-                Bind {
-                    binding: 0,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[blåhaj_vertex_buffer]),
-                },
-                Bind {
-                    binding: 1,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[transforms.buffer()]),
-                },
-                Bind {
-                    binding: 2,
-                    array_element: 0,
-                    typed: TypedBind::Sampler(&[sampler]),
-                },
-                Bind {
-                    binding: 3,
-                    array_element: 0,
-                    typed: TypedBind::Image(&[(ImageLayout::Optimal, blåhaj_image)]),
-                },
-            ],
-        );
+        let mut y = 0.0;
 
-        device.cmd_set_index_buffer(&mut cmd_buffer, blåhaj_index_buffer, 0, IndexType::U16);
+        let mut rng = Pcg64::new();
+
+        for line in 0..100 {
+            let font_family = if line & 1 == 0 {
+                FontFamily::RobotoRegular
+            } else {
+                FontFamily::NotoSansJapanese
+            };
+            let font = fonts.font(font_family);
+
+            let v_metrics = font.vertical_metrics();
+            let font_scale = font.scale_for_pixel_height(if line & 1 == 0 { 25.0 } else { 40.0 });
+
+            y += v_metrics.ascent * font_scale - v_metrics.descent * font_scale
+                + v_metrics.line_gap * font_scale;
+            y = y.trunc();
+
+            let mut x = 0.0;
+
+            glyphs.clear();
+
+            let text = if line & 1 == 0 { line0 } else { line1 };
+
+            glyphs.extend(text.chars().map(|c| {
+                font.glyph_id(c)
+                    .unwrap_or_else(|| font.glyph_id('□').unwrap())
+            }));
+
+            let mut prev_glyph_index = None;
+            for glyph_index in glyphs.iter().copied() {
+                let cached_glyph_index =
+                    glyph_cache.cache_glyph(font_family, glyph_index, font_scale);
+
+                if let Some(prev_glyph_index) = prev_glyph_index {
+                    x += font.kerning_advance(prev_glyph_index, glyph_index) * font_scale;
+                }
+
+                const COLOR_SERIES: [u32; 4] = [0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63];
+
+                glyph_instances.push(GlyphInstance {
+                    cached_glyph_index,
+                    x,
+                    y,
+                    color: COLOR_SERIES[rng.next_bound_u64(4) as usize],
+                });
+
+                let h_metrics = font.horizontal_metrics(glyph_index);
+                x += h_metrics.advance_width * font_scale;
+                prev_glyph_index = Some(glyph_index);
+            }
+        }
+
+        let atlas_width = glyph_cache.width() as u32;
+        let atlas_height = glyph_cache.height() as u32;
+
+        let (cached_glyphs, texture) = glyph_cache.update_atlas();
+
+        text_uniforms.write(TextUniforms {
+            screen_width: width,
+            screen_height: height,
+            atlas_width,
+            atlas_height,
+        });
+        cached_glyph_buffer.write_slice(cached_glyphs);
+        glyph_instance_buffer.write_slice(&glyph_instances);
+
+        // upload atlas
+        let glyph_atlas = {
+            let width = atlas_width;
+            let height = atlas_height;
+            let data = texture;
+
+            let buffer =
+                create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER_SRC, data);
+
+            let image = device.create_image(&ImageDesc {
+                location: MemoryLocation::Device,
+                usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
+                dimension: ImageDimension::Type2d,
+                format: ImageFormat::R8_UNORM,
+                initial_layout: ImageLayout::Optimal,
+                width,
+                height,
+                depth: 1,
+                layer_count: 1,
+                mip_levels: 1,
+            });
+
+            device.cmd_barrier(
+                &mut cmd_buffer,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::None],
+                    &[Access::TransferWrite],
+                    image,
+                    ImageAspectFlags::COLOR,
+                )],
+            );
+
+            device.cmd_copy_buffer_to_image(
+                &mut cmd_buffer,
+                buffer,
+                image,
+                ImageLayout::Optimal,
+                &[BufferImageCopy {
+                    buffer_offset: 0,
+                    buffer_row_length: 0,
+                    buffer_image_height: 0,
+                    image_subresource: default(),
+                    image_offset: Offset3d { x: 0, y: 0, z: 0 },
+                    image_extent: Extent3d {
+                        width,
+                        height,
+                        depth: 1,
+                    },
+                }],
+            );
+
+            device.cmd_barrier(
+                &mut cmd_buffer,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::TransferWrite],
+                    &[Access::FragmentShaderSampledImageRead],
+                    image,
+                    ImageAspectFlags::COLOR,
+                )],
+            );
+
+            device.destroy_buffer(&frame, buffer);
+
+            image
+        };
 
         device.cmd_begin_rendering(
             &mut cmd_buffer,
@@ -619,16 +714,114 @@ pub fn main() {
             }],
         );
 
-        device.cmd_draw_indexed(
-            &mut cmd_buffer,
-            blåhaj_indices.len() as u32,
-            shark_transforms.len() as u32,
-            0,
-            0,
-            0,
-        );
+        // Render basic stuff.
+        {
+            device.cmd_set_pipeline(&mut cmd_buffer, basic_pipeline.pipeline);
+
+            device.cmd_set_bind_group(
+                &frame,
+                &mut cmd_buffer,
+                basic_pipeline.uniforms_bind_group_layout,
+                0,
+                &[Bind {
+                    binding: 0,
+                    array_element: 0,
+                    typed: TypedBind::UniformBuffer(&[basic_uniforms.buffer()]),
+                }],
+            );
+
+            device.cmd_set_bind_group(
+                &frame,
+                &mut cmd_buffer,
+                basic_pipeline.storage_bind_group_layout,
+                1,
+                &[
+                    Bind {
+                        binding: 0,
+                        array_element: 0,
+                        typed: TypedBind::StorageBuffer(&[blåhaj_vertex_buffer]),
+                    },
+                    Bind {
+                        binding: 1,
+                        array_element: 0,
+                        typed: TypedBind::StorageBuffer(&[basic_transforms.buffer()]),
+                    },
+                    Bind {
+                        binding: 2,
+                        array_element: 0,
+                        typed: TypedBind::Sampler(&[basic_sampler]),
+                    },
+                    Bind {
+                        binding: 3,
+                        array_element: 0,
+                        typed: TypedBind::Image(&[(ImageLayout::Optimal, blåhaj_image)]),
+                    },
+                ],
+            );
+
+            device.cmd_set_index_buffer(&mut cmd_buffer, blåhaj_index_buffer, 0, IndexType::U16);
+
+            device.cmd_draw_indexed(
+                &mut cmd_buffer,
+                blåhaj_indices.len() as u32,
+                shark_transforms.len() as u32,
+                0,
+                0,
+                0,
+            );
+        }
+
+        // Render text stuff.
+        {
+            device.cmd_set_pipeline(&mut cmd_buffer, text_pipeline.pipeline);
+
+            device.cmd_set_bind_group(
+                &frame,
+                &mut cmd_buffer,
+                text_pipeline.uniforms_bind_group_layout,
+                0,
+                &[Bind {
+                    binding: 0,
+                    array_element: 0,
+                    typed: TypedBind::UniformBuffer(&[text_uniforms.buffer()]),
+                }],
+            );
+
+            device.cmd_set_bind_group(
+                &frame,
+                &mut cmd_buffer,
+                basic_pipeline.storage_bind_group_layout,
+                1,
+                &[
+                    Bind {
+                        binding: 0,
+                        array_element: 0,
+                        typed: TypedBind::StorageBuffer(&[cached_glyph_buffer.buffer()]),
+                    },
+                    Bind {
+                        binding: 1,
+                        array_element: 0,
+                        typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.buffer()]),
+                    },
+                    Bind {
+                        binding: 2,
+                        array_element: 0,
+                        typed: TypedBind::Sampler(&[text_sampler]),
+                    },
+                    Bind {
+                        binding: 3,
+                        array_element: 0,
+                        typed: TypedBind::Image(&[(ImageLayout::Optimal, glyph_atlas)]),
+                    },
+                ],
+            );
+
+            device.cmd_draw(&mut cmd_buffer, 4, glyph_instances.len() as u32, 0, 0);
+        }
 
         device.cmd_end_rendering(&mut cmd_buffer);
+
+        device.destroy_image(&frame, glyph_atlas);
 
         device.submit(&frame, cmd_buffer);
 

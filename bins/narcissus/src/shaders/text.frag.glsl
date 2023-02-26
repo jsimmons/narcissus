@@ -1,0 +1,13 @@
+#version 460
+
+layout(set = 1, binding = 2) uniform sampler texSampler;
+layout(set = 1, binding = 3) uniform texture2D tex;
+
+layout(location = 0) in vec2 texcoord;
+layout(location = 1) in vec4 color;
+layout(location = 0) out vec4 outColor;
+
+void main() {
+    float coverage = texture(sampler2D(tex, texSampler), vec2(texcoord.x, texcoord.y)).r;
+    outColor = color * coverage;
+}
