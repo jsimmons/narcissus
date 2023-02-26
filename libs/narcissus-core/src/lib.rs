@@ -1,5 +1,6 @@
 mod arena;
 mod bitset;
+mod finite;
 mod fixed_vec;
 mod libc;
 pub mod manual_arc;
@@ -24,6 +25,8 @@ pub use ref_count::{Arc, Rc};
 pub use uuid::Uuid;
 pub use virtual_mem::{virtual_commit, virtual_free, virtual_reserve};
 pub use virtual_vec::{VirtualDeque, VirtualVec};
+
+pub use finite::{FiniteF32, FiniteF64, NotFiniteError};
 
 use std::{ffi::CStr, mem::MaybeUninit};
 
