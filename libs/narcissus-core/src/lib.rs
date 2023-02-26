@@ -253,6 +253,8 @@ pub fn string_from_c_str(c_str: &[i8]) -> String {
     String::from_utf8_lossy(s).into_owned()
 }
 
+/// Constructs a new box with uninitialized contents.
+#[inline]
 pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
     let layout = std::alloc::Layout::new::<MaybeUninit<T>>();
     unsafe {
@@ -261,12 +263,29 @@ pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
     }
 }
 
+/// Constructs a new box with zeroed contents.
+#[inline]
 pub fn zeroed_box<T>() -> Box<MaybeUninit<T>> {
     let layout = std::alloc::Layout::new::<MaybeUninit<T>>();
     unsafe {
         let ptr = std::mem::transmute::<_, *mut MaybeUninit<T>>(std::alloc::alloc_zeroed(layout));
         Box::from_raw(ptr)
     }
+}
+
+/// Converts `Box<MaybeUninit<T>>` to `Box<T>`
+///
+/// # Safety
+///
+/// As with [`MaybeUninit::assume_init`], it is up to the caller to guarantee that the value really
+/// is in an initialized state. Calling this when the content is not yet fully initialized causes
+/// immediate undefined behavior.
+///
+/// [`MaybeUninit::assume_init`]: mem::MaybeUninit::assume_init
+#[inline]
+pub unsafe fn box_assume_init<T>(value: Box<MaybeUninit<T>>) -> Box<T> {
+    let raw = Box::into_raw(value);
+    unsafe { Box::from_raw(raw as *mut T) }
 }
 
 /// Negative traits aren't stable yet, so use a dummy PhantomData marker to implement !Send
