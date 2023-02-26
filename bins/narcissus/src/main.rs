@@ -335,7 +335,7 @@ pub fn main() {
     let text_pipeline = TextPipeline::new(device.as_ref());
 
     let fonts = Fonts::new();
-    let mut glyph_cache = GlyphCache::new(&fonts, 512, 512, Oversample::X2, Oversample::X2);
+    let mut glyph_cache = GlyphCache::new(&fonts, 512, 512, 1, Oversample::X2, Oversample::X2);
 
     let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");

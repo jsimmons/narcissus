@@ -5,10 +5,12 @@ use crate::{font::GlyphBitmapBox, FontCollection, GlyphIndex, Oversample, Packer
 
 pub use narcissus_core::FiniteF32;
 
+/// An index into the CachedGlyph slice.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
 pub struct CachedGlyphIndex(u32);
 
+/// Holds data required to draw a glyph from the glyph atlas.
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct CachedGlyph {
@@ -32,17 +34,31 @@ struct GlyphKey<Family> {
     scale: FiniteF32,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct Glyph<F> {
+    family: F,
+    glyph_index: GlyphIndex,
+    scale: FiniteF32,
+    cached_glyph_index: CachedGlyphIndex,
+}
+
 pub struct GlyphCache<'a, F>
 where
     F: FontCollection<'a>,
 {
     fonts: &'a F,
 
+    padding: usize,
     oversample_h: Oversample,
     oversample_v: Oversample,
 
     next_cached_glyph_index: u32,
-    glyph_lookup: FxHashMap<GlyphKey<F::Family>, CachedGlyphIndex>,
+    cached_glyph_lookup: FxHashMap<GlyphKey<F::Family>, CachedGlyphIndex>,
+
+    glyphs: Vec<Glyph<F::Family>>,
+
+    packer: Packer,
+    rects: Vec<Rect>,
 
     cached_glyphs: Vec<CachedGlyph>,
 
@@ -50,8 +66,6 @@ where
     height: usize,
     texture: Box<[u8]>,
 }
-
-const GLYPH_CACHE_PADDING: usize = 1;
 
 impl<'a, F> GlyphCache<'a, F>
 where
@@ -61,16 +75,24 @@ where
         fonts: &'a F,
         width: usize,
         height: usize,
+        padding: usize,
         oversample_h: Oversample,
         oversample_v: Oversample,
     ) -> Self {
         Self {
             fonts,
+
+            padding,
             oversample_h,
             oversample_v,
 
+            glyphs: Vec::new(),
+
             next_cached_glyph_index: 0,
-            glyph_lookup: Default::default(),
+            cached_glyph_lookup: Default::default(),
+
+            packer: Packer::new(width - padding, height - padding),
+            rects: Vec::new(),
 
             cached_glyphs: Vec::new(),
 
@@ -100,7 +122,7 @@ where
             scale: FiniteF32::new(scale).unwrap(),
         };
 
-        *self.glyph_lookup.entry(key).or_insert_with(|| {
+        *self.cached_glyph_lookup.entry(key).or_insert_with(|| {
             let cached_glyph_index = CachedGlyphIndex(self.next_cached_glyph_index);
             self.next_cached_glyph_index += 1;
             cached_glyph_index
@@ -108,75 +130,63 @@ where
     }
 
     pub fn update_atlas(&mut self) -> (&[CachedGlyph], &[u8]) {
+        // We recreate the CachedGlyphs structure completely every update, so reset the index here.
         self.next_cached_glyph_index = 0;
 
-        #[derive(PartialEq, Eq, PartialOrd, Ord)]
-        struct GlyphToRender<F> {
-            family: F,
-            glyph_index: GlyphIndex,
-            scale: FiniteF32,
-            cached_glyph_index: CachedGlyphIndex,
-        }
-
-        let mut glyphs_to_render = self
-            .glyph_lookup
-            .iter()
-            .map(|(glyph_key, &cached_glyph_index)| GlyphToRender {
+        self.glyphs.clear();
+        self.glyphs.extend(self.cached_glyph_lookup.iter().map(
+            |(glyph_key, &cached_glyph_index)| Glyph {
                 family: glyph_key.family,
                 glyph_index: glyph_key.glyph_index,
                 scale: glyph_key.scale,
                 cached_glyph_index,
-            })
-            .collect::<Vec<_>>();
+            },
+        ));
 
-        glyphs_to_render.sort_unstable();
+        // Sort just so we avoid ping-ponging between fonts during rendering.
+        self.glyphs.sort_unstable();
 
-        let padding = GLYPH_CACHE_PADDING as i32;
+        let padding = self.padding as i32;
         let oversample_h = self.oversample_h.as_i32();
         let oversample_v = self.oversample_v.as_i32();
 
-        let mut rects = glyphs_to_render
-            .iter()
-            .map(|glyph| {
-                let scale = glyph.scale.get();
+        self.rects.clear();
+        self.rects.extend(self.glyphs.iter().map(|glyph| {
+            let scale = glyph.scale.get();
 
-                let bitmap_box = self.fonts.font(glyph.family).glyph_bitmap_box(
-                    glyph.glyph_index,
-                    scale * oversample_h as f32,
-                    scale * oversample_v as f32,
-                    0.0,
-                    0.0,
-                );
+            let bitmap_box = self.fonts.font(glyph.family).glyph_bitmap_box(
+                glyph.glyph_index,
+                scale * oversample_h as f32,
+                scale * oversample_v as f32,
+                0.0,
+                0.0,
+            );
 
-                let w = bitmap_box.x1 - bitmap_box.x0 + padding + oversample_h - 1;
-                let h = bitmap_box.y1 - bitmap_box.y0 + padding + oversample_v - 1;
+            let w = bitmap_box.x1 - bitmap_box.x0 + padding + oversample_h - 1;
+            let h = bitmap_box.y1 - bitmap_box.y0 + padding + oversample_v - 1;
 
-                Rect {
-                    id: glyph.cached_glyph_index.0 as i32,
-                    w,
-                    h,
-                    x: 0,
-                    y: 0,
-                    was_packed: 0,
-                }
-            })
-            .collect::<Vec<_>>();
+            Rect {
+                id: glyph.cached_glyph_index.0 as i32,
+                w,
+                h,
+                x: 0,
+                y: 0,
+                was_packed: 0,
+            }
+        }));
 
-        let mut packer = Packer::new(
-            self.width - GLYPH_CACHE_PADDING,
-            self.height - GLYPH_CACHE_PADDING,
-        );
-
-        packer.pack(rects.as_mut_slice());
+        self.packer.clear();
+        self.packer.pack(&mut self.rects);
 
         self.texture.fill(0);
         self.cached_glyphs
-            .resize(glyphs_to_render.len(), CachedGlyph::default());
+            .resize(self.glyphs.len(), CachedGlyph::default());
 
+        let padding = self.padding as i32;
         let oversample_h = oversample_h as f32;
         let oversample_v = oversample_v as f32;
 
-        for (glyph, rect) in glyphs_to_render.iter().zip(rects.iter_mut()) {
+        for (glyph, rect) in self.glyphs.iter().zip(self.rects.iter_mut()) {
             let font = self.fonts.font(glyph.family);
 
             // Pad on left and top.
