@@ -26,11 +26,11 @@ layout(set = 0, binding = 0) uniform uniformBuffer {
     uint atlasHeight;
 };
 
-layout(std430, set = 1, binding = 0) readonly buffer glyphBuffer {
+layout(std430, set = 0, binding = 1) readonly buffer glyphBuffer {
     CachedGlyph cachedGlyphs[];
 };
 
-layout(std430, set = 1, binding = 1) readonly buffer glyphInstanceBuffer {
+layout(std430, set = 0, binding = 2) readonly buffer glyphInstanceBuffer {
     GlyphInstance glyphInstances[];
 };
 

@@ -1,16 +1,39 @@
 use narcissus_core::{cstr, default, include_bytes_align};
 use narcissus_gpu::{
-    BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    CompareOp, CullingMode, Device, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout,
-    ImageFormat, Pipeline, PolygonMode, ShaderDesc, ShaderStageFlags, Topology,
+    Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
+    Buffer, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace, GraphicsPipelineDesc,
+    GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType, Pipeline, PolygonMode,
+    Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags,
+    Topology, TypedBind,
 };
+use narcissus_maths::Mat4;
+
+use crate::Blittable;
 
 const VERT_SPV: &'static [u8] = include_bytes_align!(4, "../shaders/basic.vert.spv");
 const FRAG_SPV: &'static [u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
 
+#[allow(unused)]
+#[repr(C)]
+pub struct BasicUniforms {
+    pub clip_from_model: Mat4,
+}
+
+#[allow(unused)]
+#[repr(C)]
+pub struct Vertex {
+    pub position: [f32; 4],
+    pub normal: [f32; 4],
+    pub texcoord: [f32; 4],
+}
+
+unsafe impl Blittable for BasicUniforms {}
+unsafe impl Blittable for Vertex {}
+
 pub struct BasicPipeline {
     pub uniforms_bind_group_layout: BindGroupLayout,
     pub storage_bind_group_layout: BindGroupLayout,
+    pub sampler: Sampler,
     pub pipeline: Pipeline,
 }
 
@@ -54,6 +77,15 @@ impl BasicPipeline {
             ],
         });
 
+        let sampler = device.create_sampler(&SamplerDesc {
+            filter: SamplerFilter::Point,
+            address_mode: SamplerAddressMode::Clamp,
+            compare_op: None,
+            mip_lod_bias: 0.0,
+            min_lod: 0.0,
+            max_lod: 1000.0,
+        });
+
         let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: cstr!("main"),
@@ -86,7 +118,65 @@ impl BasicPipeline {
         Self {
             uniforms_bind_group_layout,
             storage_bind_group_layout,
+            sampler,
             pipeline,
         }
+    }
+
+    pub fn bind(
+        &self,
+        device: &dyn Device,
+        frame: &Frame,
+        cmd_buffer: &mut CmdBuffer,
+        uniform_buffer: Buffer,
+        vertex_buffer: Buffer,
+        index_buffer: Buffer,
+        transform_buffer: Buffer,
+        texture: Image,
+    ) {
+        device.cmd_set_pipeline(cmd_buffer, self.pipeline);
+
+        device.cmd_set_bind_group(
+            frame,
+            cmd_buffer,
+            self.uniforms_bind_group_layout,
+            0,
+            &[Bind {
+                binding: 0,
+                array_element: 0,
+                typed: TypedBind::UniformBuffer(&[uniform_buffer]),
+            }],
+        );
+
+        device.cmd_set_bind_group(
+            frame,
+            cmd_buffer,
+            self.storage_bind_group_layout,
+            1,
+            &[
+                Bind {
+                    binding: 0,
+                    array_element: 0,
+                    typed: TypedBind::StorageBuffer(&[vertex_buffer]),
+                },
+                Bind {
+                    binding: 1,
+                    array_element: 0,
+                    typed: TypedBind::StorageBuffer(&[transform_buffer]),
+                },
+                Bind {
+                    binding: 2,
+                    array_element: 0,
+                    typed: TypedBind::Sampler(&[self.sampler]),
+                },
+                Bind {
+                    binding: 3,
+                    array_element: 0,
+                    typed: TypedBind::Image(&[(ImageLayout::Optimal, texture)]),
+                },
+            ],
+        );
+
+        device.cmd_set_index_buffer(cmd_buffer, index_buffer, 0, IndexType::U16);
     }
 }
