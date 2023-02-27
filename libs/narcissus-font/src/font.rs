@@ -1,10 +1,9 @@
-use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
-
 use stb_truetype_sys::{
     stbtt_FindGlyphIndex, stbtt_GetFontOffsetForIndex, stbtt_GetFontVMetrics,
     stbtt_GetGlyphBitmapBoxSubpixel, stbtt_GetGlyphHMetrics, stbtt_GetGlyphKernAdvance,
     stbtt_InitFont, stbtt_MakeGlyphBitmapSubpixelPrefilter, truetype,
 };
+use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Oversample {

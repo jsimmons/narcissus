@@ -48,8 +48,7 @@ macro_rules! static_assert {
 macro_rules! thread_token_def {
     ($token_name:ident, $container_name:ident, $max_concurrency:expr) => {
         mod private {
-            use std::cell::UnsafeCell;
-            use std::sync::atomic::AtomicUsize;
+            use std::{cell::UnsafeCell, sync::atomic::AtomicUsize};
             use $crate::PhantomUnsend;
             pub struct $token_name {
                 index: usize,
@@ -107,8 +106,7 @@ macro_rules! thread_token_def {
                 }
             }
         }
-        pub use private::$container_name;
-        pub use private::$token_name;
+        pub use private::{$container_name, $token_name};
     };
 }
 
@@ -504,9 +502,7 @@ pub fn cstr_from_bytes_until_nul(bytes: &[u8]) -> Result<&CStr, FromBytesUntilNu
 mod tests {
     use std::ffi::CStr;
 
-    use super::cstr;
-    use super::mod_inverse_u32;
-    use super::mod_inverse_u64;
+    use super::{cstr, mod_inverse_u32, mod_inverse_u64};
 
     #[test]
     fn test_cstr() {

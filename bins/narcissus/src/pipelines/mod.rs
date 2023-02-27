@@ -1,10 +1,6 @@
 mod basic;
 mod text;
 
-pub use basic::BasicPipeline;
-pub use basic::BasicUniforms;
-pub use basic::Vertex;
+pub use basic::{BasicPipeline, BasicUniforms, Vertex};
 
-pub use text::GlyphInstance;
-pub use text::TextPipeline;
-pub use text::TextUniforms;
+pub use text::{GlyphInstance, TextPipeline, TextUniforms};

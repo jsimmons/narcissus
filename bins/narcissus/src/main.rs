@@ -1,5 +1,9 @@
 use std::time::Instant;
 
+use crate::{
+    fonts::{FontFamily, Fonts},
+    pipelines::{BasicPipeline, TextPipeline},
+};
 use helpers::{create_buffer_with_data, create_image_with_data, load_image, load_obj};
 use mapped_buffer::MappedBuffer;
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
@@ -11,14 +15,8 @@ use narcissus_gpu::{
     ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
-
 use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3};
 use pipelines::{BasicUniforms, GlyphInstance, TextUniforms};
-
-use crate::{
-    fonts::{FontFamily, Fonts},
-    pipelines::{BasicPipeline, TextPipeline},
-};
 
 mod fonts;
 mod helpers;

@@ -1,7 +1,6 @@
+use crate::{font::GlyphBitmapBox, FontCollection, GlyphIndex, Oversample, Packer};
 use rustc_hash::FxHashMap;
 use stb_truetype_sys::rectpack::Rect;
-
-use crate::{font::GlyphBitmapBox, FontCollection, GlyphIndex, Oversample, Packer};
 
 pub use narcissus_core::FiniteF32;
 

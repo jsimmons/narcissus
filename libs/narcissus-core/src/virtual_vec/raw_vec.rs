@@ -1,5 +1,5 @@
-use std::cmp;
 use std::{
+    cmp,
     mem::{align_of, size_of},
     ptr::NonNull,
 };

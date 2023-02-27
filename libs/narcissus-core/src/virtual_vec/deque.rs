@@ -1,7 +1,8 @@
-use std::iter::repeat_with;
-use std::ops::{Index, IndexMut};
-use std::ptr;
-use std::slice;
+use std::{
+    iter::repeat_with,
+    ops::{Index, IndexMut},
+    ptr, slice,
+};
 
 use super::VirtualRawVec;
 

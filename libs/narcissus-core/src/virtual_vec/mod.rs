@@ -2,9 +2,7 @@ mod deque;
 mod raw_vec;
 mod vec;
 
-pub use self::deque::VirtualDeque;
-pub use self::raw_vec::VirtualRawVec;
-pub use self::vec::VirtualVec;
+pub use self::{deque::VirtualDeque, raw_vec::VirtualRawVec, vec::VirtualVec};
 
 #[cfg(test)]
 mod tests {
