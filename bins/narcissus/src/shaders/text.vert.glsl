@@ -48,18 +48,18 @@ void main() {
         vec2(cg.offset_x1, cg.offset_y1)
     };
 
-    vec2 halfScreenSize = vec2(screenWidth, screenHeight) / 2.0;
-    vec2 glyphPosition = vec2(gi.x, gi.y);
-    vec2 vertexPosition = positions[gl_VertexIndex] + glyphPosition;
-    vec2 position = vertexPosition / halfScreenSize - 1.0;
-    gl_Position = vec4(position, 0.0, 1.0);
-
     vec2 texcoords[4] = {
         vec2(cg.x0, cg.y0),
         vec2(cg.x0, cg.y1),
         vec2(cg.x1, cg.y0),
         vec2(cg.x1, cg.y1)
     };
+
+    vec2 halfScreenSize = vec2(screenWidth, screenHeight) / 2.0;
+    vec2 glyphPosition = vec2(gi.x, gi.y);
+    vec2 vertexPosition = positions[gl_VertexIndex] + glyphPosition;
+    vec2 position = vertexPosition / halfScreenSize - 1.0;
+    gl_Position = vec4(position, 0.0, 1.0);
     outTexcoord = texcoords[gl_VertexIndex] / vec2(atlasWidth, atlasHeight);
 
     vec4 color = unpackUnorm4x8(gi.color).bgra;

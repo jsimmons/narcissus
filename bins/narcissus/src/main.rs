@@ -1,6 +1,6 @@
 use std::{path::Path, time::Instant};
 
-use narcissus_app::{create_app, Event, Key, WindowDesc};
+use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{default, obj, rand::Pcg64};
 use narcissus_font::{CachedGlyph, CachedGlyphIndex, FontCollection, GlyphCache};
 use narcissus_gpu::{
@@ -26,6 +26,8 @@ mod pipelines;
 const MAX_SHARKS: usize = 262_144;
 const NUM_SHARKS: usize = 50;
 
+const GLYPH_CACHE_WIDTH: usize = 1024;
+const GLYPH_CACHE_HEIGHT: usize = 512;
 const MAX_GLYPH_INSTANCES: usize = 262_144;
 const MAX_GLYPHS: usize = 8192;
 
@@ -335,7 +337,7 @@ pub fn main() {
     let text_pipeline = TextPipeline::new(device.as_ref());
 
     let fonts = Fonts::new();
-    let mut glyph_cache = GlyphCache::new(&fonts, 1024, 512, 1);
+    let mut glyph_cache = GlyphCache::new(&fonts, GLYPH_CACHE_WIDTH, GLYPH_CACHE_HEIGHT, 1);
 
     let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
@@ -399,6 +401,36 @@ pub fn main() {
         std::mem::size_of::<CachedGlyph>() * MAX_GLYPHS,
     );
 
+    let glyph_atlas = device.create_image(&ImageDesc {
+        location: MemoryLocation::Device,
+        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
+        dimension: ImageDimension::Type2d,
+        format: ImageFormat::R8_UNORM,
+        initial_layout: ImageLayout::Optimal,
+        width: glyph_cache.width() as u32,
+        height: glyph_cache.height() as u32,
+        depth: 1,
+        layer_count: 1,
+        mip_levels: 1,
+    });
+
+    {
+        let frame = device.begin_frame();
+        let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
+        device.cmd_barrier(
+            &mut cmd_buffer,
+            None,
+            &[ImageBarrier::layout_optimal(
+                &[Access::None],
+                &[Access::ShaderSampledImageRead],
+                glyph_atlas,
+                ImageAspectFlags::COLOR,
+            )],
+        );
+        device.submit(&frame, cmd_buffer);
+        device.end_frame(frame);
+    }
+
     let text_sampler = device.create_sampler(&SamplerDesc {
         filter: SamplerFilter::Bilinear,
         address_mode: SamplerAddressMode::Clamp,
@@ -428,6 +460,8 @@ pub fn main() {
         }
     }
 
+    let mut num_chars = 0;
+
     let start_time = Instant::now();
     'main: loop {
         let frame = device.begin_frame();
@@ -438,11 +472,15 @@ pub fn main() {
                 KeyPress {
                     window_id: _,
                     key,
-                    pressed: _,
+                    pressed,
                     modifiers: _,
                 } => {
                     if key == Key::Escape {
                         break 'main;
+                    }
+                    if key == Key::Space && pressed == PressedState::Released {
+                        num_chars += 1;
+                        println!("{num_chars}");
                     }
                 }
                 Quit => {
@@ -554,7 +592,7 @@ pub fn main() {
             y = y.trunc();
 
             glyph_indices.clear();
-            glyph_indices.extend(text.chars().map(|c| {
+            glyph_indices.extend(text.chars().take(num_chars).map(|c| {
                 font.glyph_index(c)
                     .unwrap_or_else(|| font.glyph_index('□').unwrap())
             }));
@@ -586,84 +624,73 @@ pub fn main() {
         let atlas_width = glyph_cache.width() as u32;
         let atlas_height = glyph_cache.height() as u32;
 
-        let (cached_glyphs, texture) = glyph_cache.update_atlas();
-
         text_uniforms.write(TextUniforms {
             screen_width: width,
             screen_height: height,
             atlas_width,
             atlas_height,
         });
-        cached_glyph_buffer.write_slice(cached_glyphs);
         glyph_instance_buffer.write_slice(&glyph_instances);
 
-        // upload atlas
-        let glyph_atlas = {
-            let width = atlas_width;
-            let height = atlas_height;
-            let data = texture;
+        if let Some((cached_glyphs, texture)) = glyph_cache.update_atlas() {
+            cached_glyph_buffer.write_slice(cached_glyphs);
 
-            let buffer =
-                create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER_SRC, data);
+            // upload atlas
+            {
+                let width = atlas_width;
+                let height = atlas_height;
+                let image = glyph_atlas;
+                let data = texture;
 
-            let image = device.create_image(&ImageDesc {
-                location: MemoryLocation::Device,
-                usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
-                dimension: ImageDimension::Type2d,
-                format: ImageFormat::R8_UNORM,
-                initial_layout: ImageLayout::Optimal,
-                width,
-                height,
-                depth: 1,
-                layer_count: 1,
-                mip_levels: 1,
-            });
+                let buffer =
+                    create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER_SRC, data);
 
-            device.cmd_barrier(
-                &mut cmd_buffer,
-                None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::None],
-                    &[Access::TransferWrite],
+                device.cmd_barrier(
+                    &mut cmd_buffer,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::ShaderSampledImageRead],
+                        &[Access::TransferWrite],
+                        image,
+                        ImageAspectFlags::COLOR,
+                    )],
+                );
+
+                device.cmd_copy_buffer_to_image(
+                    &mut cmd_buffer,
+                    buffer,
                     image,
-                    ImageAspectFlags::COLOR,
-                )],
-            );
+                    ImageLayout::Optimal,
+                    &[BufferImageCopy {
+                        buffer_offset: 0,
+                        buffer_row_length: 0,
+                        buffer_image_height: 0,
+                        image_subresource: default(),
+                        image_offset: Offset3d { x: 0, y: 0, z: 0 },
+                        image_extent: Extent3d {
+                            width,
+                            height,
+                            depth: 1,
+                        },
+                    }],
+                );
 
-            device.cmd_copy_buffer_to_image(
-                &mut cmd_buffer,
-                buffer,
-                image,
-                ImageLayout::Optimal,
-                &[BufferImageCopy {
-                    buffer_offset: 0,
-                    buffer_row_length: 0,
-                    buffer_image_height: 0,
-                    image_subresource: default(),
-                    image_offset: Offset3d { x: 0, y: 0, z: 0 },
-                    image_extent: Extent3d {
-                        width,
-                        height,
-                        depth: 1,
-                    },
-                }],
-            );
+                device.cmd_barrier(
+                    &mut cmd_buffer,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::TransferWrite],
+                        &[Access::FragmentShaderSampledImageRead],
+                        image,
+                        ImageAspectFlags::COLOR,
+                    )],
+                );
 
-            device.cmd_barrier(
-                &mut cmd_buffer,
-                None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::TransferWrite],
-                    &[Access::FragmentShaderSampledImageRead],
-                    image,
-                    ImageAspectFlags::COLOR,
-                )],
-            );
+                device.destroy_buffer(&frame, buffer);
 
-            device.destroy_buffer(&frame, buffer);
-
-            image
-        };
+                image
+            };
+        }
 
         device.cmd_begin_rendering(
             &mut cmd_buffer,
@@ -817,8 +844,6 @@ pub fn main() {
         }
 
         device.cmd_end_rendering(&mut cmd_buffer);
-
-        device.destroy_image(&frame, glyph_atlas);
 
         device.submit(&frame, cmd_buffer);
 

@@ -75,10 +75,10 @@ where
 
             padding,
 
-            glyphs: Vec::new(),
-
             next_cached_glyph_index: 0,
             cached_glyph_lookup: Default::default(),
+
+            glyphs: Vec::new(),
 
             packer: Packer::new(width - padding, height - padding),
             rects: Vec::new(),
@@ -126,66 +126,94 @@ where
         })
     }
 
-    pub fn update_atlas(&mut self) -> (&[CachedGlyph], &[u8]) {
-        // We recreate the CachedGlyphs structure completely every update, so reset the index here.
-        self.next_cached_glyph_index = 0;
+    pub fn update_atlas(&mut self) -> Option<(&[CachedGlyph], &[u8])> {
+        let glyphs_len = self.cached_glyphs.len();
 
-        self.glyphs.clear();
-        self.glyphs.extend(self.cached_glyph_lookup.iter().map(
-            |(glyph_key, &cached_glyph_index)| Glyph {
-                family: glyph_key.family,
-                glyph_index: glyph_key.glyph_index,
-                size_px: glyph_key.size_px,
-                cached_glyph_index,
-            },
-        ));
+        // If we have the same number of glyphs as we have cached, then there's nothing to do.
+        if glyphs_len == self.cached_glyph_lookup.len() {
+            return None;
+        }
 
-        // Sort just so we avoid ping-ponging between fonts during rendering.
-        self.glyphs.sort_unstable();
+        // Extend the glyphs list with the new glyphs.
+        self.glyphs
+            .extend(self.cached_glyph_lookup.iter().filter_map(
+                |(glyph_key, &cached_glyph_index)| {
+                    if cached_glyph_index.0 < glyphs_len as u32 {
+                        None
+                    } else {
+                        Some(Glyph {
+                            family: glyph_key.family,
+                            glyph_index: glyph_key.glyph_index,
+                            size_px: glyph_key.size_px,
+                            cached_glyph_index,
+                        })
+                    }
+                },
+            ));
+
+        // The new glyphs might not be in the right order, because HashMap doesn't gaurantee
+        // iteration order. So we need to sort them here by their cached_glyph_index.
+        self.glyphs[glyphs_len..].sort_by_key(
+            |Glyph {
+                 family: _,
+                 glyph_index: _,
+                 size_px: _,
+                 cached_glyph_index,
+             }| *cached_glyph_index,
+        );
+
+        debug_assert!(self
+            .glyphs
+            .iter()
+            .enumerate()
+            .all(|(i, cached_glyph)| cached_glyph.cached_glyph_index.0 as usize == i));
 
         let padding = self.padding as i32;
 
-        self.rects.clear();
-        self.rects.extend(self.glyphs.iter().map(|glyph| {
-            let font = self.fonts.font(glyph.family);
-            let size_px = glyph.size_px.get();
-            let scale = font.scale_for_size_px(size_px);
-            let oversample = Self::oversample_for_size(size_px);
+        // Add new rects for the new cached glyphs.
+        self.rects
+            .extend(self.glyphs[glyphs_len..].iter().map(|glyph| {
+                let font = self.fonts.font(glyph.family);
+                let size_px = glyph.size_px.get();
+                let scale = font.scale_for_size_px(size_px);
+                let oversample = Self::oversample_for_size(size_px);
 
-            let bitmap_box = font.glyph_bitmap_box(
-                glyph.glyph_index,
-                scale * oversample.as_f32(),
-                scale * oversample.as_f32(),
-                0.0,
-                0.0,
-            );
+                let bitmap_box = font.glyph_bitmap_box(
+                    glyph.glyph_index,
+                    scale * oversample.as_f32(),
+                    scale * oversample.as_f32(),
+                    0.0,
+                    0.0,
+                );
 
-            let w = bitmap_box.x1 - bitmap_box.x0 + padding + oversample.as_i32() - 1;
-            let h = bitmap_box.y1 - bitmap_box.y0 + padding + oversample.as_i32() - 1;
+                let w = bitmap_box.x1 - bitmap_box.x0 + padding + oversample.as_i32() - 1;
+                let h = bitmap_box.y1 - bitmap_box.y0 + padding + oversample.as_i32() - 1;
 
-            Rect {
-                id: glyph.cached_glyph_index.0 as i32,
-                w,
-                h,
-                x: 0,
-                y: 0,
-                was_packed: 0,
-            }
-        }));
+                Rect {
+                    id: glyph.cached_glyph_index.0 as i32,
+                    w,
+                    h,
+                    x: 0,
+                    y: 0,
+                    was_packed: 0,
+                }
+            }));
 
-        self.packer.clear();
-        assert!(self.packer.pack(&mut self.rects));
+        // TODO: Emergency re-pack when this fails, dropping glyphs unused this frame.
+        assert!(self.packer.pack(&mut self.rects[glyphs_len..]));
 
-        self.texture.fill(0);
         self.cached_glyphs
             .resize(self.glyphs.len(), CachedGlyph::default());
 
-        let padding = self.padding as i32;
-
-        for (glyph, rect) in self.glyphs.iter().zip(self.rects.iter_mut()) {
+        // Render the new glyphs.
+        for (glyph, rect) in self.glyphs[glyphs_len..]
+            .iter()
+            .zip(self.rects[glyphs_len..].iter_mut())
+        {
             let font = self.fonts.font(glyph.family);
 
             // Pad on left and top.
+            let padding = self.padding as i32;
             rect.x += padding;
             rect.y += padding;
             rect.w -= padding;
@@ -240,6 +268,6 @@ where
             cached_glyph.offset_y1 = (y0 + rect.h) as f32 / oversample.as_f32() + sub_y;
         }
 
-        (&self.cached_glyphs, &self.texture)
+        Some((&self.cached_glyphs, &self.texture))
     }
 }
