@@ -144,7 +144,7 @@ impl<'a> Font<'a> {
 
     pub fn glyph_bitmap_box(
         &self,
-        glyph: GlyphIndex,
+        glyph_index: GlyphIndex,
         scale_x: f32,
         scale_y: f32,
         shift_x: f32,
@@ -157,7 +157,7 @@ impl<'a> Font<'a> {
         unsafe {
             stbtt_GetGlyphBitmapBoxSubpixel(
                 &self.info,
-                glyph.0.get(),
+                glyph_index.0.get(),
                 scale_x,
                 scale_y,
                 shift_x,
