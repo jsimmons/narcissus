@@ -13,9 +13,9 @@ struct CachedGlyph {
 };
 
 struct GlyphInstance {
-    uint index;
     float x;
     float y;
+    uint index;
     uint color;
 };
 

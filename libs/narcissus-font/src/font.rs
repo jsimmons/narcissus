@@ -237,5 +237,5 @@ impl<'a> Font<'a> {
 
 pub trait FontCollection<'a> {
     type Family: Copy + Eq + Ord + std::hash::Hash;
-    fn font(&self, font_family: Self::Family) -> &Font<'a>;
+    fn font(&self, family: Self::Family) -> &Font<'a>;
 }

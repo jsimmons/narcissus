@@ -8,7 +8,7 @@ use helpers::{create_buffer_with_data, create_image_with_data, load_image, load_
 use mapped_buffer::MappedBuffer;
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{default, rand::Pcg64};
-use narcissus_font::{CachedGlyph, FontCollection, GlyphCache};
+use narcissus_font::{FontCollection, GlyphCache, TouchedGlyph, TouchedGlyphInfo};
 use narcissus_gpu::{
     create_device, Access, BufferImageCopy, BufferUsageFlags, ClearValue, Extent2d, Extent3d,
     ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
@@ -41,7 +41,7 @@ pub unsafe trait Blittable: Sized {}
 unsafe impl Blittable for u8 {}
 unsafe impl Blittable for u16 {}
 unsafe impl Blittable for Affine3 {}
-unsafe impl Blittable for CachedGlyph {}
+unsafe impl Blittable for TouchedGlyph {}
 
 pub fn main() {
     let app = create_app();
@@ -110,7 +110,7 @@ pub fn main() {
     let mut glyph_buffer = MappedBuffer::new(
         device.as_ref(),
         BufferUsageFlags::STORAGE,
-        std::mem::size_of::<CachedGlyph>() * MAX_GLYPHS,
+        std::mem::size_of::<TouchedGlyph>() * MAX_GLYPHS,
     );
 
     let glyph_atlas = device.create_image(&ImageDesc {
@@ -163,7 +163,7 @@ pub fn main() {
         }
     }
 
-    let mut num_chars = 0;
+    let mut space_count = 0;
 
     let start_time = Instant::now();
     'main: loop {
@@ -181,9 +181,8 @@ pub fn main() {
                     if key == Key::Escape {
                         break 'main;
                     }
-                    if key == Key::Space && pressed == PressedState::Released {
-                        num_chars += 1;
-                        println!("{num_chars}");
+                    if key == Key::Space && pressed == PressedState::Pressed {
+                        space_count += 1;
                     }
                 }
                 Quit => {
@@ -271,7 +270,6 @@ pub fn main() {
         let line1 = "加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して";
 
         let mut glyph_instances = Vec::new();
-        let mut glyph_indices = Vec::new();
 
         let mut x;
         let mut y = 0.0;
@@ -294,33 +292,29 @@ pub fn main() {
             y += (font.ascent() - font.descent() + font.line_gap()) * scale;
             y = y.trunc();
 
-            glyph_indices.clear();
-            glyph_indices.extend(text.chars().take(num_chars).map(|c| {
-                font.glyph_index(c)
-                    .unwrap_or_else(|| font.glyph_index('□').unwrap())
-            }));
-
             let mut prev_glyph_index = None;
-            for glyph_index in glyph_indices.iter().copied() {
+            for c in text.chars().skip(space_count).take(1) {
+                let TouchedGlyphInfo {
+                    touched_glyph_index,
+                    glyph_index,
+                    advance_width,
+                } = glyph_cache.touch_glyph(font_family, c, font_size_px);
+
                 if let Some(prev_glyph_index) = prev_glyph_index.replace(glyph_index) {
                     x += font.kerning_advance(prev_glyph_index, glyph_index) * scale;
                 }
-
-                let cached_glyph_index =
-                    glyph_cache.cache_glyph(font_family, glyph_index, font_size_px);
 
                 const COLOR_SERIES: [u32; 4] = [0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63];
                 let color = COLOR_SERIES[rng.next_bound_u64(4) as usize];
 
                 glyph_instances.push(GlyphInstance {
-                    cached_glyph_index,
                     x,
                     y,
+                    touched_glyph_index,
                     color,
                 });
 
-                let h_metrics = font.horizontal_metrics(glyph_index);
-                x += h_metrics.advance_width * scale;
+                x += advance_width * scale;
             }
         }
 
@@ -336,9 +330,10 @@ pub fn main() {
         glyph_instance_buffer.write_slice(&glyph_instances);
 
         // If the atlas has been updated, we need to upload it to the GPU
-        if let Some((cached_glyphs, texture)) = glyph_cache.update_atlas() {
-            glyph_buffer.write_slice(cached_glyphs);
+        let (touched_glyphs, texture) = glyph_cache.update_atlas();
+        glyph_buffer.write_slice(touched_glyphs);
 
+        if let Some(texture) = texture {
             // upload atlas
             {
                 let width = atlas_width;
@@ -391,9 +386,7 @@ pub fn main() {
                 );
 
                 device.destroy_buffer(&frame, buffer);
-
-                image
-            };
+            }
         }
 
         device.cmd_begin_rendering(

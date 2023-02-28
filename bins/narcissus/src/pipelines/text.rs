@@ -1,5 +1,5 @@
 use narcissus_core::{cstr, default, include_bytes_align};
-use narcissus_font::CachedGlyphIndex;
+use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
     Buffer, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace, GraphicsPipelineDesc,
@@ -25,9 +25,9 @@ pub struct TextUniforms {
 #[allow(unused)]
 #[repr(C)]
 pub struct GlyphInstance {
-    pub cached_glyph_index: CachedGlyphIndex,
     pub x: f32,
     pub y: f32,
+    pub touched_glyph_index: TouchedGlyphIndex,
     pub color: u32,
 }
 
