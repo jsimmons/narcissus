@@ -6,7 +6,7 @@ use crate::{
 };
 use helpers::{create_buffer_with_data, create_image_with_data, load_image, load_obj};
 use mapped_buffer::MappedBuffer;
-use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
+use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{default, rand::Pcg64};
 use narcissus_font::{FontCollection, GlyphCache, TouchedGlyph, TouchedGlyphInfo};
 use narcissus_gpu::{
@@ -163,8 +163,6 @@ pub fn main() {
         }
     }
 
-    let mut space_count = 0;
-
     let start_time = Instant::now();
     'main: loop {
         let frame = device.begin_frame();
@@ -175,14 +173,11 @@ pub fn main() {
                 KeyPress {
                     window_id: _,
                     key,
-                    pressed,
+                    pressed: _,
                     modifiers: _,
                 } => {
                     if key == Key::Escape {
                         break 'main;
-                    }
-                    if key == Key::Space && pressed == PressedState::Pressed {
-                        space_count += 1;
                     }
                 }
                 Quit => {
@@ -293,7 +288,7 @@ pub fn main() {
             y = y.trunc();
 
             let mut prev_glyph_index = None;
-            for c in text.chars().skip(space_count).take(1) {
+            for c in text.chars() {
                 let TouchedGlyphInfo {
                     touched_glyph_index,
                     glyph_index,
@@ -327,66 +322,66 @@ pub fn main() {
             atlas_width,
             atlas_height,
         });
+
         glyph_instance_buffer.write_slice(&glyph_instances);
 
-        // If the atlas has been updated, we need to upload it to the GPU
         let (touched_glyphs, texture) = glyph_cache.update_atlas();
+
+        // Update information for the glyphs we need this frame.
         glyph_buffer.write_slice(touched_glyphs);
 
+        // If the atlas has been updated, we need to upload it to the GPU.
         if let Some(texture) = texture {
-            // upload atlas
-            {
-                let width = atlas_width;
-                let height = atlas_height;
-                let image = glyph_atlas;
-                let data = texture;
+            let width = atlas_width;
+            let height = atlas_height;
+            let image = glyph_atlas;
+            let data = texture;
 
-                let buffer =
-                    create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER_SRC, data);
+            let buffer =
+                create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER_SRC, data);
 
-                device.cmd_barrier(
-                    &mut cmd_buffer,
-                    None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::ShaderSampledImageRead],
-                        &[Access::TransferWrite],
-                        image,
-                        ImageAspectFlags::COLOR,
-                    )],
-                );
-
-                device.cmd_copy_buffer_to_image(
-                    &mut cmd_buffer,
-                    buffer,
+            device.cmd_barrier(
+                &mut cmd_buffer,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::ShaderSampledImageRead],
+                    &[Access::TransferWrite],
                     image,
-                    ImageLayout::Optimal,
-                    &[BufferImageCopy {
-                        buffer_offset: 0,
-                        buffer_row_length: 0,
-                        buffer_image_height: 0,
-                        image_subresource: default(),
-                        image_offset: Offset3d { x: 0, y: 0, z: 0 },
-                        image_extent: Extent3d {
-                            width,
-                            height,
-                            depth: 1,
-                        },
-                    }],
-                );
+                    ImageAspectFlags::COLOR,
+                )],
+            );
 
-                device.cmd_barrier(
-                    &mut cmd_buffer,
-                    None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::TransferWrite],
-                        &[Access::FragmentShaderSampledImageRead],
-                        image,
-                        ImageAspectFlags::COLOR,
-                    )],
-                );
+            device.cmd_copy_buffer_to_image(
+                &mut cmd_buffer,
+                buffer,
+                image,
+                ImageLayout::Optimal,
+                &[BufferImageCopy {
+                    buffer_offset: 0,
+                    buffer_row_length: 0,
+                    buffer_image_height: 0,
+                    image_subresource: default(),
+                    image_offset: Offset3d { x: 0, y: 0, z: 0 },
+                    image_extent: Extent3d {
+                        width,
+                        height,
+                        depth: 1,
+                    },
+                }],
+            );
 
-                device.destroy_buffer(&frame, buffer);
-            }
+            device.cmd_barrier(
+                &mut cmd_buffer,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::TransferWrite],
+                    &[Access::FragmentShaderSampledImageRead],
+                    image,
+                    ImageAspectFlags::COLOR,
+                )],
+            );
+
+            device.destroy_buffer(&frame, buffer);
         }
 
         device.cmd_begin_rendering(
