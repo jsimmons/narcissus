@@ -299,14 +299,12 @@ pub fn main() {
                     x += font.kerning_advance(prev_glyph_index, glyph_index) * scale;
                 }
 
-                const COLOR_SERIES: [u32; 4] = [0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63];
-                let color = COLOR_SERIES[rng.next_bound_u64(4) as usize];
-
+                const COLOR_SERIES: &[u32; 4] = &[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63];
                 glyph_instances.push(GlyphInstance {
                     x,
                     y,
                     touched_glyph_index,
-                    color,
+                    color: *rng.select(COLOR_SERIES).unwrap(),
                 });
 
                 x += advance_width * scale;

@@ -50,6 +50,32 @@ impl Pcg64 {
         let value = (self.next_u64() >> (64 - 25)) as i64 as f32;
         value * 5.960_464_5e-8 // 0x1p-24f
     }
+
+    /// Randomly select an an element from `slice` with uniform probability.
+    pub fn select<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T> {
+        if slice.is_empty() {
+            None
+        } else {
+            let index = self.next_bound_u64(slice.len() as u64) as usize;
+            slice.get(index)
+        }
+    }
+
+    /// Shuffle the elements in `slice` in-place.
+    ///
+    /// Note that as `Pcg64` is initialized with a 128 bit seed, it's only possible to generate
+    /// `2^128` permutations. This means for slices larger than 34 elements, this function can no
+    /// longer produce all permutations.
+    pub fn shuffle<T>(&mut self, slice: &mut [T]) {
+        if !slice.is_empty() {
+            let mut i = slice.len() - 1;
+            while i >= 1 {
+                let j = self.next_bound_u64((i + 1) as u64) as usize;
+                slice.swap(i, j);
+                i -= 1;
+            }
+        }
+    }
 }
 
 impl Default for Pcg64 {
@@ -60,6 +86,8 @@ impl Default for Pcg64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -99,5 +127,41 @@ mod tests {
         assert_eq!(rng.next_bound_u64(2), 1);
         assert_eq!(rng.next_bound_u64(2), 1);
         assert_eq!(rng.next_bound_u64(2), 0);
+    }
+
+    #[test]
+    fn shuffle_generates_all_permutations() {
+        let mut array: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+        let mut permutations = HashSet::new();
+        let mut rng = Pcg64::new();
+        // 8P8 = 40_320 = number of possible permutations of 8 elements.
+        while permutations.len() != 40_320 {
+            rng.shuffle(&mut array);
+            permutations.insert(u64::from_le_bytes(array));
+        }
+    }
+
+    #[test]
+    fn shuffle_empty_slice() {
+        let slice: &mut [u8] = &mut [];
+        let mut rng = Pcg64::new();
+        rng.shuffle(slice)
+    }
+
+    #[test]
+    fn select_visits_all_elements() {
+        let array = &[0, 1, 2, 3, 4, 5, 6, 7];
+        let mut selected = HashSet::<u8>::from_iter(array.iter().copied());
+        let mut rng = Pcg64::new();
+        while !selected.is_empty() {
+            selected.remove(rng.select(array).unwrap());
+        }
+    }
+
+    #[test]
+    fn select_empty_slice() {
+        let slice: &mut [u8] = &mut [];
+        let mut rng = Pcg64::new();
+        assert_eq!(rng.select(slice), None);
     }
 }
