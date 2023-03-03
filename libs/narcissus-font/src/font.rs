@@ -29,7 +29,8 @@ impl Oversample {
 
 /// Font vertical metrics in unscaled coordinates.
 ///
-/// You should advance the vertical position by `ascent * scale - descent * scale + line_gap * scale`
+/// You should advance the vertical position by
+/// `(ascent - descent + line_gap) * scale`
 #[derive(Clone, Copy, Debug)]
 pub struct VerticalMetrics {
     /// Coordinate above the baseline the font extends.
@@ -45,15 +46,23 @@ pub struct VerticalMetrics {
 /// You should advance the horizontal position by `advance_width * scale`
 #[derive(Clone, Copy, Debug)]
 pub struct HorizontalMetrics {
-    /// The offset from the current horizontal position to the next horizontal position.
+    /// The offset from the current horizontal position to the next horizontal
+    /// position.
     pub advance_width: f32,
-    /// The offset from the current horizontal position to the left edge of the character.
+    /// The offset from the current horizontal position to the left edge of the
+    /// character.
     pub left_side_bearing: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(C)]
 pub struct GlyphIndex(NonZeroI32);
+
+impl GlyphIndex {
+    pub fn as_u32(self) -> u32 {
+        self.0.get() as u32
+    }
+}
 
 /// Coordinates:
 ///  +x right
@@ -82,6 +91,12 @@ pub struct Font<'a> {
 }
 
 impl<'a> Font<'a> {
+    /// Create a new `Font` from ttf data.
+    ///
+    /// # Safety
+    ///
+    /// Must be a valid ttf font from a trusted source. Invalid data is not
+    /// safely handled.
     pub unsafe fn from_bytes(data: &'a [u8]) -> Self {
         let info = unsafe {
             let mut info = MaybeUninit::uninit();
@@ -114,9 +129,11 @@ impl<'a> Font<'a> {
         }
     }
 
-    /// Returns a scale factor to produce a font whose "height" is `size_px` pixels tall.
+    /// Returns a scale factor to produce a font whose "height" is `size_px`
+    /// pixels tall.
     ///
-    /// Height is measured as the distance from the highest ascender to the lowest descender.
+    /// Height is measured as the distance from the highest ascender to the
+    /// lowest descender.
     pub fn scale_for_size_px(&self, size_px: f32) -> f32 {
         size_px / (self.vertical_metrics.ascent - self.vertical_metrics.descent)
     }
@@ -136,10 +153,11 @@ impl<'a> Font<'a> {
         self.vertical_metrics.line_gap
     }
 
-    /// Return the `GlyphIndex` for the character, or `None` if the font has no matching glyph.
+    /// Return the `GlyphIndex` for the character, or `None` if the font has no
+    /// matching glyph.
     pub fn glyph_index(&self, c: char) -> Option<GlyphIndex> {
         let glyph_index = unsafe { stbtt_FindGlyphIndex(&self.info, c as i32) };
-        NonZeroI32::new(glyph_index).map(|glyph_index| GlyphIndex(glyph_index))
+        NonZeroI32::new(glyph_index).map(GlyphIndex)
     }
 
     pub fn glyph_bitmap_box(

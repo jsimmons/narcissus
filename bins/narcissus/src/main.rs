@@ -6,9 +6,9 @@ use crate::{
 };
 use helpers::{create_buffer_with_data, create_image_with_data, load_image, load_obj};
 use mapped_buffer::MappedBuffer;
-use narcissus_app::{create_app, Event, Key, WindowDesc};
-use narcissus_core::{default, rand::Pcg64};
-use narcissus_font::{FontCollection, GlyphCache, TouchedGlyph, TouchedGlyphInfo};
+use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
+use narcissus_core::{default, rand::Pcg64, slice::array_windows};
+use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics, TouchedGlyph};
 use narcissus_gpu::{
     create_device, Access, BufferImageCopy, BufferUsageFlags, ClearValue, Extent2d, Extent3d,
     ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
@@ -26,12 +26,12 @@ mod pipelines;
 const MAX_SHARKS: usize = 262_144;
 const NUM_SHARKS: usize = 50;
 
-const GLYPH_CACHE_WIDTH: usize = 1024;
-const GLYPH_CACHE_HEIGHT: usize = 512;
+const GLYPH_CACHE_SIZE: usize = 1024;
 const MAX_GLYPH_INSTANCES: usize = 262_144;
 const MAX_GLYPHS: usize = 8192;
 
-/// Marker trait indicates it's safe to convert a given type directly to an array of bytes.
+/// Marker trait indicates it's safe to convert a given type directly to an
+/// array of bytes.
 ///
 /// # Safety
 ///
@@ -58,7 +58,7 @@ pub fn main() {
     let text_pipeline = TextPipeline::new(device.as_ref());
 
     let fonts = Fonts::new();
-    let mut glyph_cache = GlyphCache::new(&fonts, GLYPH_CACHE_WIDTH, GLYPH_CACHE_HEIGHT, 1);
+    let mut glyph_cache = GlyphCache::new(&fonts, GLYPH_CACHE_SIZE, GLYPH_CACHE_SIZE, 1);
 
     let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
@@ -163,6 +163,11 @@ pub fn main() {
         }
     }
 
+    let mut glyph_instances = Vec::new();
+
+    let mut align_v = false;
+    let mut kerning = true;
+
     let start_time = Instant::now();
     'main: loop {
         let frame = device.begin_frame();
@@ -173,11 +178,19 @@ pub fn main() {
                 KeyPress {
                     window_id: _,
                     key,
-                    pressed: _,
+                    pressed,
                     modifiers: _,
                 } => {
                     if key == Key::Escape {
                         break 'main;
+                    }
+                    if key == Key::Space && pressed == PressedState::Pressed {
+                        align_v = !align_v;
+                        println!("align: {align_v}");
+                    }
+                    if key == Key::K && pressed == PressedState::Pressed {
+                        kerning = !kerning;
+                        println!("kerning: {kerning}");
                     }
                 }
                 Quit => {
@@ -261,53 +274,89 @@ pub fn main() {
         basic_uniform_buffer.write(BasicUniforms { clip_from_model });
 
         // Do some Font Shit.'
-        let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½ Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½ Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge. ½½½½";
-        let line1 = "加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して 加盟国は、国際連合と協力して";
-
-        let mut glyph_instances = Vec::new();
+        let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge.";
+        let line1 = "加盟国は、国際連合と協力して";
 
         let mut x;
         let mut y = 0.0;
 
         let mut rng = Pcg64::new();
 
-        for line in 0..34 {
-            let (font_family, font_size_px, text) = if line & 1 == 0 {
-                (FontFamily::RobotoRegular, 10.0, line0)
-            } else {
-                (FontFamily::NotoSansJapanese, 20.0, line1)
-            };
+        glyph_instances.clear();
 
-            let font_size_px = font_size_px + (line / 2) as f32 * 2.0;
+        let mut line_glyph_indices = Vec::new();
+        let mut line_kern_advances = Vec::new();
+
+        for line in 0.. {
+            let (font_family, font_size_px, text) = if line & 1 == 0 {
+                (FontFamily::RobotoRegular, 14.0, line0)
+            } else {
+                (FontFamily::NotoSansJapanese, 14.0, line1)
+            };
 
             let font = fonts.font(font_family);
             let scale = font.scale_for_size_px(font_size_px);
 
             x = 0.0;
             y += (font.ascent() - font.descent() + font.line_gap()) * scale;
-            y = y.trunc();
+            if align_v {
+                y = y.trunc();
+            }
 
-            let mut prev_glyph_index = None;
-            for c in text.chars() {
-                let TouchedGlyphInfo {
-                    touched_glyph_index,
-                    glyph_index,
-                    advance_width,
-                } = glyph_cache.touch_glyph(font_family, c, font_size_px);
+            if y > height as f32 {
+                break;
+            }
 
-                if let Some(prev_glyph_index) = prev_glyph_index.replace(glyph_index) {
-                    x += font.kerning_advance(prev_glyph_index, glyph_index) * scale;
+            let font_size_str = format!("{font_size_px}: ");
+
+            line_glyph_indices.clear();
+            line_glyph_indices.extend(font_size_str.chars().chain(text.chars()).map(|c| {
+                font.glyph_index(c)
+                    .unwrap_or_else(|| font.glyph_index('□').unwrap())
+            }));
+
+            line_kern_advances.clear();
+            line_kern_advances.push(0.0);
+            line_kern_advances.extend(
+                array_windows(line_glyph_indices.as_slice())
+                    .map(|&[prev_index, next_index]| font.kerning_advance(prev_index, next_index)),
+            );
+
+            'repeat_str: for _ in 0.. {
+                for (glyph_index, advance) in line_glyph_indices
+                    .iter()
+                    .copied()
+                    .zip(line_kern_advances.iter().copied())
+                {
+                    if x >= width as f32 {
+                        break 'repeat_str;
+                    }
+
+                    let touched_glyph_index =
+                        glyph_cache.touch_glyph(font_family, glyph_index, font_size_px);
+
+                    let HorizontalMetrics {
+                        advance_width,
+                        left_side_bearing: _,
+                    } = font.horizontal_metrics(glyph_index);
+
+                    if kerning {
+                        x += advance * scale;
+                    }
+
+                    let color = *rng
+                        .select(&[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63])
+                        .unwrap();
+
+                    glyph_instances.push(GlyphInstance {
+                        x,
+                        y,
+                        touched_glyph_index,
+                        color,
+                    });
+
+                    x += advance_width * scale;
                 }
-
-                const COLOR_SERIES: &[u32; 4] = &[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63];
-                glyph_instances.push(GlyphInstance {
-                    x,
-                    y,
-                    touched_glyph_index,
-                    color: *rng.select(COLOR_SERIES).unwrap(),
-                });
-
-                x += advance_width * scale;
             }
         }
 
@@ -391,9 +440,7 @@ pub fn main() {
                 height,
                 color_attachments: &[RenderingAttachment {
                     image: swapchain_image,
-                    load_op: LoadOp::Clear(ClearValue::ColorF32([
-                        0.392157, 0.584314, 0.929412, 1.0,
-                    ])),
+                    load_op: LoadOp::Clear(ClearValue::ColorF32([1.0, 1.0, 1.0, 1.0])),
                     store_op: StoreOp::Store,
                 }],
                 depth_attachment: Some(RenderingAttachment {

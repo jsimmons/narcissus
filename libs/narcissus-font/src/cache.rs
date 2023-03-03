@@ -1,21 +1,17 @@
 use std::collections::hash_map::Entry;
 
-use crate::{
-    font::{GlyphBitmapBox, HorizontalMetrics},
-    FontCollection, GlyphIndex, Oversample, Packer,
-};
+use crate::{font::GlyphBitmapBox, FontCollection, GlyphIndex, Oversample, Packer};
 use narcissus_core::default;
+pub use narcissus_core::FiniteF32;
 use rustc_hash::FxHashMap;
 use stb_truetype_sys::rectpack::Rect;
-
-pub use narcissus_core::FiniteF32;
 
 /// A key that uniquely identifies a given glyph within the glyph cache.
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct GlyphKey<Family> {
-    family: Family,
-    c: char,
+    glyph_index: GlyphIndex,
     size_px: FiniteF32,
+    family: Family,
 }
 
 /// An index into the CachedGlyph slice.
@@ -40,17 +36,8 @@ pub struct TouchedGlyph {
     pub offset_y1: f32,
 }
 
-/// Information stored for each touched glyph to avoid re-computing for each instance of that glyph.
-#[derive(Clone, Copy)]
-pub struct TouchedGlyphInfo {
-    pub touched_glyph_index: TouchedGlyphIndex,
-    pub glyph_index: GlyphIndex,
-    pub advance_width: f32,
-}
-
 struct CachedGlyph<F> {
     glyph_key: GlyphKey<F>,
-    glyph_index: GlyphIndex,
     x0: i32,
     y0: i32,
     offset_x0: f32,
@@ -71,7 +58,7 @@ where
     texture: Box<[u8]>,
 
     next_touched_glyph_index: u32,
-    touched_glyph_lookup: FxHashMap<GlyphKey<F::Family>, TouchedGlyphInfo>,
+    touched_glyph_lookup: FxHashMap<GlyphKey<F::Family>, TouchedGlyphIndex>,
     touched_glyphs: Vec<TouchedGlyph>,
 
     cached_glyph_indices_sorted: Vec<usize>,
@@ -116,24 +103,32 @@ where
 
     /// Calculate oversampling factor for a given font size in pixels.
     ///
-    /// Oversampling renders the glyphs pre-filtered at a higher resolution, so rendering can use bilinear filtering to
-    /// avoid blurriness on small fonts that aren't placed at pixel boundaries. Since it scales the size of the rendered
-    /// glyph by some fixed multipler, it's very costly in terms of atlas space for larger fonts. At the same time,
-    /// larger fonts don't benefit significantly from the filtering.
+    /// Oversampling renders the glyphs pre-filtered so rendering can use
+    /// bilinear filtering to avoid blurriness when glyphs are not placed on
+    /// exact pixel boundaries. Since it scales the size of the rendered
+    /// glyph by a fixed multipler, it can be very costly in terms of atlas
+    /// space for larger font sizes. Additionally the positive impact of
+    /// oversampling is less pronounced at large font sizes.
     ///
-    /// This function chooses an arbitrary threshold above which to disable oversampling to avoid wasting atlas space.
+    /// This function chooses an arbitrary threshold above which to disable
+    /// oversampling in an attempt to balance atlas space usage and quality.
     fn oversample_for_size(size_px: f32) -> Oversample {
         if size_px <= 25.0 {
-            Oversample::X2
+            Oversample::X4
         } else {
-            Oversample::None
+            Oversample::X2
         }
     }
 
-    pub fn touch_glyph(&mut self, family: F::Family, c: char, size_px: f32) -> TouchedGlyphInfo {
+    pub fn touch_glyph(
+        &mut self,
+        family: F::Family,
+        glyph_index: GlyphIndex,
+        size_px: f32,
+    ) -> TouchedGlyphIndex {
         let key = GlyphKey {
             family,
-            c,
+            glyph_index,
             size_px: FiniteF32::new(size_px).unwrap(),
         };
 
@@ -142,28 +137,14 @@ where
             Entry::Vacant(entry) => {
                 let touched_glyph_index = TouchedGlyphIndex(self.next_touched_glyph_index);
                 self.next_touched_glyph_index += 1;
-
-                let font = self.fonts.font(family);
-                let glyph_index = font
-                    .glyph_index(c)
-                    .unwrap_or_else(|| font.glyph_index('□').unwrap());
-
-                let HorizontalMetrics {
-                    advance_width,
-                    left_side_bearing: _,
-                } = font.horizontal_metrics(glyph_index);
-
-                *entry.insert(TouchedGlyphInfo {
-                    touched_glyph_index,
-                    glyph_index,
-                    advance_width,
-                })
+                *entry.insert(touched_glyph_index)
             }
         }
     }
 
     pub fn update_atlas(&mut self) -> (&[TouchedGlyph], Option<&[u8]>) {
-        // We might have touched more, or fewer, glyphs this iteration, so update the touched glyphs array.
+        // We might have touched more, or fewer, glyphs this iteration, so
+        // update the touched glyphs array.
         self.touched_glyphs
             .resize(self.touched_glyph_lookup.len(), TouchedGlyph::default());
 
@@ -172,23 +153,22 @@ where
 
         let updated_atlas = 'emergency_repack: loop {
             let cached_glyphs_len = self.cached_glyphs.len();
-            let sorted_indices = &self.cached_glyph_indices_sorted;
+            let sorted_indices = self.cached_glyph_indices_sorted.as_slice();
 
             // For each touched glyph, try and find it in our cached glyph list.
-            for (glyph_key, touched_glyph_info) in self.touched_glyph_lookup.iter() {
-                let touched_glyph_index = touched_glyph_info.touched_glyph_index.0;
-                let glyph_index = touched_glyph_info.glyph_index;
-
+            for (glyph_key, touched_glyph_index) in self.touched_glyph_lookup.iter() {
                 match sorted_indices
                     .binary_search_by_key(glyph_key, |&index| self.cached_glyphs[index].glyph_key)
                 {
-                    // We've already cached this glyph. So we just need to write into `touched_glyphs`.
+                    // We've already cached this glyph. So we just need to write
+                    // into `touched_glyphs`.
                     Ok(index) => {
                         let cached_glyph_index = sorted_indices[index];
                         let cached_glyph = &self.cached_glyphs[cached_glyph_index];
                         let rect = &self.rects[cached_glyph_index];
 
-                        let touched_glyph = &mut self.touched_glyphs[touched_glyph_index as usize];
+                        let touched_glyph =
+                            &mut self.touched_glyphs[touched_glyph_index.0 as usize];
 
                         touched_glyph.x0 = rect.x;
                         touched_glyph.x1 = rect.x + rect.w;
@@ -200,7 +180,8 @@ where
                         touched_glyph.offset_x1 = cached_glyph.offset_x1;
                         touched_glyph.offset_y1 = cached_glyph.offset_y1;
                     }
-                    // This glyph isn't cached, so we must prepare to pack and render it.
+                    // This glyph isn't cached, so we must prepare to pack and
+                    // render it.
                     Err(_) => {
                         let font = self.fonts.font(glyph_key.family);
                         let size_px = glyph_key.size_px.get();
@@ -208,17 +189,18 @@ where
                         let scale = font.scale_for_size_px(size_px) * oversample.as_f32();
 
                         let GlyphBitmapBox { x0, x1, y0, y1 } =
-                            font.glyph_bitmap_box(glyph_index, scale, scale, 0.0, 0.0);
+                            font.glyph_bitmap_box(glyph_key.glyph_index, scale, scale, 0.0, 0.0);
 
                         let w = x1 - x0 + self.padding as i32 + oversample.as_i32() - 1;
                         let h = y1 - y0 + self.padding as i32 + oversample.as_i32() - 1;
 
                         self.cached_glyphs.push(CachedGlyph {
                             glyph_key: *glyph_key,
-                            glyph_index,
                             x0,
                             y0,
-                            offset_x0: 0.0, // These zeroed fields will be filled out in the render step.
+                            // These zeroed fields will be filled out in the
+                            // render step.
+                            offset_x0: 0.0,
                             offset_y0: 0.0,
                             offset_x1: 0.0,
                             offset_y1: 0.0,
@@ -241,19 +223,23 @@ where
                 break false;
             }
 
-            // New glyphs are now stored in the range `cached_glyphs_len..` in both the `rects` and `cached_glyphs`
-            // structures.
+            // New glyphs are now stored in the range `cached_glyphs_len..` in
+            // both the `rects` and `cached_glyphs` structures.
             let new_rects = &mut self.rects[cached_glyphs_len..];
             let new_cached_glyphs = &mut self.cached_glyphs[cached_glyphs_len..];
 
-            // First we must pack the new glyph rects so we know where to render them.
+            // We add the new rects to the existing packer state. This can be
+            // less than optimal, but allows us to avoid invalidating previous
+            // entries in the cache.
             if !self.packer.pack(new_rects) {
                 assert!(
                     !is_emergency_repack,
                     "emergency repack failed, texture atlas exhausted"
                 );
 
-                // If packing fails, wipe the cache and try again with a full repack and render of touched_glyphs.
+                // If packing fails, wipe the cache and try again with a full
+                // repack, dropping any glyphs that aren't required in this
+                // update.
                 self.cached_glyph_indices_sorted.clear();
                 self.cached_glyphs.clear();
                 self.rects.clear();
@@ -291,7 +277,7 @@ where
                     0.0,
                     oversample,
                     oversample,
-                    cached_glyph.glyph_index,
+                    cached_glyph.glyph_key.glyph_index,
                 );
 
                 let offset_x0 = cached_glyph.x0 as f32 / oversample.as_f32() + sub_x;
@@ -317,8 +303,10 @@ where
                 touched_glyph.offset_y1 = offset_y1;
             }
 
-            // Instead of sorting the `cached_glyphs` and `rects` arrays directly, we sort an indirection array. Since
-            // we've changed the cached_glyphs array, this needs to be updated now.
+            // The `cached_glyphs` and `rects` arrays need to be sorted for the
+            // lookup binary search, but instead of sorting them directly, we
+            // sort a small indirection table since that's a bit simpler to
+            // execute.
             self.cached_glyph_indices_sorted.clear();
             self.cached_glyph_indices_sorted
                 .extend(0..self.cached_glyphs.len());
@@ -328,8 +316,9 @@ where
             break true;
         };
 
-        // Each update gets new touched glyphs, so we need to clear the hashmap. However this cannot happen until the
-        // function exit as the touched glyphs are needed for the emergency repack.
+        // Each update gets new touched glyphs, so we need to clear the hashmap.
+        // However this cannot happen until the function exit as the touched
+        // glyphs are needed for the emergency repack.
         self.touched_glyph_lookup.clear();
         self.next_touched_glyph_index = 0;
 
