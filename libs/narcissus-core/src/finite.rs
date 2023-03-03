@@ -15,7 +15,7 @@ impl Error for NotFiniteError {}
 ///
 /// This allows us to safely implement Hash, Eq and Ord.
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy)]
 pub struct FiniteF32(f32);
 
 impl FiniteF32 {
@@ -34,7 +34,21 @@ impl FiniteF32 {
     }
 }
 
+impl PartialEq for FiniteF32 {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl Eq for FiniteF32 {}
+
+impl PartialOrd for FiniteF32 {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
 
 impl Ord for FiniteF32 {
     #[inline(always)]
@@ -58,7 +72,7 @@ impl std::hash::Hash for FiniteF32 {
 ///
 /// This allows us to safely implement Hash, Eq and Ord.
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy)]
 pub struct FiniteF64(f64);
 
 impl FiniteF64 {
@@ -77,7 +91,21 @@ impl FiniteF64 {
     }
 }
 
+impl PartialEq for FiniteF64 {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl Eq for FiniteF64 {}
+
+impl PartialOrd for FiniteF64 {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
 
 impl Ord for FiniteF64 {
     #[inline(always)]
