@@ -10,8 +10,8 @@ use narcissus_maths::Mat4;
 
 use crate::Blittable;
 
-const VERT_SPV: &'static [u8] = include_bytes_align!(4, "../shaders/basic.vert.spv");
-const FRAG_SPV: &'static [u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
+const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.vert.spv");
+const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]

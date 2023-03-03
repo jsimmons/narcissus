@@ -10,8 +10,8 @@ use narcissus_gpu::{
 
 use crate::Blittable;
 
-const VERT_SPV: &'static [u8] = include_bytes_align!(4, "../shaders/text.vert.spv");
-const FRAG_SPV: &'static [u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
+const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.vert.spv");
+const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]
