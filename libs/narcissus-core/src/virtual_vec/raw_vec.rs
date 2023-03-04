@@ -20,11 +20,11 @@ impl<T> VirtualRawVec<T> {
         let align = align_of::<T>();
         let page_size = page_size();
 
-        // Allocating memory with virtual alloc for a zst seems a bit of a waste :)
+        // Allocating memory with virtual alloc for a zst seems a bit of a waste. :)
         assert!(size != 0);
 
-        // mmap gaurantees we get page aligned addresses back. So as long as our alignment
-        // requirement is less than that, we're all good in the hood.
+        // mmap gaurantees we get page aligned addresses back. So as long as our
+        // alignment requirement is less than that, we're all good in the hood.
         assert!(align < page_size);
 
         let max_capacity_bytes = size.checked_mul(max_capacity).unwrap();
@@ -47,8 +47,9 @@ impl<T> VirtualRawVec<T> {
         let mut vec = Self::new(max_capacity);
 
         unsafe {
-            // we ensure that capacity is less than max_capacity, and the new function above would
-            // have paniced if max_capacity * size_of::<T>() overflowed, so we're always safe here.
+            // We ensure that capacity is less than max_capacity, and the new function above
+            // would have paniced if max_capacity * size_of::<T>() overflowed, so we're
+            // always safe here.
             let cap_bytes = capacity * size_of::<T>();
             virtual_commit(vec.ptr.as_ptr() as *mut std::ffi::c_void, cap_bytes);
             vec.cap = capacity;
@@ -80,9 +81,8 @@ impl<T> VirtualRawVec<T> {
             let double_cap = self.cap * 2;
             let new_cap = cmp::max(required_cap, cmp::min(double_cap, max_cap));
 
-            // This can't overflow because we've already ensured that the new_cap is less than or
-            // equal to the the max_cap, and the max_cap has already been checked for overflow in
-            // the constructor.
+            // This can't overflow because we've already ensured that `new_cap <= max_cap`,
+            // and `max_cap` has already been checked for overflow in the constructor.
             let new_cap_bytes = new_cap * size_of::<T>();
             virtual_commit(self.ptr.as_ptr() as *mut std::ffi::c_void, new_cap_bytes);
 
@@ -126,7 +126,8 @@ impl<T> Drop for VirtualRawVec<T> {
     fn drop(&mut self) {
         unsafe {
             // The preconditions here that max_cap multiplied by the size won't overflow and
-            // that the pointer actually exists and is mapped are all ensured by the constructor.
+            // that the pointer actually exists and is mapped are all ensured by the
+            // constructor.
             virtual_free(
                 self.ptr.as_ptr() as *mut std::ffi::c_void,
                 self.max_cap * size_of::<T>(),

@@ -107,7 +107,8 @@ where
         usage,
         size: len,
     });
-    // Safety: T: Blittable which implies it's freely convertable to a byte slice.
+    // SAFETY: T: Blittable which implies it's freely convertable to a byte
+    // slice.
     unsafe {
         let dst = std::slice::from_raw_parts_mut(device.map_buffer(buffer), len);
         let src = std::slice::from_raw_parts(data.as_ptr() as *const u8, len);

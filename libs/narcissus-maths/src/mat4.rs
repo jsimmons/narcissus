@@ -80,7 +80,8 @@ impl Mat4 {
         result
     }
 
-    /// Construct a matrix with the provided `diagonal` and all other values set to `0.0`.
+    /// Construct a matrix with the provided `diagonal` and all other values set to
+    /// `0.0`.
     pub const fn from_diagonal(diagonal: Vec4) -> Mat4 {
         Mat4::from_rows([
             [diagonal.x, 0.0, 0.0, 0.0],
@@ -90,7 +91,8 @@ impl Mat4 {
         ])
     }
 
-    /// Construct a transformation matrix which scales along the coordinate axes by the values given in `scale`.
+    /// Construct a transformation matrix which scales along the coordinate axes by
+    /// the values given in `scale`.
     pub const fn from_scale(scale: Vec3) -> Mat4 {
         Mat4::from_rows([
             [scale.x, 0.0, 0.0, 0.0],
@@ -100,7 +102,8 @@ impl Mat4 {
         ])
     }
 
-    /// Construct an affine transformation matrix with the given `translation` along the coordinate axes.
+    /// Construct an affine transformation matrix with the given `translation`
+    /// along the coordinate axes.
     pub const fn from_translation(translation: Vec3) -> Mat4 {
         Mat4::from_rows([
             [1.0, 0.0, 0.0, translation.x],
@@ -110,10 +113,12 @@ impl Mat4 {
         ])
     }
 
-    /// Constructs a transformation matrix which rotates around the given `axis` by `angle`.
+    /// Constructs a transformation matrix which rotates around the given `axis` by
+    /// `angle`.
     ///
-    /// In a right-handed coordinate system, positive angles rotate counter-clockwise around `axis`
-    /// where `axis` is pointing toward the observer.
+    /// In a right-handed coordinate system, positive angles rotate
+    /// counter-clockwise around `axis` where `axis` is pointing toward the
+    /// observer.
     pub fn from_axis_rotation(axis: Vec3, rotation: HalfTurn) -> Mat4 {
         let (sin, cos) = sin_cos_pi_f32(rotation.as_f32());
         let axis_sin = axis * sin;
@@ -145,7 +150,8 @@ impl Mat4 {
         ])
     }
 
-    /// Constructs a 'look at' transformation from the given `eye` position, look at `center` point, and `up` vector.
+    /// Constructs a 'look at' transformation from the given `eye` position, look
+    /// at `center` point, and `up` vector.
     ///
     /// Src coordinate space: right-handed, +y-up.
     /// Dst coordinate space: right-handed, +y-up.
@@ -193,7 +199,8 @@ impl Mat4 {
         ])
     }
 
-    /// Creates a perspective projection matrix with reversed infinite z and \[0,1\] depth range.
+    /// Creates a perspective projection matrix with reversed infinite z and \[0,1\]
+    /// depth range.
     ///
     /// Destination coordinate space matches native vulkan clip space.
     ///
@@ -213,7 +220,8 @@ impl Mat4 {
 
     /// Returns `true` if all elements are finite.
     ///
-    /// If any element is `NaN`, positive infinity, or negative infinity, returns `false`.
+    /// If any element is `NaN`, positive infinity, or negative infinity, returns
+    /// `false`.
     pub fn is_finite(&self) -> bool {
         let mut is_finite = true;
         for x in self.0 {
@@ -222,7 +230,8 @@ impl Mat4 {
         is_finite
     }
 
-    /// Returns `true` if any element is positive infinity, or negative infinity, and `false` otherwise.
+    /// Returns `true` if any element is positive infinity, or negative infinity,
+    /// and `false` otherwise.
     pub fn is_infinite(&self) -> bool {
         let mut is_infinite = false;
         for x in self.0 {
@@ -252,7 +261,7 @@ impl Mat4 {
         ])
     }
 
-    // Safety: Requires SSE2.
+    // SAFETY: Requires SSE2.
     #[inline]
     #[target_feature(enable = "sse2")]
     unsafe fn transpose_sse2(self) -> Mat4 {
@@ -324,7 +333,7 @@ impl Mat4 {
         )
     }
 
-    // Safety: Requires SSE4.1.
+    // SAFETY: Requires SSE4.1.
     #[allow(dead_code)]
     #[inline]
     #[target_feature(enable = "sse4.1")]
@@ -378,7 +387,7 @@ fn mul_mat4_base(lhs: Mat4, rhs: Mat4) -> Mat4 {
     result
 }
 
-// Safety: Requires SSE2.
+// SAFETY: Requires SSE2.
 #[allow(dead_code)]
 #[inline]
 #[target_feature(enable = "sse2")]
@@ -406,7 +415,7 @@ unsafe fn mul_mat4_sse2(lhs: Mat4, rhs: Mat4) -> Mat4 {
     Mat4::from_m128_array([x0, x1, x2, x3])
 }
 
-// Safety: Requires AVX2.
+// SAFETY: Requires AVX2.
 #[allow(dead_code)]
 #[inline]
 #[target_feature(enable = "avx2")]

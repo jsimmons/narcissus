@@ -53,7 +53,7 @@ impl PartialOrd for FiniteF32 {
 impl Ord for FiniteF32 {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Safety: There are no NaNs since FiniteF32 is always finite.
+        // SAFETY: There are no NaNs since FiniteF32 is always finite.
         unsafe { self.0.partial_cmp(&other.0).unwrap_unchecked() }
     }
 }
@@ -61,8 +61,8 @@ impl Ord for FiniteF32 {
 impl std::hash::Hash for FiniteF32 {
     #[inline(always)]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Hash requires that if `a == b` then `hash(a) == hash(b)`.
-        // In ieee 754 floating point `0.0 == -0.0`, so we must normalize the value before hashing.
+        // `Hash` requires that if `a == b` then `hash(a) == hash(b)`. In IEEE-754
+        // floating point `0.0 == -0.0`, so we must normalize the value before hashing.
         let x = if self.0 == 0.0 { 0.0 } else { self.0 };
         x.to_bits().hash(state);
     }
@@ -110,7 +110,7 @@ impl PartialOrd for FiniteF64 {
 impl Ord for FiniteF64 {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Safety: There are no NaNs since FiniteF32 is always finite.
+        // SAFETY: There are no NaNs since FiniteF32 is always finite.
         unsafe { self.0.partial_cmp(&other.0).unwrap_unchecked() }
     }
 }

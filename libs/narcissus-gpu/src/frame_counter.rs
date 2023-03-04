@@ -12,7 +12,8 @@ pub struct FrameCounter {
 impl FrameCounter {
     pub fn new() -> Self {
         Self {
-            // Start the frame id at 1 so that the first `begin_frame` ticks us over to a new frame index.
+            // Start the frame id at 1 so that the first `begin_frame` ticks us
+            // over to a new frame index.
             value: AtomicUsize::new(1),
         }
     }

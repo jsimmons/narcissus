@@ -86,7 +86,7 @@ impl<T> ManualArc<T> {
             // visible before we call drop.
             std::sync::atomic::fence(Ordering::Acquire);
 
-            // Safety: Was created by Box::leak in the constructor, so it's valid to recreate a box.
+            // SAFETY: Was created by Box::leak in the constructor, so it's valid to recreate a box.
             let mut inner = Box::from_raw(ptr.as_ptr());
             // extract the value from the container so we can return it.
             let value = ManuallyDrop::take(&mut inner.value);
@@ -96,7 +96,7 @@ impl<T> ManualArc<T> {
             value
         }
 
-        // Safety: `release` consumes `self` so it's impossible to call twice on the same instance,
+        // SAFETY: `release` consumes `self` so it's impossible to call twice on the same instance,
         // release is also the only function able to invalidate the pointer. Hence the pointer is
         // always valid here.
         unsafe {
@@ -124,7 +124,7 @@ impl<T: Default> Default for ManualArc<T> {
 
 impl<T> Clone for ManualArc<T> {
     fn clone(&self) -> Self {
-        // Safety: Inner is valid whilever we have a valid `ManualArc`, and so long as we are outside
+        // SAFETY: Inner is valid whilever we have a valid `ManualArc`, and so long as we are outside
         // the `release` function.
         unsafe {
             let ptr = self.ptr.unwrap_unchecked();
@@ -145,7 +145,7 @@ impl<T> Drop for ManualArc<T> {
 impl<T> Deref for ManualArc<T> {
     type Target = T;
 
-    // Safety: Inner is valid whilever we have a valid `ManualArc`, and so long as we are outside
+    // SAFETY: Inner is valid whilever we have a valid `ManualArc`, and so long as we are outside
     // the `release` function.
     #[inline(always)]
     fn deref(&self) -> &Self::Target {

@@ -683,9 +683,9 @@ fn vulkan_image_memory_barrier(
 
         // Add visibility operations if necessary.
         //
-        // If the src access mask is zero, this is a Write-After-Read hazard (or for some reason, a
-        // Read-After-Read), so the dst access mask can be safely zeroed as these don't need
-        // visibility.
+        // If the src access mask is zero, this is a Write-After-Read hazard (or for
+        // some reason, a Read-After-Read), so the dst access mask can be safely zeroed
+        // as these don't need visibility.
         if src_access_mask != default() {
             dst_access_mask |= info.access;
         }
@@ -980,7 +980,8 @@ impl VulkanDevice {
             }
         }
 
-        // If we found any surface extensions, we need to additionally enable VK_KHR_surface.
+        // If we found any surface extensions, we need to additionally enable
+        // `VK_KHR_surface`.
         if !enabled_extensions.is_empty() {
             enabled_extensions.push(cstr!("VK_KHR_surface"));
         }
@@ -1282,24 +1283,26 @@ impl VulkanDevice {
     fn frame<'token>(&self, frame: &'token Frame) -> &'token VulkanFrame {
         frame.check_device(self as *const _ as usize);
         frame.check_frame_counter(self.frame_counter.load());
-        // Safety: Reference is bound to the frame exposed by the API. only one frame can be valid
-        // at a time. The returned VulkanFrame is only valid so long as we have a ref on the frame.
+        // SAFETY: Reference is bound to the frame exposed by the API. only one frame
+        // can be valid at a time. The returned VulkanFrame is only valid so long as we
+        // have a ref on the frame.
         unsafe { &*self.frames[frame.frame_index % NUM_FRAMES].get() }
     }
 
     fn frame_mut<'token>(&self, frame: &'token mut Frame) -> &'token mut VulkanFrame {
         frame.check_device(self as *const _ as usize);
         frame.check_frame_counter(self.frame_counter.load());
-        // Safety: Reference is bound to the frame exposed by the API. only one frame can be valid
-        // at a time. The returned VulkanFrame is only valid so long as we have a ref on the frame.
+        // SAFETY: Reference is bound to the frame exposed by the API. only one frame
+        // can be valid at a time. The returned VulkanFrame is only valid so long as we
+        // have a ref on the frame.
         unsafe { &mut *self.frames[frame.frame_index % NUM_FRAMES].get() }
     }
 
     fn cmd_buffer_mut<'a>(&self, cmd_buffer: &'a mut CmdBuffer) -> &'a mut VulkanCmdBuffer {
-        // Safety: CmdBuffer's can't outlive a frame, and the memory for a cmd_buffer is reset when
-        // the frame ends. So the pointer contained in the cmd_buffer is always valid while the
-        // CmdBuffer is valid. They can't cloned, copied or be sent between threads, and we have a
-        // mut reference.
+        // SAFETY: `CmdBuffer`s can't outlive a frame, and the memory for a cmd_buffer
+        // is reset when the frame ends. So the pointer contained in the cmd_buffer is
+        // always valid while the `CmdBuffer` is valid. They can't cloned, copied or be
+        // sent between threads, and we have a mutable reference.
         unsafe {
             NonNull::new_unchecked(cmd_buffer.cmd_buffer_addr as *mut VulkanCmdBuffer).as_mut()
         }

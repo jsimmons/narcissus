@@ -13,7 +13,8 @@ pub struct Fonts<'a> {
 
 impl<'a> Fonts<'a> {
     pub fn new() -> Self {
-        // Safety: Safe because Roboto-Regular.ttf is a valid ttf font embedded in the application.
+        // SAFETY: Safe because Roboto-Regular.ttf is a valid ttf font embedded
+        // in the application.
         let roboto_regular =
             unsafe { Font::from_bytes(include_bytes!("fonts/Roboto-Regular.ttf")) };
         let noto_sans_japanese =

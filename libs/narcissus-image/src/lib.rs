@@ -52,7 +52,7 @@ impl Image {
             height: y,
             components,
             len,
-            // Safety: We just checked that buffer is not null above.
+            // SAFETY: We just checked that buffer is not null above.
             buffer: unsafe { NonNull::new_unchecked(buffer) },
         })
     }
@@ -90,14 +90,14 @@ impl Image {
     /// | 3  | red, green, blue        |
     /// | 4  | red, green, blue, alpha |
     pub fn as_slice(&self) -> &[u8] {
-        // Safety: Slice size is calculated when creating `Texture`.
+        // SAFETY: Slice size is calculated when creating `Texture`.
         unsafe { std::slice::from_raw_parts(self.buffer.as_ptr(), self.len) }
     }
 }
 
 impl Drop for Image {
     fn drop(&mut self) {
-        // Safety: Always allocated by `stbi_load_xxx` functions.
+        // SAFETY: Always allocated by `stbi_load_xxx` functions.
         unsafe { stbi_image_free(self.buffer.as_ptr() as *mut _) }
     }
 }

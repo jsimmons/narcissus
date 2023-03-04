@@ -23,7 +23,7 @@ impl Packer {
         let width = width as i32;
         let height = height as i32;
 
-        // Safety: `nodes` must not be deleted while context lives, and `context` must not be
+        // SAFETY: `nodes` must not be deleted while context lives, and `context` must not be
         //         relocated.
         let context = unsafe {
             let mut context = uninit_box();
@@ -47,7 +47,7 @@ impl Packer {
 
     /// Clear all previously packed rectangle state.
     pub fn clear(&mut self) {
-        // Safety: `context` and `nodes` are always valid while packer exists, and width always
+        // SAFETY: `context` and `nodes` are always valid while packer exists, and width always
         //         matches node count.
         unsafe {
             stbrp_init_target(
@@ -68,7 +68,7 @@ impl Packer {
     /// Returns true if all rectangles were successfully packed.
     pub fn pack(&mut self, rects: &mut [rectpack::Rect]) -> bool {
         let num_rects = rects.len().try_into().expect("too many rects to pack");
-        // Safety: `context` and `nodes` are always valid while packer exists.
+        // SAFETY: `context` and `nodes` are always valid while packer exists.
         let ret = unsafe { stbrp_pack_rects(self.context.as_mut(), rects.as_mut_ptr(), num_rects) };
         ret == 1
     }

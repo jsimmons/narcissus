@@ -50,11 +50,10 @@ impl<'a, T, const N: usize> Iterator for ArrayWindows<'a, T, N> {
         if self.num == 0 {
             return None;
         }
-        // SAFETY:
-        // This is safe because it's indexing into a slice guaranteed to be length > N.
+        // SAFETY: Indexing into a slice guaranteed to have `len > N`.
         let ret = unsafe { &*self.slice_head.cast::<[T; N]>() };
-        // SAFETY: Guaranteed that there are at least 1 item remaining otherwise
-        // earlier branch would've been hit
+        // SAFETY: Guaranteed that there are at least 1 item remaining otherwise earlier
+        // branch would've returned `None`.
         self.slice_head = unsafe { self.slice_head.add(1) };
 
         self.num -= 1;
@@ -127,8 +126,8 @@ impl<'a, T, const N: usize> DoubleEndedIterator for ArrayWindows<'a, T, N> {
 ///
 /// # Panics
 ///
-/// Panics if `N` is 0. This check will most probably get changed to a compile time
-/// error before this method gets stabilized.
+/// Panics if `N` is 0. This check will most probably get changed to a compile
+/// time error before this method gets stabilized.
 ///
 /// # Examples
 ///

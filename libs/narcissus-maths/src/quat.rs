@@ -37,7 +37,8 @@ impl Quat {
         Self { a, b, c, d }
     }
 
-    /// Returns a quaternion representing a `rotation` in half turns around the given `axis`.
+    /// Returns a quaternion representing a `rotation` in half turns around the
+    /// given `axis`.
     pub fn from_axis_rotation(axis: Vec3, rotation: HalfTurn) -> Self {
         let (s, c) = sin_cos_pi_f32(rotation.as_f32() * 0.5);
         let v = axis * s;

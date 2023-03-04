@@ -31,7 +31,10 @@ impl Pcg64 {
         ((old_state >> 64) ^ old_state).rotate_right((old_state >> 122) as u32) as u64
     }
 
-    /// Generates a uniformly distributed random number in the range `0..upper_bound`
+    /// Generates a uniformly distributed random number in the range
+    /// `0..upper_bound`
+    ///
+    /// Always draws two 64 bit words from the PRNG.
     ///
     /// Based on <https://github.com/apple/swift/pull/39143/commits/87b3f607042e653a42b505442cc803ec20319c1c>
     #[inline]
@@ -44,6 +47,8 @@ impl Pcg64 {
     }
 
     /// Generates a uniformly distributed random float in the range `-1.0..1.0`
+    ///
+    /// Always draws two 64 bit words from the PRNG.
     #[inline]
     #[must_use]
     pub fn next_f32(&mut self) -> f32 {
@@ -52,6 +57,8 @@ impl Pcg64 {
     }
 
     /// Randomly select an an element from `slice` with uniform probability.
+    ///
+    /// Always draws two 64 bit words from the PRNG.
     pub fn select<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T> {
         if slice.is_empty() {
             None
@@ -63,9 +70,9 @@ impl Pcg64 {
 
     /// Shuffle the elements in `slice` in-place.
     ///
-    /// Note that as `Pcg64` is initialized with a 128 bit seed, it's only possible to generate
-    /// `2^128` permutations. This means for slices larger than 34 elements, this function can no
-    /// longer produce all permutations.
+    /// Note that as `Pcg64` is initialized with a 128 bit seed, it's only possible
+    /// to generate `2^128` permutations. This means for slices larger than 34
+    /// elements, this function can no longer produce all possible permutations.
     pub fn shuffle<T>(&mut self, slice: &mut [T]) {
         if !slice.is_empty() {
             let mut i = slice.len() - 1;

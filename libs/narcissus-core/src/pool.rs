@@ -4,12 +4,13 @@ use crate::{
     align_offset, mod_inverse_u32, static_assert, virtual_commit, virtual_free, virtual_reserve,
 };
 
-/// Each handle uses `GEN_BITS` bits of per-slot generation counter. Looking up a handle with the
-/// correct index but an incorrect generation will yield `None`.
+/// Each handle uses `GEN_BITS` bits of per-slot generation counter. Looking up
+/// a handle with the correct index but an incorrect generation will yield
+/// `None`.
 const GEN_BITS: u32 = 9;
 
-/// Each handle uses `IDX_BITS` bits of index used to select a slot. This limits the maximum
-/// capacity of the table to `2 ^ IDX_BITS - 1`.
+/// Each handle uses `IDX_BITS` bits of index used to select a slot. This limits
+/// the maximum capacity of the table to `2 ^ IDX_BITS - 1`.
 const IDX_BITS: u32 = 23;
 
 const MAX_IDX: usize = 1 << IDX_BITS as usize;
@@ -18,9 +19,9 @@ const MAX_CAP: usize = MAX_IDX - 1;
 
 const PAGE_SIZE: usize = 4096;
 
-/// Keep at least `MIN_FREE_SLOTS` available at all times in order to ensure a minimum of
-/// `MIN_FREE_SLOTS * 2 ^ (GEN_BITS - 1)` create-delete cycles are required before a duplicate handle is
-/// generated.
+/// Keep at least `MIN_FREE_SLOTS` available at all times in order to ensure a
+/// minimum of `MIN_FREE_SLOTS * 2 ^ (GEN_BITS - 1)` create-delete cycles are
+/// required before a duplicate handle is generated.
 const MIN_FREE_SLOTS: usize = 512;
 
 static_assert!(GEN_BITS + IDX_BITS == 32);
@@ -33,8 +34,10 @@ const GEN_SHIFT: u32 = IDX_SHIFT + IDX_BITS;
 
 /// A handle representing an object stored in the associated pool.
 ///
-/// Although the handle is mixed based on a per-pool random number, it's recommended to additionally create a newtype
-/// wrapper around this type, to provide type safety preventing the handles from separate pools from becoming confused.
+/// Although the handle is mixed based on a per-pool random number, it's
+/// recommended to additionally create a newtype wrapper around this handle, to
+/// provide type safety preventing the handles from separate pools from becoming
+/// confused.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Handle(u32);
 
@@ -45,11 +48,13 @@ impl Default for Handle {
 }
 
 impl Handle {
-    /// Create a handle from the given encode_multiplier, generation counter and slot index.
+    /// Create a handle from the given encode_multiplier, generation counter and
+    /// slot index.
     ///
     /// # Panics
     ///
-    /// Panics if the generation counter is even, as that would reference an empty slot.
+    /// Panics if the generation counter is even, as that would reference an empty
+    /// slot.
     #[inline(always)]
     fn encode(encode_multiplier: u32, generation: u32, slot_index: SlotIndex) -> Self {
         assert!(generation & 1 == 1);
@@ -57,28 +62,32 @@ impl Handle {
         let value = (generation & GEN_MASK) << GEN_SHIFT | (slot_index.0 & IDX_MASK) << IDX_SHIFT;
         // Invert bits so that the all bits set, the null handle, becomes zero.
         let value = !value;
-        // Transform by the per-pool multiplier to mix bits such that handles from different pools are unlikely to collide.
-        // Note this will return 0 for the null handle due to the inversion above.
+        // Transform by the per-pool multiplier to mix bits such that handles from
+        // different pools are unlikely to collide. Note this will return 0 for the null
+        // handle due to the inversion above.
         let value = value.wrapping_mul(encode_multiplier);
         Self(value)
     }
 
-    /// Return a tuple containing the generation counter and slot index from an encoded handle and decode multiplier.
+    /// Return a tuple containing the generation counter and slot index from an
+    /// encoded handle and decode multiplier.
     ///
     /// # Panics
     ///
-    /// Panics if the generation counter is even, as that would reference an empty slot.
+    /// Panics if the generation counter is even, as that would reference an empty
+    /// slot.
     fn decode(self, decode_multiplier: u32) -> (u32, SlotIndex) {
         let value = self.0;
-        // Undo the bit mix from the encode step by multiplying by the multiplicative inverse of the encode_multiplier.
+        // Undo the bit mix from the encode step by multiplying by the multiplicative
+        // inverse of the encode_multiplier.
         let value = value.wrapping_mul(decode_multiplier);
         // Invert bits so zero, the null handle, becomes all bits set.
         let value = !value;
         let generation = (value >> GEN_SHIFT) & GEN_MASK;
         let slot_index = SlotIndex((value >> IDX_SHIFT) & IDX_MASK);
 
-        // An invalid generation counter here means either the handle itself has been corrupted, or that it's from
-        // another pool.
+        // An invalid generation counter here means either the handle itself has been
+        // corrupted, or that it's from another pool.
         assert!(generation & 1 == 1, "invalid generation counter");
 
         (generation, slot_index)
@@ -117,10 +126,12 @@ impl ValueIndex {
     }
 }
 
-/// Packed value storing the generation and value index for each slot in the indirection table.
+/// Packed value storing the generation and value index for each slot in the
+/// indirection table.
 ///
-/// The least-significant bit of the generation counter serves to indicate whether the slot is occupied. If it's 1,
-/// the slot contains a valid entry. If it's 0, the slot is invalid.
+/// The least-significant bit of the generation counter serves to indicate
+/// whether the slot is occupied. If it's 1, the slot contains a valid entry. If
+/// it's 0, the slot is invalid.
 struct Slot {
     value_index_and_gen: u32,
 }
@@ -165,8 +176,8 @@ impl Slot {
     /// Clears the slot's value index, incrementing the generation counter.
     #[inline(always)]
     fn clear_value_index(&mut self) {
-        // Since we're clearing we need to reset the generation to one referencing an empty slot. But we still want to
-        // invalidate old handles.
+        // Since we're clearing we need to reset the generation to one referencing an
+        // empty slot. But we still want to invalidate old handles.
         let new_generation = (self.generation() | 1).wrapping_add(1);
         self.value_index_and_gen = (new_generation & GEN_MASK) << GEN_SHIFT | IDX_MASK << IDX_SHIFT;
     }
@@ -236,8 +247,8 @@ impl FreeSlots {
 
     #[cold]
     fn grow(&mut self) {
-        // Free slots must always be a power of two so that the modular arithmetic for indexing
-        // works out correctly.
+        // Free slots must always be a power of two so that the modular arithmetic for
+        // indexing works out correctly.
         debug_assert!(self.cap == 0 || self.cap.is_power_of_two());
         assert!(self.cap <= MAX_IDX, "freelist overflow");
 
@@ -249,8 +260,8 @@ impl FreeSlots {
             )
         };
 
-        // This is slightly wrong, but our freelist doesn't need correct ordering on resize and this
-        // avoids moving the values around.
+        // This is slightly wrong, but our freelist doesn't need correct ordering on
+        // resize and this avoids moving the values around.
         if !self.is_empty() {
             debug_assert!(self.is_full());
             self.tail = 0;
@@ -264,7 +275,8 @@ impl FreeSlots {
 // Make sure the slots array always grows by a single page.
 const SLOT_GROWTH_AMOUNT: usize = PAGE_SIZE / std::mem::size_of::<Slot>();
 
-/// Indirection table mapping slot indices stored in handles to values in the values array.
+/// Indirection table mapping slot indices stored in handles to values in the
+/// values array.
 ///
 /// Also contains the generation counter for each slot.
 struct Slots {
@@ -299,7 +311,8 @@ impl Slots {
 
     /// Attempts to grow the slots array.
     ///
-    /// Returns a tuple containing the old len and new len, or None if the array was already at capacity.
+    /// Returns a tuple containing the old len and new len, or None if the array was
+    /// already at capacity.
     #[cold]
     fn try_grow(&mut self) -> Option<(u32, u32)> {
         let len = self.len;
@@ -323,7 +336,8 @@ impl Slots {
     }
 }
 
-/// A contiguous growable array of values as well as a reverse-lookup table for slot indices that map to those values.
+/// A contiguous growable array of values as well as a reverse-lookup table for'
+/// slot indices that map to those values.
 struct Values<T> {
     cap: usize,
     len: usize,
@@ -366,7 +380,8 @@ impl<T> Values<T> {
         }
     }
 
-    /// Retreive the `SlotIndex` corresponding to the given `ValueIndex` from the lookup table.
+    /// Retreive the `SlotIndex` corresponding to the given `ValueIndex` from the
+    /// lookup table.
     #[inline(always)]
     fn get_slot(&mut self, value_index: ValueIndex) -> SlotIndex {
         let value_index = value_index.0 as usize;
@@ -375,7 +390,8 @@ impl<T> Values<T> {
         unsafe { std::ptr::read(self.slots_ptr.as_ptr().add(value_index).as_ref().unwrap()) }
     }
 
-    /// Push a new value into the values storage. Returns the index of the added value.
+    /// Push a new value into the values storage. Returns the index of the added
+    /// value.
     #[inline(always)]
     fn push(&mut self, value: T) -> ValueIndex {
         if self.len == self.cap {
@@ -389,8 +405,8 @@ impl<T> Values<T> {
         ValueIndex(new_value_index as u32)
     }
 
-    /// Remove the element at the given `ValueIndex` and replace it with the last element. Fixup
-    /// the lookup tables for the moved element.
+    /// Remove the element at the given `ValueIndex` and replace it with the last
+    /// element. Fixup the lookup tables for the moved element.
     ///
     /// Returns the removed value.
     #[inline(always)]
@@ -426,6 +442,7 @@ impl<T> Values<T> {
     }
 
     /// Retreive a reference to the value at `value_index`
+    ///
     /// Panics if `value_index` is out of bounds
     #[inline(always)]
     fn get(&self, value_index: ValueIndex) -> &T {
@@ -436,6 +453,7 @@ impl<T> Values<T> {
     }
 
     /// Retreive a mutable reference to the value at `value_index`
+    ///
     /// Panics if `value_index` is out of bounds
     #[inline(always)]
     fn get_mut(&mut self, value_index: ValueIndex) -> &mut T {
@@ -468,11 +486,14 @@ impl<T> Values<T> {
     }
 }
 
-/// A pool for allocating objects of type T and associating them with a POD `Handle`.
+/// A pool for allocating objects of type T and associating them with a POD
+/// `Handle`.
 ///
-/// We do a basic attempt to ensure that mixing handles from different pools with either assert or return None. However
-/// it's possible that by accident lookup using a handle from another pool will return a valid object. The pool will
-/// not have memory unsafety in this case however, as it will only return valid objects from the pool.
+/// We do a basic attempt to ensure that mixing handles from different pools
+/// with either assert or return None. However it's possible that by accident
+/// lookup using a handle from another pool will return a valid object. The pool
+/// will not have memory unsafety in this case however, as it will only return
+/// valid objects from the pool.
 pub struct Pool<T> {
     encode_multiplier: u32,
     decode_multiplier: u32,
@@ -486,8 +507,8 @@ pub struct Pool<T> {
 impl<T> Pool<T> {
     /// Creates a new pool.
     ///
-    /// This will reserve a large amount of virtual memory for the maximum size of the pool, but won't commit any of it
-    /// until it is required.
+    /// This will reserve a large amount of virtual memory for the maximum size of
+    /// the pool, but won't commit any of it until it is required.
     pub fn new() -> Self {
         let mut mapping_size = 0;
 
@@ -513,9 +534,11 @@ impl<T> Pool<T> {
         let value_slots = unsafe { mapping_base.add(value_slots_offset) } as _;
         let values = unsafe { mapping_base.add(values_offset) } as _;
 
-        // virtual reservations are page aligned, so shift out the zeroes in the bottom of the base address.
+        // Virtual reservations are page aligned, so shift out the zeroes in the bottom
+        // of the base address.
         let encode_multiplier = mapping_base as usize >> 12;
-        // multiplier must be odd to calculate the mod inverse.
+
+        // Multiplier must be odd to calculate the mod inverse.
         let encode_multiplier = encode_multiplier as u32 | 1;
         let decode_multiplier = mod_inverse_u32(encode_multiplier);
 
@@ -560,8 +583,8 @@ impl<T> Pool<T> {
 
         if self.free_slots.len() < MIN_FREE_SLOTS {
             // We need to grow the slots array if there are insufficient free slots.
-            // This is a no-op if we're already at the max capacity of the pool, which weakens the use-after-free
-            // detection.
+            // This is a no-op if we're already at the max capacity of the pool, which
+            // weakens the use-after-free detection.
             if let Some((lo, hi)) = self.slots.try_grow() {
                 for free_slot_index in lo..hi {
                     self.free_slots.push(SlotIndex(free_slot_index));
@@ -577,7 +600,8 @@ impl<T> Pool<T> {
         Handle::encode(self.encode_multiplier, slot.generation(), slot_index)
     }
 
-    /// Removes a value from the pool, returning the value associated with the handle if it was previously valid.
+    /// Removes a value from the pool, returning the value associated with the
+    /// handle if it was previously valid.
     pub fn remove(&mut self, handle: Handle) -> Option<T> {
         let (generation, slot_index) = handle.decode(self.decode_multiplier);
 
@@ -701,9 +725,11 @@ mod tests {
         assert_eq!(pool.get(Handle::null()), None);
     }
 
-    // This test is based on randomness in the base address of the pool so disable it by default to
-    // avoid flaky tests in CI.
-    // We do a basic attempt to ensure that mixing handles from different pools with either assert or return None.
+    // This test is based on randomness in the base address of the pool so disable
+    // it by default to avoid flaky tests in CI.
+    //
+    // We do a basic attempt to ensure that mixing handles from different pools will
+    // either assert or return None.
     #[test]
     #[ignore]
     #[should_panic]

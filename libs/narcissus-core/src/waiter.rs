@@ -7,7 +7,7 @@ pub fn wait(futex: &AtomicI32, expected: i32, timeout: Option<Duration>) {
         Some(libc::timespec {
             // Sleep forever if the timeout is longer than fits in a timespec.
             tv_sec: d.as_secs().try_into().ok()?,
-            // This conversion never truncates, as subsec_nanos is always <1e9.
+            // This conversion never truncates, as subsec_nanos is always `< 1e9`.
             tv_nsec: d.subsec_nanos() as _,
         })
     });

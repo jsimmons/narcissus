@@ -38,7 +38,8 @@ impl Mat3 {
         unsafe { std::mem::transmute(rows) }
     }
 
-    /// Construct a matrix with the provided `diagonal` and all other values set to `0.0`.
+    /// Construct a matrix with the provided `diagonal` and all other values set to
+    /// `0.0`.
     pub const fn from_diagonal(diagonal: Vec3) -> Mat3 {
         Mat3::from_rows([
             [diagonal.x, 0.0, 0.0],
@@ -47,15 +48,18 @@ impl Mat3 {
         ])
     }
 
-    /// Construct a transformation matrix which scales along the coordinate axis by the values given in `scale`.
+    /// Construct a transformation matrix which scales along the coordinate axis by
+    /// the values given in `scale`.
     pub const fn from_scale(scale: Vec3) -> Mat3 {
         Mat3::from_diagonal(scale)
     }
 
-    /// Constructs a transformation matrix which rotates around the given `axis` by `angle`.
+    /// Constructs a transformation matrix which rotates around the given `axis` by
+    /// `angle`.
     ///
-    /// In a right-handed coordinate system, positive angles rotate counter-clockwise around `axis`
-    /// where `axis` is pointing toward the observer.
+    /// In a right-handed coordinate system, positive angles rotate
+    /// counter-clockwise around `axis` where `axis` is pointing toward the
+    /// observer.
     pub fn from_axis_rotation(axis: Vec3, rotation: HalfTurn) -> Mat3 {
         let (sin, cos) = sin_cos_pi_f32(rotation.as_f32());
         let axis_sin = axis * sin;
@@ -85,7 +89,8 @@ impl Mat3 {
 
     /// Returns `true` if all elements are finite.
     ///
-    /// If any element is `NaN`, positive infinity, or negative infinity, returns `false`.
+    /// If any element is `NaN`, positive infinity, or negative infinity, returns
+    /// `false`.
     pub fn is_finite(&self) -> bool {
         let mut is_finite = true;
         for x in self.0 {
@@ -94,7 +99,8 @@ impl Mat3 {
         is_finite
     }
 
-    /// Returns `true` if any element is positive infinity, or negative infinity, and `false` otherwise.
+    /// Returns `true` if any element is positive infinity, or negative infinity,
+    /// and `false` otherwise.
     pub fn is_infinite(&self) -> bool {
         let mut is_infinite = false;
         for x in self.0 {

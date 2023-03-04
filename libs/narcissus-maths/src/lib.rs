@@ -227,7 +227,7 @@ macro_rules! impl_shared {
             #[inline(always)]
             pub const fn splat(value: $t) -> $name {
                 // we have to transmute here because we can't make `into()` const.
-                // Safety: $name is repr(C) struct with $n elements of type $t, so the transmute is always valid.
+                // SAFETY: $name is repr(C) struct with $n elements of type $t, so the transmute is always valid.
                 unsafe { std::mem::transmute([value; $n]) }
             }
 

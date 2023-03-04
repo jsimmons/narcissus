@@ -113,7 +113,7 @@ impl<'a> Font<'a> {
             let mut ascent = 0;
             let mut descent = 0;
             let mut line_gap = 0;
-            // Safety: We've just initialized the font info above.
+            // SAFETY: We've just initialized the font info above.
             unsafe { stbtt_GetFontVMetrics(&info, &mut ascent, &mut descent, &mut line_gap) };
             VerticalMetrics {
                 ascent: ascent as f32,

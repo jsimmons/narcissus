@@ -28,7 +28,8 @@ impl Point2 {
         Vec2::new(self.x, self.y)
     }
 
-    /// Returns a new [`Point2`] with the function `f` applied to each coordinate of `self` in order.
+    /// Returns a new [`Point2`] with the function `f` applied to each coordinate of
+    /// `self` in order.
     #[inline(always)]
     pub fn map<F>(self, mut f: F) -> Self
     where
@@ -40,7 +41,8 @@ impl Point2 {
         }
     }
 
-    /// Returns a new [`Point2`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Point2`] with the function `f` applied to each pair of
+    /// components from `self` and `rhs` in order.
     #[inline(always)]
     pub fn map2<F>(self, rhs: Self, mut f: F) -> Self
     where

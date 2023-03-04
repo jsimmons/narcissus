@@ -11,15 +11,16 @@ pub struct VirtualVec<T> {
 }
 
 impl<T> VirtualVec<T> {
-    /// Creates a new vector backed by virtual memory. The array cannot grow beyond its original
-    /// reservation
+    /// Creates a new vector backed by virtual memory. The array cannot grow beyond
+    /// its original reservation.
     ///
-    /// Unlike a normal vector this means addresses will not be invalidated when the vector grows,
-    /// nor will there be any copying.
+    /// Unlike a normal vector this means addresses will not be invalidated when the
+    /// vector grows, nor will there be any copying when resize occurs.
     ///
     /// # Panics
     ///
-    /// Panics if the memory reservation fails, or if there's any overflow in the size calculations.
+    /// Panics if the memory reservation fails, or if there's any overflow in the
+    /// size calculations.
     pub fn new(max_capacity: usize) -> Self {
         Self {
             buf: VirtualRawVec::new(max_capacity),
@@ -80,11 +81,11 @@ impl<T> VirtualVec<T> {
     pub fn truncate(&mut self, len: usize) {
         // This is safe because:
         //
-        // * the slice passed to `drop_in_place` is valid; the `len > self.len`
-        //   case avoids creating an invalid slice, and
-        // * the `len` of the vector is shrunk before calling `drop_in_place`,
-        //   such that no value will be dropped twice in case `drop_in_place`
-        //   were to panic once (if it panics twice, the program aborts).
+        // 1) The slice passed to `drop_in_place` is valid; the `len > self.len` case
+        //    avoids creating an invalid slice.
+        // 2) The `len` of the vector is shrunk before calling `drop_in_place` such
+        //    that no value will be dropped twice in case `drop_in_place` were to
+        //    panic once (if it panics twice, the program aborts).
         unsafe {
             if len > self.len {
                 return;
@@ -117,28 +118,22 @@ impl<T> VirtualVec<T> {
         self
     }
 
-    /// Returns a raw pointer to the vector's buffer.
+    /// Returns a raw pointer to the vector's internal buffer.
     ///
-    /// The caller must ensure that the vector outlives the pointer this
-    /// function returns, or else it will end up pointing to garbage.
-    ///
-    /// The caller must also ensure that the memory the pointer (non-transitively) points to
-    /// is never written to (except inside an `UnsafeCell`) using this pointer or any pointer
-    /// derived from it. If you need to mutate the contents of the slice, use [`as_mut_ptr`].
+    /// The caller must also ensure that the memory the pointer (non-transitively)
+    /// points to is never written to (except inside an `UnsafeCell`) using this
+    /// pointer or any pointer derived from it. If you need to mutate the contents
+    /// of the slice, use [`as_mut_ptr`].
     ///
     /// [`as_mut_ptr`]: #method.as_mut_ptr
     #[inline]
     pub fn as_ptr(&self) -> *const T {
-        // We shadow the slice method of the same name to avoid going through
-        // `deref`, which creates an intermediate reference.
+        // We shadow the slice method of the same name to avoid going through `deref`,
+        // which creates an intermediate reference.
         self.buf.ptr()
     }
 
-    /// Returns an unsafe mutable pointer to the vector's buffer.
-    ///
-    /// The caller must ensure that the vector outlives the pointer this
-    /// function returns, or else it will end up pointing to garbage.
-    ///
+    /// Returns a mutable raw pointer to the vector's internal buffer.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut T {
         self.buf.ptr()
@@ -156,9 +151,9 @@ impl<T> VirtualVec<T> {
     #[inline]
     pub fn swap_remove(&mut self, index: usize) -> T {
         unsafe {
-            // We replace self[index] with the last element. Note that if the
-            // bounds check on hole succeeds there must be a last element (which
-            // can be self[index] itself).
+            // We replace `self[index]` with the last element. Note that if the bounds check
+            // on hole succeeds there must be a last element (which can be `self[index]`
+            // itself).
             let hole: *mut T = &mut self[index];
             let last = ptr::read(self.get_unchecked(self.len - 1));
             self.len -= 1;
@@ -180,15 +175,13 @@ impl<T> VirtualVec<T> {
         self.reserve(1);
 
         unsafe {
-            // infallible
-            // The spot to put the new value
+            // Infallible. The spot to put the new value.
             {
                 let p = self.as_mut_ptr().add(index);
-                // Shift everything over to make space. (Duplicating the
-                // `index`th element into two consecutive places.)
+                // Shift everything over to make space. Duplicating the `index`th element into
+                // two consecutive places.
                 ptr::copy(p, p.offset(1), len - index);
-                // Write it in, overwriting the first copy of the `index`th
-                // element.
+                // Write it in, overwriting the first copy of the `index`th element.
                 ptr::write(p, element);
             }
             self.len += 1;
@@ -205,15 +198,14 @@ impl<T> VirtualVec<T> {
         let len = self.len();
         assert!(index < len);
         unsafe {
-            // infallible
+            // Infallible
             let ret;
             {
-                // the place we are taking from.
+                // The place we are taking from.
                 let ptr = self.as_mut_ptr().add(index);
-                // copy it out, unsafely having a copy of the value on
-                // the stack and in the vector at the same time.
+                // Copy it out, unsafely having a copy of the value on the stack and in the
+                // vector at the same time.
                 ret = ptr::read(ptr);
-
                 // Shift everything down to fill in that spot.
                 ptr::copy(ptr.offset(1), ptr, len - index - 1);
             }
@@ -281,13 +273,14 @@ impl<T> DerefMut for VirtualVec<T> {
 impl<T: Clone> VirtualVec<T> {
     /// Resizes the `Vec` in-place so that `len` is equal to `new_len`.
     ///
-    /// If `new_len` is greater than `len`, the `Vec` is extended by the
-    /// difference, with each additional slot filled with `value`.
-    /// If `new_len` is less than `len`, the `Vec` is simply truncated.
+    /// If `new_len >= len`, the `Vec` is extended by the difference, with each
+    /// additional slot filled with `value`.
     ///
-    /// This method requires [`Clone`] to be able clone the passed value. If
-    /// you need more flexibility (or want to rely on [`Default`] instead of
-    /// [`Clone`]), use [`resize_with`].
+    /// If `new_len < len`, the `Vec` is simply truncated.
+    ///
+    /// This method requires [`Clone`] to be able clone the passed value. If you
+    /// need more flexibility (or want to rely on [`Default`] instead of [`Clone`]),
+    /// use [`resize_with`].
     ///
     /// [`Clone`]: ../../std/clone/trait.Clone.html
     /// [`Default`]: ../../std/default/trait.Default.html
@@ -315,21 +308,21 @@ impl<T> VirtualVec<T> {
             // don't alias.
             let mut local_len = SetLenOnDrop::new(&mut self.len);
 
-            // Write all elements except the last one
+            // Write all elements except the last one.
             for _ in 1..n {
                 ptr::write(ptr, value.next());
                 ptr = ptr.offset(1);
-                // Increment the length in every step in case next() panics
+                // Increment the length in every step in case next() panics.
                 local_len.increment_len(1);
             }
 
             if n > 0 {
-                // We can write the last element directly without cloning needlessly
+                // We can write the last element directly without cloning needlessly.
                 ptr::write(ptr, value.last());
                 local_len.increment_len(1);
             }
 
-            // len set by scope guard
+            // `len` set by scope guard.
         }
     }
 }
@@ -381,8 +374,8 @@ impl<T> Drop for VirtualVec<T> {
 
 // Set the length of the vec when the `SetLenOnDrop` value goes out of scope.
 //
-// The idea is: The length field in SetLenOnDrop is a local variable
-// that the optimizer will see does not alias with any stores through the Vec's data
+// The idea is: The length field in SetLenOnDrop is a local variable that the
+// optimizer will see does not alias with any stores through the Vec's data
 // pointer. This is a workaround for alias analysis issue #32155
 struct SetLenOnDrop<'a> {
     len: &'a mut usize,

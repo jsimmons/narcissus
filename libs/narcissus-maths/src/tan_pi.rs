@@ -1,5 +1,5 @@
-// Based on Norbert Juffa's tanpi posted to the cuda forums. Using my own polynomial, but that might
-// be worse, todo: check whether polynomial is worse.
+// Based on Norbert Juffa's tanpi posted to the cuda forums. Using my own
+// polynomial, but that might be worse, TODO: check whether polynomial is worse.
 // https://forums.developer.nvidia.com/t/an-implementation-of-single-precision-tanpi-for-cuda/48024
 //
 // Sollya code for generating these polynomials is in `doc/sincostan.sollya`
@@ -18,7 +18,8 @@ const F32_TAN_PI_15_K: [f32; 7] = unsafe {
     ])
 };
 
-/// Computes the tangent of `a` expressed in multiples of *pi* radians, or half-turns.
+/// Computes the tangent of `a` expressed in multiples of *pi* radians, or
+/// half-turns.
 ///
 /// Returns `tan(a * pi)`
 ///
@@ -35,7 +36,7 @@ pub fn tan_pi_f32(a: f32) -> f32 {
     // Range reduction.
     let r = round_ties_to_even(a + a);
 
-    // Safety: The clamp above avoids the possibility of overflow here.
+    // SAFETY: The clamp above avoids the possibility of overflow here.
     let i = unsafe { r.to_int_unchecked::<i32>() } as u32;
     let r = r.mul_add(-0.5, a);
 

@@ -124,7 +124,7 @@ impl Uuid {
             | h_15_0
             | h_15_1;
 
-        // only possible if any of the half-words are invalid
+        // Only possible if any of the half-words are invalid.
         if bits == !0 {
             return Err(ParseUuidError);
         }

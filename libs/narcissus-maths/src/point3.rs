@@ -29,7 +29,8 @@ impl Point3 {
         Vec3::new(self.x, self.y, self.z)
     }
 
-    /// Returns a new [`Point3`] with the function `f` applied to each coordinate of `self` in order.
+    /// Returns a new [`Point3`] with the function `f` applied to each coordinate of
+    /// `self` in order.
     #[inline(always)]
     pub fn map<F>(self, mut f: F) -> Point3
     where
@@ -42,7 +43,8 @@ impl Point3 {
         }
     }
 
-    /// Returns a new [`Point3`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Point3`] with the function `f` applied to each pair of
+    /// components from `self` and `rhs` in order.
     #[inline(always)]
     pub fn map2<F>(self, rhs: Point3, mut f: F) -> Point3
     where

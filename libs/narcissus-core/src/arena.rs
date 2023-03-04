@@ -24,17 +24,17 @@ unsafe fn layout_from_size_align(size: usize, align: usize) -> Layout {
 
 /// Wrapper around a pointer to a page footer.
 ///
-/// Allows us to easily borrow the least significant bit of the page pointer to keep track of
-/// whether a given page was allocated on the heap, with the global allocator. Or if it is the stack
-/// page in a HybridArena.
+/// Allows us to easily borrow the least significant bit of the page pointer to
+/// keep track of whether a given page was allocated on the heap, with the
+/// global allocator. Or if it is the stack page in a HybridArena.
 #[derive(Clone, Copy)]
 struct PagePointer(*mut PageFooter);
 
 impl PagePointer {
     #[inline(always)]
     fn empty() -> PagePointer {
-        // We pretend the empty page is a "stack" pointer, as it allows us to remove a branch from
-        // the hybrid array setup.
+        // We pretend the empty page is a "stack" pointer, as it allows us to remove a
+        // branch from the hybrid array setup.
         PagePointer::new_stack(&EMPTY_PAGE as *const PageFooterSync as *mut PageFooter)
     }
 
@@ -74,7 +74,8 @@ impl PagePointer {
 struct PageFooter {
     /// Pointer to the start of this page.
     base: NonNull<u8>,
-    /// Pointer to the current bump allocation cursor. Must be within the range `base..=&self`.
+    /// Pointer to the current bump allocation cursor. Must be within the range
+    /// `base..=&self`.
     bump: Cell<NonNull<u8>>,
     /// Page size in bytes.
     size: usize,
@@ -106,7 +107,8 @@ impl PageFooter {
             // Cannot wrap due to guard above.
             let bump = bump.wrapping_sub(layout.size());
             let remainder = bump as usize & (layout.align() - 1);
-            // Cannot have a remainder greater than the magnitude of the value, so this cannot wrap.
+            // Cannot have a remainder greater than the magnitude of the value, so this
+            // cannot wrap.
             let bump = bump.wrapping_sub(remainder);
 
             if bump >= base {
@@ -124,8 +126,9 @@ impl PageFooter {
     ///
     /// # Safety
     ///
-    /// This must only be called on pages which have no outstanding references to allocations, as it
-    /// allows subsequent operations to allocate the same addresses.
+    /// This must only be called on pages which have no outstanding references to
+    /// allocations, as it allows subsequent operations to allocate the same
+    /// addresses.
     unsafe fn reset(&self) {
         self.bump.set(NonNull::new_unchecked(
             self.base.as_ptr().add(self.size - PAGE_FOOTER_SIZE),
@@ -152,8 +155,8 @@ static EMPTY_PAGE: PageFooterSync = PageFooterSync(unsafe {
     }
 });
 
-/// Create a new page, large enough for the given layout, and prepend it to the linked list of
-/// pages.
+/// Create a new page, large enough for the given layout, and prepend it to the
+/// linked list of pages.
 ///
 /// Returns the new page.
 ///
@@ -165,11 +168,12 @@ unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePoin
     let page_size = page.as_ref().size;
     // Double each allocated page to amortize allocation cost.
     let new_page_size = page_size * 2;
-    // Clamp between `PAGE_MIN_SIZE` and `PAGE_MAX_SIZE` to handle the case where the existing
-    // page is the empty page, and to avoid overly large allocated blocks.
+    // Clamp between `PAGE_MIN_SIZE` and `PAGE_MAX_SIZE` to handle the case where
+    // the existing page is the empty page, and to avoid overly large allocated
+    // blocks.
     let new_page_size = new_page_size.max(PAGE_MIN_SIZE).min(PAGE_MAX_SIZE);
-    // Ensure that after all that, the given page is large enough to hold the thing we're trying
-    // to allocate.
+    // Ensure that after all that, the given page is large enough to hold the thing
+    // we're trying to allocate.
     let new_page_size = new_page_size.max(layout.size() + layout.align() + PAGE_FOOTER_SIZE);
     let size_without_footer = new_page_size - PAGE_FOOTER_SIZE;
     debug_assert_ne!(size_without_footer, 0);
@@ -195,18 +199,18 @@ unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePoin
     Some(PagePointer::new_heap(footer))
 }
 
-/// Deallocate the given page if it was allocated with the global allocator, and all the heap pages
-/// linked to it.
+/// Deallocate the given page if it was allocated with the global allocator, and
+/// all the heap pages linked to it.
 ///
 /// # Safety
 ///
-/// Must not be called on any pages that hold live allocations, or pages which link to pages that
-/// hold live allocations.
+/// Must not be called on any pages that hold live allocations, or pages which
+/// link to pages that hold live allocations.
 #[cold]
 unsafe fn deallocate_page_list(mut page: PagePointer) {
-    // Walk the linked list of pages and deallocate each one that originates from the heap.
-    // The last page is either the empty page, or the hybrid page, both of which are marked as stack
-    // page pointers.
+    // Walk the linked list of pages and deallocate each one that originates from
+    // the heap. The last page is either the empty page, or the hybrid page, both of
+    // which are marked as stack page pointers.
     while !page.is_stack() {
         let p = page;
         page = page.as_ref().next.get();
@@ -219,7 +223,8 @@ unsafe fn deallocate_page_list(mut page: PagePointer) {
 ///
 /// Bump allocates within pages allocated from the global heap allocator.
 ///
-/// Objects that are allocated within the arena will never have their `Drop` function called.
+/// Objects that are allocated within the arena will never have their `Drop`
+/// function called.
 #[repr(C)]
 pub struct Arena {
     page_list_head: Cell<PagePointer>,
@@ -227,9 +232,11 @@ pub struct Arena {
 
 /// An allocation arena with an allocation region that lives on the stack.
 ///
-/// Bump allocates from the stack page until it's exhausted, then behaves like a regular `Arena`.
+/// Bump allocates from the stack page until it's exhausted, then behaves like a
+/// regular `Arena`.
 ///
-/// Objects that are allocated within the arena will never have their `Drop` function called.
+/// Objects that are allocated within the arena will never have their `Drop`
+/// function called.
 #[repr(C)]
 pub struct HybridArena<const STACK_CAP: usize> {
     data: MaybeUninit<[u8; STACK_CAP]>,
@@ -246,13 +253,13 @@ impl Arena {
 
     /// Reset the arena.
     ///
-    /// Releases all pages to the global allocator, except for the most recently allocated one,
-    /// which has its bump pointer reset.
+    /// Releases all pages to the global allocator, except for the most recently
+    /// allocated one which has its bump pointer reset.
     ///
     /// Does not call destructors on any objects allocated by the pool.
     pub fn reset(&mut self) {
-        // We don't want to write to the static empty page, so abandon here if we haven't allocated
-        // any pages.
+        // We don't want to write to the static empty page, so abandon here if we
+        // haven't allocated any pages.
         if self.page_list_head.get().is_empty() {
             return;
         }
@@ -270,7 +277,7 @@ impl Arena {
     #[inline(always)]
     #[allow(clippy::mut_from_ref)]
     pub fn alloc<T>(&self, value: T) -> &mut T {
-        // Safety: We allocate memory for `T` and then write a `T` into that location.
+        // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
             let ptr = self.alloc_layout(layout);
@@ -286,7 +293,7 @@ impl Arena {
     where
         F: FnOnce() -> T,
     {
-        // Safety: We allocate memory for `T` and then write a `T` into that location.
+        // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
             let ptr = self.alloc_layout(layout);
@@ -302,7 +309,7 @@ impl Arena {
     where
         F: FnOnce() -> T,
     {
-        // Safety: We allocate memory for `T` and then write a `T` into that location.
+        // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
             let ptr = match self.try_alloc_layout(layout) {
@@ -362,7 +369,7 @@ impl Arena {
         let src = src.as_ptr();
         let dst = self.alloc_layout(layout).cast::<T>().as_ptr();
 
-        // Safety: We allocate dst with the same size as src before copying into it.
+        // SAFETY: We allocate dst with the same size as src before copying into it.
         unsafe {
             std::ptr::copy_nonoverlapping(src, dst, len);
             std::slice::from_raw_parts_mut(dst, len)
@@ -378,7 +385,7 @@ impl Arena {
         let layout = Layout::for_value(src);
         let dst = self.alloc_layout(layout).cast::<T>().as_ptr();
 
-        // Safety: We allocate dst with the same size as src before copying into it.
+        // SAFETY: We allocate dst with the same size as src before copying into it.
         unsafe {
             for (i, value) in src.iter().cloned().enumerate() {
                 std::ptr::write(dst.add(i), value);
@@ -391,7 +398,8 @@ impl Arena {
     #[allow(clippy::mut_from_ref)]
     pub fn alloc_str(&self, src: &str) -> &mut str {
         let str = self.alloc_slice_copy(src.as_bytes());
-        // Safety: We've just copied this string from a valid `&str`, so it must be valid too.
+        // SAFETY: We've just copied this string from a valid `&str`, so it must be
+        // valid too.
         unsafe { std::str::from_utf8_unchecked_mut(str) }
     }
 
@@ -404,7 +412,7 @@ impl Arena {
         let layout = Layout::array::<T>(len).unwrap_or_else(|_| oom());
         let dst = self.alloc_layout(layout).cast::<T>();
 
-        // Safety: We allocated an array of len elements of T above.
+        // SAFETY: We allocated an array of len elements of T above.
         unsafe {
             for i in 0..len {
                 std::ptr::write(dst.as_ptr().add(i), f(i))
@@ -458,8 +466,8 @@ impl Drop for Arena {
 
 impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     pub fn new() -> Self {
-        // Ideally we'd pad `STACK_CAP` out to the alignment, avoiding wasting any space, but we
-        // can't do maffs with constants just yet, so abort instead.
+        // Ideally we'd pad `STACK_CAP` out to the alignment, avoiding wasting any
+        // space, but we can't do maffs with constants just yet, so abort instead.
         debug_assert!(STACK_CAP % std::mem::align_of::<PageFooter>() == 0);
         Self {
             data: MaybeUninit::uninit(),
@@ -475,18 +483,19 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
 
     /// Reset the arena.
     ///
-    /// Releases all pages to the global allocator, except for the most recently allocated one,
-    /// which has its bump pointer reset.
+    /// Releases all pages to the global allocator, except for the most recently
+    /// allocated one which has its bump pointer reset.
     ///
     /// Does not call destructors on any objects allocated by the pool.
     pub fn reset(&mut self) {
         let page_list_head = self.page_list_head.get();
 
         unsafe {
-            // SAFETY: We're either pointing to an empty page, or a hybrid page, but the hybrid page
-            // pointer might not be up to date if the object has moved, so we must call setup in
-            // that case. Since setup also resets the page, handles the empty page, and is
-            // idempotent, we can always call it here when we see a stack page, then return.
+            // SAFETY: We're either pointing to an empty page, or a hybrid page, but the
+            // hybrid page pointer might not be up to date if the object has moved, so we
+            // must call setup in that case. Since setup also resets the page, handles the
+            // empty page, and is idempotent, we can always call it here when we see a stack
+            // page, then return.
             if page_list_head.is_stack() {
                 self.setup_hybrid_page();
                 return;
@@ -504,7 +513,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     #[inline(always)]
     #[allow(clippy::mut_from_ref)]
     pub fn alloc<T>(&self, value: T) -> &mut T {
-        // Safety: We allocate memory for `T` and then write a `T` into that location.
+        // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
             let ptr = self.alloc_layout(layout);
@@ -520,7 +529,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     where
         F: FnOnce() -> T,
     {
-        // Safety: We allocate memory for `T` and then write a `T` into that location.
+        // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
             let ptr = self.alloc_layout(layout);
@@ -536,7 +545,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     where
         F: FnOnce() -> T,
     {
-        // Safety: We allocate memory for `T` and then write a `T` into that location.
+        // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
             let ptr = match self.try_alloc_layout(layout) {
@@ -559,11 +568,11 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
 
     #[inline(always)]
     pub fn try_alloc_layout(&self, layout: Layout) -> Result<NonNull<u8>, AllocError> {
-        // When the arena is in its initial state, the head points to an empty page. In this case we
-        // need to "allocate" the stack page and set the page head.
+        // When the arena is in its initial state, the head points to an empty page. In
+        // this case we need to "allocate" the stack page and set the page head.
         //
-        // We also need to ensure that if we're allocating into a hybrid array, that no moves have
-        // happened in the meantime.
+        // We also need to ensure that if we're allocating into a hybrid array, that no
+        // moves have happened in the meantime.
         //
         // That is we need to avoid failure in the following situation.
         //
@@ -580,14 +589,15 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         // let z = arena.alloc(3);
         // ```
         //
-        // Allocating in an arena that links to a stack page that isn't the same address as our
-        // current self's page address, is a memory safety failure.
+        // Allocating in an arena that links to a stack page that isn't the same address
+        // as our current self's page address, is a memory safety failure.
         //
-        // It's safe to reset the page in this case, becuase it's only possible to move the arena
-        // while there are no references pinning it in place.
+        // It's safe to reset the page in this case, becuase it's only possible to move
+        // the arena while there are no references pinning it in place.
         let page = self.page_list_head.get();
-        // We initially point to the empty page, but mark it as a stack page so this branch is
-        // sufficient to handle both empty and moved cases.
+
+        // We initially point to the empty page, but mark it as a stack page so this
+        // branch is sufficient to handle both empty and moved cases.
         if page.is_stack() && page.as_ptr() != self.footer.as_ptr() {
             unsafe { self.setup_hybrid_page() }
         }
@@ -599,12 +609,13 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         }
     }
 
-    /// When a hybrid array is in its default state, or when it has been moved, it's necessary to
-    /// fix-up the page footer and page list head.
+    /// When a hybrid array is in its default state, or when it has been moved, it's
+    /// necessary to fix-up the page footer and page list head.
     ///
     /// # Safety
     ///
-    /// Must not be called when there are outstanding allocations, as it will reset the hybrid page.
+    /// Must not be called when there are outstanding allocations, as it will reset
+    /// the hybrid page.
     #[inline(never)]
     #[cold]
     unsafe fn setup_hybrid_page(&self) {
@@ -652,7 +663,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         let src = src.as_ptr();
         let dst = self.alloc_layout(layout).cast::<T>().as_ptr();
 
-        // Safety: We allocate dst with the same size as src before copying into it.
+        // SAFETY: We allocate dst with the same size as src before copying into it.
         unsafe {
             std::ptr::copy_nonoverlapping(src, dst, len);
             std::slice::from_raw_parts_mut(dst, len)
@@ -668,7 +679,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         let layout = Layout::for_value(src);
         let dst = self.alloc_layout(layout).cast::<T>().as_ptr();
 
-        // Safety: We allocate dst with the same size as src before copying into it.
+        // SAFETY: We allocate dst with the same size as src before copying into it.
         unsafe {
             for (i, value) in src.iter().cloned().enumerate() {
                 std::ptr::write(dst.add(i), value);
@@ -681,7 +692,8 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     #[allow(clippy::mut_from_ref)]
     pub fn alloc_str(&self, src: &str) -> &mut str {
         let str = self.alloc_slice_copy(src.as_bytes());
-        // Safety: We've just copied this string from a valid `&str`, so it must be valid too.
+        // SAFETY: We've just copied this string from a valid `&str`, so it must be valid
+        // too.
         unsafe { std::str::from_utf8_unchecked_mut(str) }
     }
 
@@ -694,7 +706,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         let layout = Layout::array::<T>(len).unwrap_or_else(|_| oom());
         let dst = self.alloc_layout(layout).cast::<T>();
 
-        // Safety: We allocated an array of len elements of T above.
+        // SAFETY: We allocated an array of len elements of T above.
         unsafe {
             for i in 0..len {
                 std::ptr::write(dst.as_ptr().add(i), f(i))

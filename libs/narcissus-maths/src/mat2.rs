@@ -38,19 +38,22 @@ impl Mat2 {
         unsafe { std::mem::transmute(rows) }
     }
 
-    /// Construct a matrix with the provided `diagonal` and all other values set to `0.0`.
+    /// Construct a matrix with the provided `diagonal` and all other values set to
+    /// `0.0`.
     pub const fn from_diagonal(diagonal: Vec2) -> Mat2 {
         Mat2::from_rows([[diagonal.x, 0.0], [0.0, diagonal.y]])
     }
 
-    /// Construct a transformation matrix which scales along the coordinate axis by the values given in `scale`.
+    /// Construct a transformation matrix which scales along the coordinate axis by
+    /// the values given in `scale`.
     pub const fn from_scale(scale: Vec2) -> Mat2 {
         Mat2::from_diagonal(scale)
     }
 
     /// Returns `true` if all elements are finite.
     ///
-    /// If any element is `NaN`, positive infinity, or negative infinity, returns `false`.
+    /// If any element is `NaN`, positive infinity, or negative infinity, returns
+    /// `false`.
     pub fn is_finite(&self) -> bool {
         let mut is_finite = true;
         for x in self.0 {
@@ -59,7 +62,8 @@ impl Mat2 {
         is_finite
     }
 
-    /// Returns `true` if any element is positive infinity, or negative infinity, and `false` otherwise.
+    /// Returns `true` if any element is positive infinity, or negative infinity,
+    /// and `false` otherwise.
     pub fn is_infinite(&self) -> bool {
         let mut is_infinite = false;
         for x in self.0 {

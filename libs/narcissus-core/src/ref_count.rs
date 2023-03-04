@@ -7,8 +7,11 @@ use std::{
 
 struct Inner<T: ?Sized> {
     // Number of strong references in addition to the current value.
-    // A negative value indicates a non-atomic reference count, counting up from i32::MIN
-    // A positive value indicates an atomic reference count, counting up from 0
+    //
+    // A negative value indicates a non-atomic reference count, counting up from
+    // `i32::MIN`
+    //
+    // A positive value indicates an atomic reference count, counting up from `0`
     strong: AtomicI32,
     value: T,
 }
@@ -129,9 +132,9 @@ impl<T: ?Sized> Rc<T> {
 
     /// # Safety
     ///
-    /// Any other [`Rc`] or [`Arc`] pointers to the same allocation must not be dereferenced for the duration of the
-    /// returned borrow. This is trivially the case if no such pointers exist, for example immediately after
-    /// [`Arc::new`].
+    /// Any other [`Rc`] or [`Arc`] pointers to the same allocation must not be
+    /// dereferenced for the duration of the returned borrow. This is trivially the
+    /// case if no such pointers exist, for example immediately after [`Arc::new`].
     #[inline]
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         // We are careful to *not* create a reference covering the "count" fields, as
@@ -237,11 +240,9 @@ impl<T: ?Sized> Arc<T> {
 
     pub fn get_mut(&mut self) -> Option<&mut T> {
         if self.is_unique() {
-            // This unsafety is ok because we're guaranteed that the pointer
-            // returned is the *only* pointer that will ever be returned to T. Our
-            // reference count is guaranteed to be 1 at this point, and we required
-            // the Arc itself to be `mut`, so we're returning the only possible
-            // reference to the inner data.
+            // SAFETY: We're guaranteed that the pointer returned is the *only* pointer that
+            // will ever be returned to T because our reference count is 1, and we required
+            // the Arc reference itself to be mutable.
             Some(unsafe { self.get_mut_unchecked() })
         } else {
             None

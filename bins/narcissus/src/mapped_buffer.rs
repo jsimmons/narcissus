@@ -57,7 +57,7 @@ impl<'a> MappedBuffer<'a> {
 
 impl<'a> Drop for MappedBuffer<'a> {
     fn drop(&mut self) {
-        // Safety: Make sure we don't have the slice outlive the mapping.
+        // SAFETY: Make sure we don't have the slice outlive the mapping.
         unsafe {
             self.device.unmap_buffer(self.buffer);
         }

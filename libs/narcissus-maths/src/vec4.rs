@@ -42,7 +42,8 @@ impl Vec4 {
         }
     }
 
-    /// Returns a new [`Vec4`] with the function `f` applied to each pair of components from `self` and `rhs` in order.
+    /// Returns a new [`Vec4`] with the function `f` applied to each pair of
+    /// components from `self` and `rhs` in order.
     #[inline(always)]
     pub fn map2<F>(self, rhs: Self, mut f: F) -> Vec4
     where
