@@ -4,7 +4,6 @@
 
 R = [0;1/4];
 T = floating;
-E = relative;
 B = [|SG...|];
 
 // write fp values such that they always have a decimal point
@@ -126,7 +125,7 @@ B = [|D,SG...|];
 print("sin(pi x) in binary32");
 I = [|1,3,5,7|];
 F = sin(pi*x);
-P = fpminimax(F,I,B,R,T,E);
+P = fpminimax(F,I,B,R,T,relative);
 f32_data_write("F32_SIN_PI_7", P,F,R);
 f32_write_list("F32_SIN_PI_7", list_of_odd_coeff(P));
 print("\n");
@@ -136,7 +135,7 @@ B = [|SG...|];
 print("cos(pi x) in binary32");
 I = [|0,2,4,6,8|];
 F = cos(pi*x);
-P = fpminimax(F,I,B,R,T,E);
+P = fpminimax(F,I,B,R,T,absolute);
 f32_data_write("F32_COS_PI_8", P,F,R);
 f32_write_list("F32_COS_PI_8", list_of_even_coeff(P));
 print("\n");
@@ -147,7 +146,7 @@ print("tan(pi x) in binary32");
 I = [|1,3,5,7,9,11,13,15|];
 F = tan(pi*x);
 
-P = fpminimax(F,I,B,R,T,E);
+P = fpminimax(F,I,B,R,T,relative);
 
 f32_data_write("F32_TAN_PI", P,F,R);
 f32_write_list("F32_TAN_PI", list_of_odd_coeff(P));

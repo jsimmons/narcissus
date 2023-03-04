@@ -16,9 +16,9 @@ const F32_SIN_PI_7_K: [f32; 3] = unsafe {
 const F32_COS_PI_8_K: [f32; 4] = unsafe {
     std::mem::transmute::<[u32; 4], _>([
         0xc09de9e6, // -0x1.3bd3ccp2
-        0x4081e0dc, // 0x1.03c1b8p2
-        0xbfaadbe7, // -0x1.55b7cep0
-        0x3e6b4255, // 0x1.d684aap-3
+        0x4081e0db, // 0x1.03c1b6p2
+        0xbfaadb42, // -0x1.55b684p0
+        0x3e6b0f14, // 0x1.d61e28p-3
     ])
 };
 
