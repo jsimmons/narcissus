@@ -415,7 +415,9 @@ unsafe fn mul_mat4_sse2(lhs: Mat4, rhs: Mat4) -> Mat4 {
     Mat4::from_m128_array([x0, x1, x2, x3])
 }
 
-// SAFETY: Requires AVX2.
+/// # Safety
+///
+/// Requires AVX2 support.
 #[allow(dead_code)]
 #[inline]
 #[target_feature(enable = "avx2")]
