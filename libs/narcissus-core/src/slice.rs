@@ -375,11 +375,6 @@ pub fn array_chunks_mut<T, const N: usize>(slice: &mut [T]) -> ArrayChunksMut<'_
 /// This may only be called when
 /// - The slice splits exactly into `N`-element chunks (aka `self.len() % N == 0`).
 /// - `N != 0`.
-///
-/// // These would be unsound:
-/// // let chunks: &[[_; 5]] = slice.as_chunks_unchecked() // The slice length is not a multiple of 5
-/// // let chunks: &[[_; 0]] = slice.as_chunks_unchecked() // Zero-length chunks are never allowed
-/// ```
 #[inline]
 #[must_use]
 pub unsafe fn as_chunks_unchecked<T, const N: usize>(slice: &[T]) -> &[[T; N]] {
@@ -419,11 +414,6 @@ pub fn as_chunks<T, const N: usize>(slice: &[T]) -> (&[[T; N]], &[T]) {
 /// This may only be called when
 /// - The slice splits exactly into `N`-element chunks (aka `self.len() % N == 0`).
 /// - `N != 0`.
-///
-/// // These would be unsound:
-/// // let chunks: &[[_; 5]] = slice.as_chunks_unchecked_mut() // The slice length is not a multiple of 5
-/// // let chunks: &[[_; 0]] = slice.as_chunks_unchecked_mut() // Zero-length chunks are never allowed
-/// ```
 #[inline]
 #[must_use]
 pub unsafe fn as_chunks_unchecked_mut<T, const N: usize>(slice: &mut [T]) -> &mut [[T; N]] {
@@ -443,7 +433,6 @@ pub unsafe fn as_chunks_unchecked_mut<T, const N: usize>(slice: &mut [T]) -> &mu
 ///
 /// Panics if `N` is 0. This check will most probably get changed to a compile time
 /// error before this method gets stabilized.
-/// ```
 #[inline]
 #[must_use]
 pub fn as_chunks_mut<T, const N: usize>(slice: &mut [T]) -> (&mut [[T; N]], &mut [T]) {

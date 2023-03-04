@@ -21,7 +21,7 @@ pub enum Result {
     ErrorOutOfDeviceMemory = -2,
     ///  Initialization of a object has failed
     ErrorInitializationFailed = -3,
-    ///  The logical device has been lost. See <<devsandqueues-lost-device>>
+    ///  The logical device has been lost.
     ErrorDeviceLost = -4,
     ///  Mapping of a memory object has failed
     ErrorMemoryMapFailed = -5,

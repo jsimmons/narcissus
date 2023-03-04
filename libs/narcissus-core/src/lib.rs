@@ -282,7 +282,7 @@ pub fn zeroed_box<T>() -> Box<MaybeUninit<T>> {
 /// is in an initialized state. Calling this when the content is not yet fully initialized causes
 /// immediate undefined behavior.
 ///
-/// [`MaybeUninit::assume_init`]: mem::MaybeUninit::assume_init
+/// [`MaybeUninit::assume_init`]: std::mem::MaybeUninit::assume_init
 #[inline]
 pub unsafe fn box_assume_init<T>(value: Box<MaybeUninit<T>>) -> Box<T> {
     let raw = Box::into_raw(value);
