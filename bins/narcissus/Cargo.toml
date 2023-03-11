@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+narcissus-app = { path = "../../libs/narcissus-app" }
 narcissus-core = { path = "../../libs/narcissus-core" }
 narcissus-font = { path = "../../libs/narcissus-font" }
 narcissus-maths = { path = "../../libs/narcissus-maths" }
 narcissus-image = { path = "../../libs/narcissus-image" }
-narcissus-app = { path = "../../libs/narcissus-app" }
 narcissus-gpu = { path = "../../libs/narcissus-gpu" }

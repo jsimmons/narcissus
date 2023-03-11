@@ -164,6 +164,8 @@ pub fn main() {
     }
 
     let mut glyph_instances = Vec::new();
+    let mut line_glyph_indices = Vec::new();
+    let mut line_kern_advances = Vec::new();
 
     let mut align_v = false;
     let mut kerning = true;
@@ -283,9 +285,6 @@ pub fn main() {
         let mut rng = Pcg64::new();
 
         glyph_instances.clear();
-
-        let mut line_glyph_indices = Vec::new();
-        let mut line_kern_advances = Vec::new();
 
         for line in 0.. {
             let (font_family, font_size_px, text) = if line & 1 == 0 {
