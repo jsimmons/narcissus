@@ -1,5 +1,7 @@
 #version 460
 
+#extension GL_EXT_scalar_block_layout : require
+
 struct CachedGlyph {
     uint x0;
     uint x1;
@@ -19,7 +21,7 @@ struct GlyphInstance {
     uint color;
 };
 
-layout(set = 0, binding = 0) uniform uniformBuffer {
+layout(std430, set = 0, binding = 0) uniform uniformBuffer {
     uint screenWidth;
     uint screenHeight;
     uint atlasWidth;

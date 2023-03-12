@@ -1042,12 +1042,7 @@ impl VulkanDevice {
             .iter()
             .copied()
             .find(|&physical_device| {
-                let (
-                    physical_device_properties,
-                    _physical_device_properties_11,
-                    _physical_device_properties_12,
-                    _physical_device_properties_13,
-                ) = {
+                let (properties, _properties_11, _properties_12, _properties_13) = {
                     let mut properties_13 = vk::PhysicalDeviceVulkan13Properties::default();
                     let mut properties_12 = vk::PhysicalDeviceVulkan12Properties {
                         _next: &mut properties_13 as *mut vk::PhysicalDeviceVulkan13Properties
@@ -1071,12 +1066,7 @@ impl VulkanDevice {
                     (properties, properties_11, properties_12, properties_13)
                 };
 
-                let (
-                    _physical_device_features,
-                    _physical_device_features_11,
-                    physical_device_features_12,
-                    physical_device_features_13,
-                ) = {
+                let (_features, _features_11, features_12, features_13) = {
                     let mut features_13 = vk::PhysicalDeviceVulkan13Features::default();
                     let mut features_12 = vk::PhysicalDeviceVulkan12Features {
                         _next: &mut features_13 as *mut vk::PhysicalDeviceVulkan13Features
@@ -1100,13 +1090,13 @@ impl VulkanDevice {
                     (features.features, features_11, features_12, features_13)
                 };
 
-                physical_device_properties.properties.api_version >= vk::VERSION_1_3
-                    && physical_device_features_13.dynamic_rendering == vk::Bool32::True
-                    && physical_device_features_12.timeline_semaphore == vk::Bool32::True
-                    && physical_device_features_12.descriptor_indexing == vk::Bool32::True
-                    && physical_device_features_12.descriptor_binding_partially_bound
-                        == vk::Bool32::True
-                    && physical_device_features_12.draw_indirect_count == vk::Bool32::True
+                properties.properties.api_version >= vk::VERSION_1_3
+                    && features_13.dynamic_rendering == vk::Bool32::True
+                    && features_12.timeline_semaphore == vk::Bool32::True
+                    && features_12.descriptor_indexing == vk::Bool32::True
+                    && features_12.descriptor_binding_partially_bound == vk::Bool32::True
+                    && features_12.draw_indirect_count == vk::Bool32::True
+                    && features_12.uniform_buffer_standard_layout == vk::Bool32::True
             })
             .expect("no supported physical devices reported");
 
@@ -1154,6 +1144,7 @@ impl VulkanDevice {
                 descriptor_indexing: vk::Bool32::True,
                 descriptor_binding_partially_bound: vk::Bool32::True,
                 draw_indirect_count: vk::Bool32::True,
+                uniform_buffer_standard_layout: vk::Bool32::True,
                 ..default()
             };
             let enabled_features_11 = vk::PhysicalDeviceVulkan11Features {

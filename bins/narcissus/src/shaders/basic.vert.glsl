@@ -1,5 +1,7 @@
 #version 460
 
+#extension GL_EXT_scalar_block_layout : require
+
 struct VertexData {
     vec4 position;
     vec4 normal;
@@ -10,7 +12,7 @@ struct TransformData {
     vec4 transform[3];
 };
 
-layout(set = 0, binding = 0) uniform uniformBuffer {
+layout(std430, row_major, set = 0, binding = 0) uniform uniformBuffer {
     mat4 viewProj;
 };
 
@@ -30,13 +32,13 @@ void main() {
     VertexData vd = vertices[gl_VertexIndex];
 
     mat3 modelRot = mat3(
-        td.transform[0].x, td.transform[0].y, td.transform[0].z,
-        td.transform[0].w, td.transform[1].x, td.transform[1].y,
-        td.transform[1].z, td.transform[1].w, td.transform[2].x
+        td.transform[0].x, td.transform[0].w, td.transform[1].z,
+        td.transform[0].y, td.transform[1].x, td.transform[1].w,
+        td.transform[0].z, td.transform[1].y, td.transform[2].x
     );
     vec3 modelOff = vec3(td.transform[2].y, td.transform[2].z, td.transform[2].w);
-    vec3 posWorld = transpose(modelRot) * vd.position.xyz + modelOff;
-    vec4 posClip = transpose(viewProj) * vec4(posWorld, 1.0);
+    vec3 posWorld = modelRot * vd.position.xyz + modelOff;
+    vec4 posClip = viewProj * vec4(posWorld, 1.0);
     gl_Position = posClip;
 
     outNormal = vd.normal.xyz;
