@@ -814,9 +814,15 @@ struct VulkanPresentInfo {
     image_index: u32,
 }
 
+enum VulkanMemoryDedicatedDesc {
+    Image(vk::Image),
+    Buffer(vk::Buffer),
+}
+
 struct VulkanMemoryDesc {
     requirements: vk::MemoryRequirements,
     memory_location: MemoryLocation,
+    dedicated: Option<VulkanMemoryDedicatedDesc>,
     _linear: bool,
 }
 
@@ -1322,11 +1328,28 @@ impl VulkanDevice {
 
         let memory_type_index =
             self.find_memory_type_index(desc.requirements.memory_type_bits, memory_property_flags);
-        let allocate_info = vk::MemoryAllocateInfo {
+
+        let mut dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default();
+
+        let mut allocate_info = vk::MemoryAllocateInfo {
             allocation_size: desc.requirements.size,
             memory_type_index,
             ..default()
         };
+
+        if let Some(dedicated) = &desc.dedicated {
+            match dedicated {
+                &VulkanMemoryDedicatedDesc::Image(image) => {
+                    dedicated_allocate_info.image = image;
+                }
+                &VulkanMemoryDedicatedDesc::Buffer(buffer) => {
+                    dedicated_allocate_info.buffer = buffer
+                }
+            }
+            allocate_info._next =
+                &dedicated_allocate_info as *const vk::MemoryDedicatedAllocateInfo as *const _
+        }
+
         let mut memory = vk::DeviceMemory::null();
         vk_check!(self
             .device_fn
@@ -1337,46 +1360,6 @@ impl VulkanDevice {
             offset: 0,
             size: desc.requirements.size,
         }
-    }
-
-    fn allocate_memory_for_buffer(
-        &self,
-        buffer: vk::Buffer,
-        memory_location: MemoryLocation,
-    ) -> VulkanMemory {
-        let info = vk::BufferMemoryRequirementsInfo2 {
-            buffer,
-            ..default()
-        };
-        let mut memory_requirements = vk::MemoryRequirements2::default();
-        self.device_fn.get_buffer_memory_requirements2(
-            self.device,
-            &info,
-            &mut memory_requirements,
-        );
-
-        self.allocate_memory(&VulkanMemoryDesc {
-            requirements: memory_requirements.memory_requirements,
-            memory_location,
-            _linear: true,
-        })
-    }
-
-    fn allocate_memory_for_image(
-        &self,
-        image: vk::Image,
-        memory_location: MemoryLocation,
-    ) -> VulkanMemory {
-        let info = vk::ImageMemoryRequirementsInfo2 { image, ..default() };
-        let mut memory_requirements = vk::MemoryRequirements2::default();
-        self.device_fn
-            .get_image_memory_requirements2(self.device, &info, &mut memory_requirements);
-
-        self.allocate_memory(&VulkanMemoryDesc {
-            requirements: memory_requirements.memory_requirements,
-            memory_location,
-            _linear: true,
-        })
     }
 
     fn request_descriptor_pool(&self) -> vk::DescriptorPool {
@@ -1526,7 +1509,35 @@ impl Device for VulkanDevice {
             .device_fn
             .create_buffer(self.device, &create_info, None, &mut buffer));
 
-        let memory = self.allocate_memory_for_buffer(buffer, desc.location);
+        let mut memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
+        let mut memory_requirements = vk::MemoryRequirements2 {
+            _next: &mut memory_dedicated_requirements as *mut vk::MemoryDedicatedRequirements
+                as *mut _,
+            ..default()
+        };
+
+        self.device_fn.get_buffer_memory_requirements2(
+            self.device,
+            &vk::BufferMemoryRequirementsInfo2 {
+                buffer,
+                ..default()
+            },
+            &mut memory_requirements,
+        );
+
+        let dedicated =
+            if memory_dedicated_requirements.prefers_dedicated_allocation == vk::Bool32::True {
+                Some(VulkanMemoryDedicatedDesc::Buffer(buffer))
+            } else {
+                None
+            };
+
+        let memory = self.allocate_memory(&VulkanMemoryDesc {
+            requirements: memory_requirements.memory_requirements,
+            memory_location: desc.location,
+            dedicated,
+            _linear: true,
+        });
 
         unsafe {
             self.device_fn.bind_buffer_memory2(
@@ -1645,7 +1656,32 @@ impl Device for VulkanDevice {
             .device_fn
             .create_image(self.device, &create_info, None, &mut image));
 
-        let memory = self.allocate_memory_for_image(image, desc.location);
+        let mut memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
+        let mut memory_requirements = vk::MemoryRequirements2 {
+            _next: &mut memory_dedicated_requirements as *mut vk::MemoryDedicatedRequirements
+                as *mut _,
+            ..default()
+        };
+
+        self.device_fn.get_image_memory_requirements2(
+            self.device,
+            &vk::ImageMemoryRequirementsInfo2 { image, ..default() },
+            &mut memory_requirements,
+        );
+
+        let dedicated =
+            if memory_dedicated_requirements.prefers_dedicated_allocation == vk::Bool32::True {
+                Some(VulkanMemoryDedicatedDesc::Image(image))
+            } else {
+                None
+            };
+
+        let memory = self.allocate_memory(&VulkanMemoryDesc {
+            requirements: memory_requirements.memory_requirements,
+            memory_location: desc.location,
+            dedicated,
+            _linear: true,
+        });
 
         unsafe {
             self.device_fn.bind_image_memory2(
@@ -1971,9 +2007,8 @@ impl Device for VulkanDevice {
         };
 
         let create_infos = &mut [vk::GraphicsPipelineCreateInfo {
-            _next: unsafe {
-                std::mem::transmute::<_, *mut c_void>(&pipeline_rendering_create_info)
-            },
+            _next: &pipeline_rendering_create_info as *const vk::PipelineRenderingCreateInfo
+                as *const _,
             stages: stages.into(),
             vertex_input_state: Some(&vertex_input_state),
             input_assembly_state: Some(&input_assembly_state),
