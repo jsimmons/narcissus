@@ -371,6 +371,38 @@ pub struct MemoryHeap {
 }
 
 #[repr(C)]
+pub struct MemoryDedicatedRequirements {
+    pub _type: StructureType,
+    pub _next: *mut c_void,
+    pub prefers_dedicated_allocation: Bool32,
+    pub requires_dedicated_allocation: Bool32,
+}
+
+impl Default for MemoryDedicatedRequirements {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::MemoryDedicatedRequirements;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct MemoryDedicatedAllocateInfo {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub image: Image,
+    pub buffer: Buffer,
+}
+
+impl Default for MemoryDedicatedAllocateInfo {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::MemoryDedicatedAllocateInfo;
+        x
+    }
+}
+
+#[repr(C)]
 pub struct SubmitInfo<'a> {
     pub _type: StructureType,
     pub _next: *const c_void,
