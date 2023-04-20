@@ -11,6 +11,7 @@ pub mod rand;
 pub mod raw_window;
 mod ref_count;
 pub mod slice;
+pub mod svg;
 mod uuid;
 mod virtual_mem;
 mod virtual_vec;
