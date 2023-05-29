@@ -554,6 +554,16 @@ where
 
         self.extract_block(block_index);
 
+        // It's important to use the rounded size here, not the requested size. This
+        // avoids a failure case where freeing an allocation of a given size, fails
+        // to leave the allocator in a state where that block can be re-used for
+        // another allocation of the same size as the returned block can be placed into
+        // a smaller bin.
+        //
+        // We're trading arbitrary wasted blocks in this workload, for a small bounded
+        // amount of fragmentation.
+        //
+        // Tested in `tests::split_policy_avoids_memory_waste`
         let remainder = self.blocks[block_index].size - rounded_size;
         let super_block_index = self.blocks[block_index].super_block_index;
 
@@ -710,6 +720,25 @@ mod tests {
                 tlsf.free(allocation);
             }
         }
+    }
+
+    #[test]
+    fn split_policy_avoids_memory_waste() {
+        let mut tlsf = Tlsf::new();
+        tlsf.insert_super_block(1024, ());
+
+        let large_size = 990;
+        let small_size = 30;
+
+        // Make a large allocation that splits the block.
+        let large = tlsf.alloc(large_size, 1).unwrap();
+        // Make a small allocation to inhibit merging upon free.
+        tlsf.alloc(small_size, 1).unwrap();
+        // Free the large block, if all goes well this will be added to a bin which is
+        // large enough to service another allocation of the same size.
+        tlsf.free(large);
+        // Allocate another large block, if this fails we've "lost" memory.
+        tlsf.alloc(large_size, 1).unwrap();
     }
 
     #[test]
