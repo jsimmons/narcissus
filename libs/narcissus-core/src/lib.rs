@@ -3,6 +3,7 @@ mod bitset;
 mod finite;
 mod fixed_vec;
 mod libc;
+pub mod linear_log_binning;
 pub mod manual_arc;
 mod mutex;
 pub mod obj;
