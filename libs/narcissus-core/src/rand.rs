@@ -15,7 +15,7 @@ impl Pcg64 {
     pub fn with_seed(seed: u128) -> Self {
         let mut rng = Self { state: 0 };
         let _ = rng.next_u64();
-        rng.state += seed;
+        rng.state = rng.state.wrapping_add(seed);
         let _ = rng.next_u64();
         rng
     }
