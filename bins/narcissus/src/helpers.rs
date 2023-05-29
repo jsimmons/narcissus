@@ -101,21 +101,19 @@ pub fn create_buffer_with_data<T>(
 where
     T: Blittable,
 {
-    let len = data.len() * std::mem::size_of::<T>();
-    let buffer = device.create_buffer(&BufferDesc {
-        location: MemoryLocation::HostMapped,
-        usage,
-        size: len,
-    });
-    // SAFETY: T: Blittable which implies it's freely convertable to a byte
-    // slice.
+    // SAFETY: T: Blittable which implies it's freely convertable to a byte slice.
     unsafe {
-        let dst = std::slice::from_raw_parts_mut(device.map_buffer(buffer), len);
-        let src = std::slice::from_raw_parts(data.as_ptr() as *const u8, len);
-        dst.copy_from_slice(src);
-        device.unmap_buffer(buffer);
+        let len = data.len() * std::mem::size_of::<T>();
+        let initial_data = std::slice::from_raw_parts(data.as_ptr() as *const u8, len);
+        device.create_buffer_with_data(
+            &BufferDesc {
+                location: MemoryLocation::HostMapped,
+                usage,
+                size: len,
+            },
+            initial_data,
+        )
     }
-    buffer
 }
 
 pub fn create_image_with_data(

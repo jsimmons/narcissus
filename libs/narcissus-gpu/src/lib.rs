@@ -8,6 +8,7 @@ use narcissus_core::{
 mod backend;
 mod delay_queue;
 mod frame_counter;
+pub mod tlsf;
 
 pub enum DeviceBackend {
     Vulkan,
