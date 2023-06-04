@@ -15,7 +15,7 @@ use narcissus_gpu::{
     ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
-use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3};
+use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, HalfTurn, Mat3, Mat4, Point3, Vec3};
 use pipelines::{BasicUniforms, GlyphInstance, TextUniforms};
 
 mod fonts;

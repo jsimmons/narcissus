@@ -103,7 +103,7 @@ where
 {
     // SAFETY: T: Blittable which implies it's freely convertable to a byte slice.
     unsafe {
-        let len = data.len() * std::mem::size_of::<T>();
+        let len = std::mem::size_of_val(data);
         let initial_data = std::slice::from_raw_parts(data.as_ptr() as *const u8, len);
         device.create_buffer_with_data(
             &BufferDesc {

@@ -48,7 +48,7 @@ impl<'a> MappedBuffer<'a> {
         T: Blittable,
     {
         unsafe {
-            let len = values.len() * std::mem::size_of::<T>();
+            let len = std::mem::size_of_val(values);
             let src = std::slice::from_raw_parts(values.as_ptr() as *const u8, len);
             self.slice[..len].copy_from_slice(src)
         }
