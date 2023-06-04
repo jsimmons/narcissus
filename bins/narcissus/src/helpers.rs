@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use narcissus_core::{default, obj};
+use narcissus_core::{default, obj, Widen};
 use narcissus_gpu::{
     Access, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, Device, Extent3d, Image,
     ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
@@ -58,9 +58,9 @@ pub fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
         .flatten()
         .enumerate()
         .map(|(index, &(position_index, texcoord_index, normal_index))| {
-            let position = visitor.positions[position_index as usize - 1];
-            let normal = visitor.normals[normal_index as usize - 1];
-            let texcoord = visitor.texcoords[texcoord_index as usize - 1];
+            let position = visitor.positions[position_index.widen() - 1];
+            let normal = visitor.normals[normal_index.widen() - 1];
+            let texcoord = visitor.texcoords[texcoord_index.widen() - 1];
             (
                 Vertex {
                     position: vec4(position.x, position.y, position.z, 0.0).into(),

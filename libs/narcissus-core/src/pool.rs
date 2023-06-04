@@ -2,6 +2,7 @@ use std::{marker::PhantomData, mem::size_of, ptr::NonNull};
 
 use crate::{
     align_offset, mod_inverse_u32, static_assert, virtual_commit, virtual_free, virtual_reserve,
+    Widen,
 };
 
 /// Each handle uses `GEN_BITS` bits of per-slot generation counter. Looking up
@@ -291,7 +292,7 @@ impl Slots {
 
     #[inline(always)]
     fn get(&self, slot_index: SlotIndex) -> Option<&Slot> {
-        let index = slot_index.0 as usize;
+        let index = slot_index.0.widen();
         if index < self.len {
             Some(unsafe { self.ptr.as_ptr().add(index).as_ref().unwrap() })
         } else {
@@ -301,7 +302,7 @@ impl Slots {
 
     #[inline(always)]
     fn get_mut(&mut self, slot_index: SlotIndex) -> Option<&mut Slot> {
-        let index = slot_index.0 as usize;
+        let index = slot_index.0.widen();
         if index < self.len {
             Some(unsafe { self.ptr.as_ptr().add(index).as_mut().unwrap() })
         } else {
@@ -370,7 +371,7 @@ impl<T> Values<T> {
     /// Update the lookup table for the given `ValueIndex` with a new `SlotIndex`
     #[inline(always)]
     fn set_slot(&mut self, value_index: ValueIndex, slot_index: SlotIndex) {
-        let value_index = value_index.0 as usize;
+        let value_index = value_index.0.widen();
         assert!(value_index < self.len);
         unsafe {
             std::ptr::write(
@@ -384,7 +385,7 @@ impl<T> Values<T> {
     /// lookup table.
     #[inline(always)]
     fn get_slot(&mut self, value_index: ValueIndex) -> SlotIndex {
-        let value_index = value_index.0 as usize;
+        let value_index = value_index.0.widen();
         assert!(value_index < self.len);
         // SAFETY: SlotIndex is Copy so we don't invalidate the value being read.
         unsafe { std::ptr::read(self.slots_ptr.as_ptr().add(value_index).as_ref().unwrap()) }
@@ -423,7 +424,7 @@ impl<T> Values<T> {
                 .update_value_index(value_index);
         }
 
-        let value_index = value_index.0 as usize;
+        let value_index = value_index.0.widen();
         assert!(value_index < self.len);
 
         unsafe {
@@ -431,11 +432,7 @@ impl<T> Values<T> {
             self.len -= 1;
 
             let value = std::ptr::read(ptr.add(value_index));
-            std::ptr::copy(
-                ptr.add(last_value_index.0 as usize),
-                ptr.add(value_index),
-                1,
-            );
+            std::ptr::copy(ptr.add(last_value_index.0.widen()), ptr.add(value_index), 1);
 
             value
         }
@@ -446,7 +443,7 @@ impl<T> Values<T> {
     /// Panics if `value_index` is out of bounds
     #[inline(always)]
     fn get(&self, value_index: ValueIndex) -> &T {
-        let value_index = value_index.0 as usize;
+        let value_index = value_index.0.widen();
         assert!(value_index < self.len);
         let ptr = self.values_ptr.as_ptr();
         unsafe { ptr.add(value_index).as_ref().unwrap() }
@@ -457,7 +454,7 @@ impl<T> Values<T> {
     /// Panics if `value_index` is out of bounds
     #[inline(always)]
     fn get_mut(&mut self, value_index: ValueIndex) -> &mut T {
-        let value_index = value_index.0 as usize;
+        let value_index = value_index.0.widen();
         assert!(value_index < self.len);
         let ptr = self.values_ptr.as_ptr();
         unsafe { ptr.add(value_index).as_mut().unwrap() }

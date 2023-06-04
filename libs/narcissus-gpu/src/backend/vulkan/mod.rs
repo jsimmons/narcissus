@@ -11,7 +11,7 @@ use narcissus_core::{
     cstr, cstr_from_bytes_until_nul, default, is_aligned_to, manual_arc,
     manual_arc::ManualArc,
     raw_window::{AsRawWindow, RawWindow},
-    Arena, HybridArena, Mutex, PhantomUnsend, Pool,
+    Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
 use vulkan_sys as vk;
@@ -71,7 +71,7 @@ macro_rules! vk_check {
 fn vk_vec<T, F: FnMut(&mut u32, *mut T) -> vulkan_sys::Result>(mut f: F) -> Vec<T> {
     let mut count = 0;
     vk_check!(f(&mut count, std::ptr::null_mut()));
-    let mut v = Vec::with_capacity(count as usize);
+    let mut v = Vec::with_capacity(count.widen());
     vk_check!(f(&mut count, v.as_mut_ptr()));
     unsafe { v.set_len(count as usize) };
     v
@@ -117,8 +117,10 @@ impl From<Offset3d> for vk::Offset3d {
 
 #[must_use]
 fn vulkan_bool32(b: bool) -> vk::Bool32 {
-    const VALUES: [vk::Bool32; 2] = [vk::Bool32::False, vk::Bool32::True];
-    VALUES[b as usize]
+    match b {
+        false => vk::Bool32::False,
+        true => vk::Bool32::True,
+    }
 }
 
 #[must_use]
@@ -1314,7 +1316,7 @@ impl VulkanDevice {
         }));
 
         let allocators = std::array::from_fn(|i| {
-            if i < physical_device_memory_properties.memory_type_count as usize {
+            if i < physical_device_memory_properties.memory_type_count.widen() {
                 Some(default())
             } else {
                 None
@@ -1394,7 +1396,7 @@ impl VulkanDevice {
             .map(|memory_type_index| {
                 (
                     memory_type_index,
-                    self.physical_device_memory_properties.memory_types[memory_type_index as usize],
+                    self.physical_device_memory_properties.memory_types[memory_type_index.widen()],
                 )
             })
             .find(|(i, memory_type)| {
@@ -1417,7 +1419,7 @@ impl VulkanDevice {
         let memory_type_index =
             self.find_memory_type_index(desc.requirements.memory_type_bits, memory_property_flags);
 
-        let allocator = self.allocators[memory_type_index as usize]
+        let allocator = self.allocators[memory_type_index.widen()]
             .as_ref()
             .expect("returned a memory type index that has no associated allocator");
 
@@ -1446,9 +1448,9 @@ impl VulkanDevice {
         allocator.dedicated.lock().insert(memory);
 
         let mapped_ptr = if self.physical_device_memory_properties.memory_types
-            [memory_type_index as usize]
-            .property_flags
-            .contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
+            [memory_type_index.widen()]
+        .property_flags
+        .contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
         {
             let mut data = std::ptr::null_mut();
             vk_check!(self.device_fn.map_memory(
@@ -1481,7 +1483,7 @@ impl VulkanDevice {
         let memory_type_index =
             self.find_memory_type_index(desc.requirements.memory_type_bits, memory_property_flags);
 
-        let allocator = self.allocators[memory_type_index as usize]
+        let allocator = self.allocators[memory_type_index.widen()]
             .as_ref()
             .expect("returned a memory type index that has no associated allocator");
 
@@ -1510,9 +1512,9 @@ impl VulkanDevice {
                 ));
 
                 let mapped_ptr = if self.physical_device_memory_properties.memory_types
-                    [memory_type_index as usize]
-                    .property_flags
-                    .contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
+                    [memory_type_index.widen()]
+                .property_flags
+                .contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
                 {
                     let mut data = std::ptr::null_mut();
                     vk_check!(self.device_fn.map_memory(
@@ -1670,7 +1672,7 @@ impl VulkanDevice {
             // non-null, then we can create a slice for it.
             unsafe {
                 let dst =
-                    std::slice::from_raw_parts_mut(memory.mapped_ptr(), memory.size() as usize);
+                    std::slice::from_raw_parts_mut(memory.mapped_ptr(), memory.size().widen());
                 dst.copy_from_slice(initial_data);
             }
         }
@@ -3131,14 +3133,14 @@ impl Device for VulkanDevice {
             for allocation in frame.destroyed_allocations.get_mut().drain(..) {
                 match allocation {
                     VulkanMemory::Dedicated(dedicated) => {
-                        let allocator = self.allocators[dedicated.memory_type_index as usize]
+                        let allocator = self.allocators[dedicated.memory_type_index.widen()]
                             .as_ref()
                             .unwrap();
                         allocator.dedicated.lock().remove(&dedicated.memory);
                         unsafe { device_fn.free_memory(device, dedicated.memory, None) }
                     }
                     VulkanMemory::SubAlloc(sub_alloc) => {
-                        let allocator = self.allocators[sub_alloc.memory_type_index as usize]
+                        let allocator = self.allocators[sub_alloc.memory_type_index.widen()]
                             .as_ref()
                             .unwrap();
                         allocator.tlsf.lock().free(sub_alloc.allocation)
@@ -3562,7 +3564,7 @@ impl VulkanDevice {
                     present_info.acquire = acquire;
                     present_info.image_index = image_index;
                     present_info.swapchain = swapchain;
-                    let view = image_views[image_index as usize];
+                    let view = image_views[image_index.widen()];
 
                     return Ok((width, height, view));
                 }

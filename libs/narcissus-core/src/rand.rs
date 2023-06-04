@@ -1,4 +1,4 @@
-use crate::mul_full_width_u64;
+use crate::{mul_full_width_u64, Widen};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Pcg64 {
@@ -46,6 +46,22 @@ impl Pcg64 {
         result + carry as u64
     }
 
+    /// Generates a uniformly distributed random number in the range
+    /// `0..upper_bound`
+    ///
+    /// Always draws two 64 bit words from the PRNG.
+    ///
+    /// Based on <https://github.com/apple/swift/pull/39143/commits/87b3f607042e653a42b505442cc803ec20319c1c>
+    #[inline]
+    #[must_use]
+    pub fn next_bound_usize(&mut self, upper_bound: usize) -> usize {
+        let upper_bound = upper_bound as u64;
+        let (result, fraction) = mul_full_width_u64(upper_bound, self.next_u64());
+        let (hi, _) = mul_full_width_u64(upper_bound, self.next_u64());
+        let (_, carry) = fraction.overflowing_add(hi);
+        (result + carry as u64).widen()
+    }
+
     /// Generates a uniformly distributed random float in the range `-1.0..1.0`
     ///
     /// Always draws two 64 bit words from the PRNG.
@@ -63,8 +79,7 @@ impl Pcg64 {
         if slice.is_empty() {
             None
         } else {
-            let index = self.next_bound_u64(slice.len() as u64) as usize;
-            slice.get(index)
+            slice.get(self.next_bound_usize(slice.len()))
         }
     }
 

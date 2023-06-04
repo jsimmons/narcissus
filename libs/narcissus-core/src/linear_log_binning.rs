@@ -1,3 +1,5 @@
+use crate::Widen;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bin<
     // The log2 of the size of the linear bin.
@@ -78,7 +80,7 @@ impl<const LINEAR_LOG2: u32, const SUB_BINS_LOG2: u32> Bin<LINEAR_LOG2, SUB_BINS
 
     #[inline(always)]
     pub fn index(&self) -> usize {
-        self.index as usize
+        self.index.widen()
     }
 
     #[inline(always)]

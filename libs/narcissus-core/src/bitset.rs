@@ -1,3 +1,5 @@
+use crate::Widen;
+
 pub trait Bits: Copy + Default {
     fn is_zero(self) -> bool;
     /// Clear the least significant set bit and return its index.
@@ -40,7 +42,7 @@ where
             self.base += std::mem::size_of::<T>() * 8;
         }
         let index = self.word.clear_least_significant_set_bit();
-        Some(self.base + index as usize)
+        Some(self.base + index.widen())
     }
 }
 

@@ -90,7 +90,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use narcissus_core::{linear_log_binning, static_assert};
+use narcissus_core::{linear_log_binning, static_assert, Widen};
 
 // The log2 of the size of the 'linear' bin.
 pub const LINEAR_LOG2: u32 = 7; // 2^7 = 128
@@ -219,14 +219,14 @@ impl Index<BlockIndex> for Vec<Block> {
 
     #[inline(always)]
     fn index(&self, index: BlockIndex) -> &Self::Output {
-        &self[index.0.get() as usize]
+        &self[index.0.get().widen()]
     }
 }
 
 impl IndexMut<BlockIndex> for Vec<Block> {
     #[inline(always)]
     fn index_mut(&mut self, index: BlockIndex) -> &mut Self::Output {
-        &mut self[index.0.get() as usize]
+        &mut self[index.0.get().widen()]
     }
 }
 
@@ -238,7 +238,7 @@ where
 
     #[inline(always)]
     fn index(&self, index: SuperBlockIndex) -> &Self::Output {
-        &self[index.0 as usize]
+        &self[index.0.widen()]
     }
 }
 
@@ -248,7 +248,7 @@ where
 {
     #[inline(always)]
     fn index_mut(&mut self, index: SuperBlockIndex) -> &mut Self::Output {
-        &mut self[index.0 as usize]
+        &mut self[index.0.widen()]
     }
 }
 
@@ -339,7 +339,7 @@ where
         // First we scan the second-level bitmap from sub_bin, masking out the earlier
         // sub-bins so we don't end up returning a bin that's too small for the
         // allocation.
-        let mut second_level = self.bitmap_1[bin as usize] & (!0 << sub_bin);
+        let mut second_level = self.bitmap_1[bin.widen()] & (!0 << sub_bin);
 
         // If that search failed, then we must scan the first-level bitmap from the next
         // bin forward. If we find anything here it cannot possibly be smaller than the
@@ -354,7 +354,7 @@ where
 
             // Recalculate the bin from the first level bitmap.
             bin = first_level.trailing_zeros();
-            second_level = self.bitmap_1[bin as usize];
+            second_level = self.bitmap_1[bin.widen()];
         }
 
         // Find the sub-bin from the second level bitmap.
@@ -366,7 +366,7 @@ where
     /// structure.
     fn set_metadata_bit(&mut self, bin: Bin) {
         let sub_bin = bin.sub_bin();
-        let bin = bin.bin() as usize;
+        let bin = bin.bin().widen();
         self.bitmap_0 |= 1 << bin;
         self.bitmap_1[bin] |= 1 << sub_bin;
     }
@@ -375,7 +375,7 @@ where
     /// structure.
     fn clear_metadata_bit(&mut self, bin: Bin) {
         let sub_bin = bin.sub_bin();
-        let bin = bin.bin() as usize;
+        let bin = bin.bin().widen();
         self.bitmap_1[bin] &= !(1 << sub_bin);
         if self.bitmap_1[bin] == 0 {
             self.bitmap_0 &= !(1 << bin);
@@ -383,6 +383,7 @@ where
     }
 
     /// Inserts a block into the empty blocks lists.
+    #[inline(always)]
     fn insert_block(&mut self, block_index: BlockIndex) {
         debug_assert!(self.blocks[block_index].is_free());
         debug_assert!(self.blocks[block_index].free_link.is_unlinked());
@@ -400,6 +401,7 @@ where
     }
 
     /// Removes a block from the empty blocks lists.
+    #[inline(always)]
     fn extract_block(&mut self, block_index: BlockIndex) {
         debug_assert!(self.blocks[block_index].is_free());
 
@@ -448,12 +450,33 @@ where
     }
 
     /// Requests a new block, and returns its `BlockIndex`.
+    #[inline(always)]
     fn request_block(
         &mut self,
         offset: u32,
         size: u32,
         super_block_index: SuperBlockIndex,
     ) -> BlockIndex {
+        #[cold]
+        fn create_block(
+            blocks: &mut Vec<Block>,
+            size: u32,
+            offset: u32,
+            super_block_index: SuperBlockIndex,
+        ) -> BlockIndex {
+            assert!(blocks.len() < i32::MAX as usize);
+            let block_index = BlockIndex(NonZeroU32::new(blocks.len() as u32).unwrap());
+            blocks.push(Block {
+                generation: 0,
+                size,
+                offset,
+                free_link: BlockLink::new(block_index),
+                phys_link: BlockLink::new(block_index),
+                super_block_index,
+            });
+            block_index
+        }
+
         let block_index = if let Some(free_block_index) = self.free_block_head {
             let next_index = self.blocks[free_block_index].free_link.next;
             self.free_block_head = if next_index != free_block_index {
@@ -464,17 +487,7 @@ where
             list_unlink!(self.blocks, free_link, free_block_index);
             free_block_index
         } else {
-            assert!(self.blocks.len() < i32::MAX as usize);
-            let block_index = BlockIndex(NonZeroU32::new(self.blocks.len() as u32).unwrap());
-            self.blocks.push(Block {
-                generation: 0,
-                size,
-                offset,
-                free_link: BlockLink::new(block_index),
-                phys_link: BlockLink::new(block_index),
-                super_block_index,
-            });
-            block_index
+            create_block(&mut self.blocks, size, offset, super_block_index)
         };
 
         let block = &mut self.blocks[block_index];

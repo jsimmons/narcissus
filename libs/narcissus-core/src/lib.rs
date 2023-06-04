@@ -17,6 +17,7 @@ mod uuid;
 mod virtual_mem;
 mod virtual_vec;
 mod waiter;
+mod widen;
 
 pub use arena::{Arena, HybridArena};
 pub use bitset::BitIter;
@@ -29,6 +30,8 @@ pub use virtual_mem::{virtual_commit, virtual_free, virtual_reserve};
 pub use virtual_vec::{VirtualDeque, VirtualVec};
 
 pub use finite::{FiniteF32, FiniteF64, NotFiniteError};
+
+pub use widen::Widen;
 
 use std::{ffi::CStr, mem::MaybeUninit};
 

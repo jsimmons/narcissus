@@ -1,8 +1,8 @@
 use std::collections::hash_map::Entry;
 
 use crate::{font::GlyphBitmapBox, FontCollection, GlyphIndex, Oversample, Packer};
-use narcissus_core::default;
 pub use narcissus_core::FiniteF32;
+use narcissus_core::{default, Widen};
 use rustc_hash::FxHashMap;
 use stb_truetype_sys::rectpack::Rect;
 
@@ -167,8 +167,7 @@ where
                         let cached_glyph = &self.cached_glyphs[cached_glyph_index];
                         let rect = &self.rects[cached_glyph_index];
 
-                        let touched_glyph =
-                            &mut self.touched_glyphs[touched_glyph_index.0 as usize];
+                        let touched_glyph = &mut self.touched_glyphs[touched_glyph_index.0.widen()];
 
                         touched_glyph.x0 = rect.x;
                         touched_glyph.x1 = rect.x + rect.w;
