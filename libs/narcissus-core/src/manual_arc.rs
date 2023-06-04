@@ -101,7 +101,7 @@ impl<T> ManualArc<T> {
         // always valid here.
         unsafe {
             // Replace ptr with None so that the drop function doesn't panic
-            let ptr = std::mem::replace(&mut self.ptr, None);
+            let ptr = self.ptr.take();
             let ptr = ptr.unwrap_unchecked();
             let inner = ptr.as_ref();
             if inner.decr_strong() {
