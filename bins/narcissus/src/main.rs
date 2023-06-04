@@ -269,8 +269,11 @@ pub fn main() {
         let eye = Point3::new(s * camera_radius, camera_height, c * camera_radius);
         let center = Point3::ZERO;
         let camera_from_model = Mat4::look_at(eye, center, Vec3::Y);
-        let clip_from_camera =
-            Mat4::perspective_rev_inf_zo(Deg::new(45.0).into(), width as f32 / height as f32, 0.01);
+        let clip_from_camera = Mat4::perspective_rev_inf_zo(
+            HalfTurn::new(1.0 / 3.0),
+            width as f32 / height as f32,
+            0.01,
+        );
         let clip_from_model = clip_from_camera * camera_from_model;
 
         basic_uniform_buffer.write(BasicUniforms { clip_from_model });

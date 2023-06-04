@@ -1,4 +1,4 @@
-use crate::{sin_cos_pi_f32, HalfTurn, Point2, Point3, Rad, Vec2, Vec3, Vec4};
+use crate::{sin_cos_pi_f32, tan_pi_f32, HalfTurn, Point2, Point3, Vec2, Vec3, Vec4};
 
 /// 4x4 matrix.
 ///
@@ -206,8 +206,8 @@ impl Mat4 {
     ///
     /// Src coordinate space: right-handed, +y up.
     /// Dst coordinate space: right-handed, -y up, depth range \[0,1\].
-    pub fn perspective_rev_inf_zo(vertical_fov: Rad, aspect_ratio: f32, z_near: f32) -> Mat4 {
-        let tan = (vertical_fov.as_f32() / 2.0).tan();
+    pub fn perspective_rev_inf_zo(vertical_fov: HalfTurn, aspect_ratio: f32, z_near: f32) -> Mat4 {
+        let tan = tan_pi_f32(vertical_fov.as_f32() / 2.0);
         let sy = 1.0 / tan;
         let sx = sy / aspect_ratio;
         Mat4::from_rows([
