@@ -50,15 +50,11 @@ pub mod rectpack {
     }
 
     #[repr(i32)]
+    #[derive(Default)]
     pub enum Heuristic {
+        #[default]
         SkylineBLSortHeight,
         SkylineBFSortHeight,
-    }
-
-    impl Default for Heuristic {
-        fn default() -> Self {
-            Heuristic::SkylineBLSortHeight
-        }
     }
 }
 
