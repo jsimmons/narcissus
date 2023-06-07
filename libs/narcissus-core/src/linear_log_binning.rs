@@ -92,6 +92,36 @@ impl<const LINEAR_LOG2: u32, const SUB_BINS_LOG2: u32> Bin<LINEAR_LOG2, SUB_BINS
     pub fn sub_bin(&self) -> u32 {
         self.index & ((1 << SUB_BINS_LOG2) - 1) as u32
     }
+
+    /// Returns the inclusive lower bound on values assigned to this bin.
+    pub fn lower_bound(&self) -> u32 {
+        let bin = self.bin();
+        let sub_bin = self.sub_bin();
+        if bin == 0 {
+            sub_bin * (1 << LINEAR_LOG2 - SUB_BINS_LOG2)
+        } else {
+            let base = 1 << (bin + LINEAR_LOG2 - 1);
+            let step = base >> SUB_BINS_LOG2;
+            base + step * sub_bin
+        }
+    }
+
+    /// Returns the exclusive upper bound on values assigned to this bin.
+    pub fn upper_bound(&self) -> u32 {
+        let bin = self.bin();
+        let sub_bin = self.sub_bin();
+        if bin == 0 {
+            if sub_bin == 0 {
+                0
+            } else {
+                (sub_bin + 1) * (1 << LINEAR_LOG2 - SUB_BINS_LOG2)
+            }
+        } else {
+            let base = 1 << (bin + LINEAR_LOG2 - 1);
+            let step = base >> SUB_BINS_LOG2;
+            base + step * (sub_bin + 1)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -113,6 +143,50 @@ mod tests {
                 index: bin * SUB_BIN_COUNT + sub_bin,
             },
         )
+    }
+
+    #[test]
+    fn jemalloc_sequence() {
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(0);
+        assert_eq!(rounded_size, 0);
+        assert_eq!(bin.index, 0);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 0);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(1);
+        assert_eq!(rounded_size, 4);
+        assert_eq!(bin.index, 1);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 8);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(4);
+        assert_eq!(rounded_size, 4);
+        assert_eq!(bin.index, 1);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 8);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(5);
+        assert_eq!(rounded_size, 8);
+        assert_eq!(bin.index, 2);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 12);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(9);
+        assert_eq!(rounded_size, 12);
+        assert_eq!(bin.index, 3);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 16);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(15);
+        assert_eq!(rounded_size, 16);
+        assert_eq!(bin.index, 4);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 20);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(17);
+        assert_eq!(rounded_size, 20);
+        assert_eq!(bin.index, 5);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 24);
+        let (rounded_size, bin) = Bin::<4, 2>::from_size_round_up(34);
+        assert_eq!(rounded_size, 40);
+        assert_eq!(bin.index, 9);
+        assert_eq!(rounded_size, bin.lower_bound());
+        assert_eq!(bin.upper_bound(), 48);
     }
 
     #[test]
