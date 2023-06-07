@@ -44,7 +44,7 @@ pub fn svg_end() -> SvgEnd {
     SvgEnd
 }
 
-pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
+pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect<'static> {
     Rect {
         x,
         y,
@@ -52,6 +52,7 @@ pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
         h,
         style: Default::default(),
         border_radius: 0.0,
+        title: None,
     }
 }
 
@@ -180,8 +181,8 @@ impl fmt::Display for Stroke {
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct Style {
-    fill: Fill,
-    stroke: Stroke,
+    pub fill: Fill,
+    pub stroke: Stroke,
 }
 
 impl Default for Style {
@@ -200,16 +201,17 @@ impl fmt::Display for Style {
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub struct Rect {
+pub struct Rect<'a> {
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
     pub style: Style,
     pub border_radius: f32,
+    pub title: Option<&'a str>,
 }
 
-impl Rect {
+impl<'a> Rect<'a> {
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
@@ -219,15 +221,28 @@ impl Rect {
         self.border_radius = border_radius;
         self
     }
+
+    pub fn title(mut self, title: &'a str) -> Self {
+        self.title = Some(title);
+        self
+    }
 }
 
-impl fmt::Display for Rect {
+impl<'a> fmt::Display for Rect<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            r#"<rect x="{}" y="{}" width="{}" height="{}" ry="{}" style="{}" />""#,
-            self.x, self.y, self.w, self.h, self.border_radius, self.style
-        )
+        if let Some(title) = self.title {
+            write!(
+                f,
+                r#"<rect x="{}" y="{}" width="{}" height="{}" ry="{}" style="{}"><title>{title}</title></rect>""#,
+                self.x, self.y, self.w, self.h, self.border_radius, self.style
+            )
+        } else {
+            write!(
+                f,
+                r#"<rect x="{}" y="{}" width="{}" height="{}" ry="{}" style="{}" />""#,
+                self.x, self.y, self.w, self.h, self.border_radius, self.style
+            )
+        }
     }
 }
 
