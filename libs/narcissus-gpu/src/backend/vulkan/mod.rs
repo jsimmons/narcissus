@@ -2676,8 +2676,9 @@ impl Device for VulkanDevice {
                 }
             }
             TypedBind::UniformBuffer(buffers) => {
+                let buffer_pool = self.buffer_pool.lock();
                 let buffer_infos_iter = buffers.iter().map(|buffer| {
-                    let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
+                    let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
                     vk::DescriptorBufferInfo {
                         buffer,
                         offset: 0,
@@ -2696,8 +2697,9 @@ impl Device for VulkanDevice {
                 }
             }
             TypedBind::StorageBuffer(buffers) => {
+                let buffer_pool = self.buffer_pool.lock();
                 let buffer_infos_iter = buffers.iter().map(|buffer| {
-                    let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
+                    let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
                     vk::DescriptorBufferInfo {
                         buffer,
                         offset: 0,
