@@ -36,12 +36,29 @@ pub const fn stroke(color: Color, width: f32, alpha: f32) -> Stroke {
     Stroke::Color(color, width, alpha)
 }
 
+pub const fn style(fill: Fill, stroke: Stroke) -> Style {
+    Style { fill, stroke }
+}
+
 pub fn svg_begin(w: f32, h: f32) -> SvgBegin {
     SvgBegin { w, h }
 }
 
 pub fn svg_end() -> SvgEnd {
     SvgEnd
+}
+
+pub fn text<'a, T>(x: f32, y: f32, size: f32, style: Style, text: &'a T) -> Text<'a, T>
+where
+    T: fmt::Display,
+{
+    Text {
+        x,
+        y,
+        size,
+        style,
+        text,
+    }
 }
 
 pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect<'static> {
