@@ -93,20 +93,22 @@ use std::{
 use narcissus_core::{linear_log_binning, static_assert, Widen};
 
 // The log2 of the size of the 'linear' bin.
-pub const LINEAR_LOG2: u32 = 7; // 2^7 = 128
+pub const LINEAR_LOG2: u32 = 9; // 2^9 = 512
 
 // The log2 of the number of sub-bins in each bin.
 pub const SUB_BINS_LOG2: u32 = 5; // 2^5 = 32
 
+static_assert!(LINEAR_LOG2 >= SUB_BINS_LOG2);
+
 type Bin = linear_log_binning::Bin<LINEAR_LOG2, SUB_BINS_LOG2>;
 
-pub const BIN_COUNT: usize = 24;
+pub const BIN_COUNT: usize = (u32::BITS - LINEAR_LOG2) as usize;
 pub const SUB_BIN_COUNT: usize = 1 << SUB_BINS_LOG2;
 
 static_assert!(SUB_BIN_COUNT <= u32::BITS as usize);
 static_assert!(BIN_COUNT <= u32::BITS as usize);
 
-pub const MIN_BLOCK_SIZE: u32 = 16;
+pub const MIN_ALIGNMENT: u32 = 1 << (LINEAR_LOG2 - SUB_BINS_LOG2);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct SuperBlockIndex(u32);
@@ -328,11 +330,17 @@ where
         self.super_blocks.clear()
     }
 
-    /// Search the acceleration structure for a non-empty list from the given
-    /// bin.
+    /// Search the acceleration structure for a non-empty list suitable for an
+    /// allocation of the given size.
     ///
-    /// Returns the bin index if a non-empty list is found, or None.
-    fn search_non_empty_bin(&self, starting_bin: Bin) -> Option<Bin> {
+    /// Returns the rounded size and bin index if a non-empty list is found, or
+    /// None.
+    fn search_non_empty_bin(&self, size: u32) -> Option<(u32, Bin)> {
+        // We need to find the bin which contains only empty-blocks large enough for the
+        // given size because we unconditionally use the first empty block found. So
+        // this must round up.
+        let (rounded_size, starting_bin) = Bin::from_size_round_up(size);
+
         let mut bin = starting_bin.bin();
         let sub_bin = starting_bin.sub_bin();
 
@@ -359,7 +367,7 @@ where
 
         // Find the sub-bin from the second level bitmap.
         let sub_bin = second_level.trailing_zeros();
-        Some(Bin::new(bin, sub_bin))
+        Some((rounded_size, Bin::new(bin, sub_bin)))
     }
 
     /// Marks a given bin as containing empty blocks in the bitmap acceleration
@@ -458,21 +466,16 @@ where
         super_block_index: SuperBlockIndex,
     ) -> BlockIndex {
         #[cold]
-        fn create_block(
-            blocks: &mut Vec<Block>,
-            size: u32,
-            offset: u32,
-            super_block_index: SuperBlockIndex,
-        ) -> BlockIndex {
+        fn create_block(blocks: &mut Vec<Block>) -> BlockIndex {
             assert!(blocks.len() < i32::MAX as usize);
             let block_index = BlockIndex(NonZeroU32::new(blocks.len() as u32).unwrap());
             blocks.push(Block {
                 generation: 0,
-                size,
-                offset,
+                size: 0xffff_ffff,
+                offset: 0xffff_ffff,
                 free_link: BlockLink::new(block_index),
                 phys_link: BlockLink::new(block_index),
-                super_block_index,
+                super_block_index: SuperBlockIndex(0xffff_ffff),
             });
             block_index
         }
@@ -487,10 +490,16 @@ where
             list_unlink!(self.blocks, free_link, free_block_index);
             free_block_index
         } else {
-            create_block(&mut self.blocks, size, offset, super_block_index)
+            create_block(&mut self.blocks)
         };
 
         let block = &mut self.blocks[block_index];
+
+        debug_assert!(block.is_free());
+        debug_assert!(block.size == 0xffff_ffff);
+        debug_assert!(block.offset == 0xffff_ffff);
+        debug_assert!(block.super_block_index == SuperBlockIndex(0xffff_ffff));
+
         block.offset = offset;
         block.size = size;
         block.super_block_index = super_block_index;
@@ -506,6 +515,7 @@ where
 
         block.size = 0xffff_ffff;
         block.offset = 0xffff_ffff;
+        block.super_block_index = SuperBlockIndex(0xffff_ffff);
 
         if let Some(free_block_index) = self.free_block_head {
             list_insert_before!(self.blocks, free_link, free_block_index, block_index);
@@ -543,19 +553,14 @@ where
                 && size < (i32::MAX as u64 - align)
                 && align.is_power_of_two()
         );
-        let size = size.max(MIN_BLOCK_SIZE as u64);
-        let size = if align > MIN_BLOCK_SIZE as u64 {
+        let size = size.max(MIN_ALIGNMENT as u64);
+        let size = if align > MIN_ALIGNMENT as u64 {
             size - 1 + align
         } else {
             size
         } as u32;
 
-        // We need to find the bin which contains only empty-blocks large enough for the
-        // given size because we unconditionally use the first empty block found. So
-        // this must round up.
-        let (rounded_size, starting_bin) = Bin::from_size_round_up(size);
-
-        let Some(bin) = self.search_non_empty_bin(starting_bin) else {
+        let Some((rounded_size, bin)) = self.search_non_empty_bin(size) else {
             return None;
         };
 
@@ -581,7 +586,7 @@ where
         let super_block_index = self.blocks[block_index].super_block_index;
 
         // Should we should split the block?
-        if remainder >= MIN_BLOCK_SIZE {
+        if remainder >= MIN_ALIGNMENT {
             self.blocks[block_index].size -= remainder;
             let offset = self.blocks[block_index].offset + rounded_size;
             let new_block_index = self.request_block(offset, remainder, super_block_index);
@@ -595,6 +600,8 @@ where
         let user_data = self.super_blocks[super_block_index].user_data;
         // The mask is a no-op if the alignment is already met, do it unconditionally.
         let offset = (self.blocks[block_index].offset as u64 + align - 1) & !(align - 1);
+
+        debug_assert_eq!(offset & align - 1, 0);
 
         Some(Allocation {
             block_index,
