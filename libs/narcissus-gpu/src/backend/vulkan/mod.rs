@@ -2682,7 +2682,7 @@ impl Device for VulkanDevice {
                     vk::DescriptorBufferInfo {
                         buffer,
                         offset: 0,
-                        range: !0,
+                        range: vk::WHOLE_SIZE,
                     }
                 });
                 let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
@@ -2703,7 +2703,7 @@ impl Device for VulkanDevice {
                     vk::DescriptorBufferInfo {
                         buffer,
                         offset: 0,
-                        range: !0,
+                        range: vk::WHOLE_SIZE,
                     }
                 });
                 let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
