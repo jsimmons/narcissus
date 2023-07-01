@@ -1673,7 +1673,7 @@ impl VulkanDevice {
             unsafe {
                 let dst =
                     std::slice::from_raw_parts_mut(memory.mapped_ptr(), memory.size().widen());
-                dst.copy_from_slice(initial_data);
+                dst[..desc.size].copy_from_slice(initial_data);
             }
         }
 
