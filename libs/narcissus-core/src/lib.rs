@@ -293,7 +293,8 @@ pub trait Upcast<T: ?Sized> {
 #[must_use]
 pub fn align_offset(x: usize, align: usize) -> usize {
     debug_assert!(align.is_power_of_two());
-    (x + align - 1) & !(align - 1)
+    let align_mask = align - 1;
+    (x + align_mask) & !align_mask
 }
 
 #[must_use]
