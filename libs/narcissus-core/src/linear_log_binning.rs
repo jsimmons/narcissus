@@ -98,7 +98,7 @@ impl<const LINEAR_LOG2: u32, const SUB_BINS_LOG2: u32> Bin<LINEAR_LOG2, SUB_BINS
         let bin = self.bin();
         let sub_bin = self.sub_bin();
         if bin == 0 {
-            sub_bin * (1 << LINEAR_LOG2 - SUB_BINS_LOG2)
+            sub_bin * (1 << (LINEAR_LOG2 - SUB_BINS_LOG2))
         } else {
             let base = 1 << (bin + LINEAR_LOG2 - 1);
             let step = base >> SUB_BINS_LOG2;
@@ -114,7 +114,7 @@ impl<const LINEAR_LOG2: u32, const SUB_BINS_LOG2: u32> Bin<LINEAR_LOG2, SUB_BINS
             if sub_bin == 0 {
                 0
             } else {
-                (sub_bin + 1) * (1 << LINEAR_LOG2 - SUB_BINS_LOG2)
+                (sub_bin + 1) * (1 << (LINEAR_LOG2 - SUB_BINS_LOG2))
             }
         } else {
             let base = 1 << (bin + LINEAR_LOG2 - 1);
