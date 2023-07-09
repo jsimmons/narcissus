@@ -48,7 +48,7 @@ pub fn svg_end() -> SvgEnd {
     SvgEnd
 }
 
-pub fn text<'a, T>(x: f32, y: f32, size: f32, style: Style, text: &'a T) -> Text<'a, T>
+pub fn text<T>(x: f32, y: f32, size: f32, style: Style, text: &T) -> Text<T>
 where
     T: fmt::Display,
 {
