@@ -10,8 +10,8 @@ use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{default, rand::Pcg64, slice::array_windows};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics, TouchedGlyph};
 use narcissus_gpu::{
-    create_device, Access, BufferImageCopy, BufferUsageFlags, ClearValue, Extent2d, Extent3d,
-    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
+    create_device, Access, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, Extent2d,
+    Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
     ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
@@ -36,7 +36,14 @@ const MAX_GLYPHS: usize = 8192;
 /// # Safety
 ///
 /// Must not be applied to any types with padding
-pub unsafe trait Blittable: Sized {}
+pub unsafe trait Blittable: Sized {
+    fn as_bytes(&self) -> &[u8] {
+        // SAFETY: Safe whilst trait is correctly applied.
+        unsafe {
+            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of::<Self>())
+        }
+    }
+}
 
 unsafe impl Blittable for u8 {}
 unsafe impl Blittable for u16 {}
@@ -83,22 +90,10 @@ pub fn main() {
         blåhaj_image.as_slice(),
     );
 
-    let mut basic_uniform_buffer = MappedBuffer::new(
-        device.as_ref(),
-        BufferUsageFlags::UNIFORM,
-        std::mem::size_of::<BasicUniforms>(),
-    );
-
     let mut basic_transform_buffer = MappedBuffer::new(
         device.as_ref(),
         BufferUsageFlags::STORAGE,
         std::mem::size_of::<Affine3>() * MAX_SHARKS,
-    );
-
-    let mut text_uniform_buffer = MappedBuffer::new(
-        device.as_ref(),
-        BufferUsageFlags::UNIFORM,
-        std::mem::size_of::<TextUniforms>(),
     );
 
     let mut glyph_instance_buffer = MappedBuffer::new(
@@ -125,6 +120,25 @@ pub fn main() {
         layer_count: 1,
         mip_levels: 1,
     });
+
+    let mut rng = Pcg64::new();
+    let mut buffers = (0..4096)
+        .map(|_| {
+            device.create_buffer(&BufferDesc {
+                location: MemoryLocation::HostMapped,
+                usage: BufferUsageFlags::STORAGE,
+                size: 16 + rng.next_bound_usize(1024 - 16),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    buffers.extend((0..512).map(|_| {
+        device.create_buffer(&BufferDesc {
+            location: MemoryLocation::HostMapped,
+            usage: BufferUsageFlags::STORAGE,
+            size: 16 + rng.next_bound_usize(10 * 1024 * 1024 - 16),
+        })
+    }));
 
     {
         let frame = device.begin_frame();
@@ -276,8 +290,6 @@ pub fn main() {
         );
         let clip_from_model = clip_from_camera * camera_from_model;
 
-        basic_uniform_buffer.write(BasicUniforms { clip_from_model });
-
         // Do some Font Shit.'
         let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge.";
         let line1 = "加盟国は、国際連合と協力して";
@@ -364,13 +376,6 @@ pub fn main() {
 
         let atlas_width = glyph_cache.width() as u32;
         let atlas_height = glyph_cache.height() as u32;
-
-        text_uniform_buffer.write(TextUniforms {
-            screen_width: width,
-            screen_height: height,
-            atlas_width,
-            atlas_height,
-        });
 
         glyph_instance_buffer.write_slice(&glyph_instances);
 
@@ -481,8 +486,9 @@ pub fn main() {
         basic_pipeline.bind(
             device.as_ref(),
             &frame,
+            &thread_token,
             &mut cmd_buffer,
-            basic_uniform_buffer.buffer(),
+            &BasicUniforms { clip_from_model },
             blåhaj_vertex_buffer,
             blåhaj_index_buffer,
             basic_transform_buffer.buffer(),
@@ -502,8 +508,14 @@ pub fn main() {
         text_pipeline.bind(
             device.as_ref(),
             &frame,
+            &thread_token,
             &mut cmd_buffer,
-            text_uniform_buffer.buffer(),
+            &TextUniforms {
+                screen_width: width,
+                screen_height: height,
+                atlas_width,
+                atlas_height,
+            },
             glyph_buffer.buffer(),
             glyph_instance_buffer.buffer(),
             glyph_atlas,
@@ -516,5 +528,10 @@ pub fn main() {
         device.submit(&frame, cmd_buffer);
 
         device.end_frame(frame);
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        device.debug_allocator_dump_svg().unwrap();
     }
 }

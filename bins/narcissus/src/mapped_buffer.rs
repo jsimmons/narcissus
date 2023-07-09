@@ -30,19 +30,6 @@ impl<'a> MappedBuffer<'a> {
         self.buffer
     }
 
-    pub fn write<T>(&mut self, value: T)
-    where
-        T: Blittable,
-    {
-        unsafe {
-            let src = std::slice::from_raw_parts(
-                &value as *const T as *const u8,
-                std::mem::size_of::<T>(),
-            );
-            self.slice.copy_from_slice(src)
-        }
-    }
-
     pub fn write_slice<T>(&mut self, values: &[T])
     where
         T: Blittable,

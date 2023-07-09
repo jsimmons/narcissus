@@ -8,10 +8,10 @@ use std::{
 };
 
 use narcissus_core::{
-    cstr, cstr_from_bytes_until_nul, default, is_aligned_to, manual_arc,
+    box_assume_init, cstr, cstr_from_bytes_until_nul, default, is_aligned_to, manual_arc,
     manual_arc::ManualArc,
     raw_window::{AsRawWindow, RawWindow},
-    Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
+    zeroed_box, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
 use vulkan_sys as vk;
@@ -20,15 +20,15 @@ use crate::{
     delay_queue::DelayQueue,
     frame_counter::FrameCounter,
     tlsf::{self, Tlsf},
-    Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, BlendMode, Buffer, BufferDesc,
-    BufferImageCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp, ComputePipelineDesc,
-    CullingMode, Device, Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier, GpuConcurrent,
-    GraphicsPipelineDesc, Image, ImageAspectFlags, ImageBarrier, ImageBlit, ImageDesc,
-    ImageDimension, ImageFormat, ImageLayout, ImageSubresourceLayers, ImageSubresourceRange,
-    ImageUsageFlags, ImageViewDesc, IndexType, LoadOp, MemoryLocation, Offset2d, Offset3d,
-    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
-    SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, SwapchainOutOfDateError,
-    ThreadToken, Topology, TypedBind,
+    Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, BlendMode, Buffer, BufferBind,
+    BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp,
+    ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier,
+    GpuConcurrent, GraphicsPipelineDesc, Image, ImageAspectFlags, ImageBarrier, ImageBlit,
+    ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceLayers,
+    ImageSubresourceRange, ImageUsageFlags, ImageViewDesc, IndexType, LoadOp, MemoryLocation,
+    Offset2d, Offset3d, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerCompareOp,
+    SamplerDesc, SamplerFilter, ShaderStageFlags, StencilOp, StencilOpState, StoreOp,
+    SwapchainOutOfDateError, ThreadToken, Topology, TransientBuffer, TypedBind,
 };
 
 const NUM_FRAMES: usize = 2;
@@ -37,6 +37,18 @@ const NUM_FRAMES: usize = 2;
 ///
 /// There's no correct answer here (spec bug) we're just picking a big number and hoping for the best.
 const SWAPCHAIN_DESTROY_DELAY_FRAMES: usize = 8;
+
+pub struct VulkanConstants {
+    // How large should transient buffers be, this will limit the maximum size of transient allocations.
+    transient_buffer_size: u64,
+    // How should we align transient buffers, this will limit the maximum alignment of transient allocations.
+    transient_buffer_max_align: u64,
+}
+
+const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
+    transient_buffer_size: 2 * 1024 * 1024,
+    transient_buffer_max_align: 256,
+};
 
 mod libc {
     use std::os::raw::{c_char, c_int, c_void};
@@ -907,10 +919,85 @@ struct VulkanBoundPipeline {
     pipeline_bind_point: vk::PipelineBindPoint,
 }
 
+#[derive(Clone)]
+struct VulkanTransientBuffer {
+    buffer: vk::Buffer,
+    memory: VulkanMemory,
+}
+
+struct VulkanTransientAllocator {
+    usage: vk::BufferUsageFlags,
+    min_align: u64,
+    offset: u64,
+    current: Option<VulkanTransientBuffer>,
+    used_buffers: Vec<VulkanTransientBuffer>,
+}
+
+impl VulkanTransientAllocator {
+    fn new(usage: vk::BufferUsageFlags, min_align: u64) -> Self {
+        Self {
+            usage,
+            min_align,
+            offset: 0,
+            current: None,
+            used_buffers: default(),
+        }
+    }
+
+    fn alloc<'a>(&mut self, device: &VulkanDevice, size: u64, align: u64) -> TransientBuffer<'a> {
+        assert!(size <= VULKAN_CONSTANTS.transient_buffer_size);
+        assert!(
+            align != 0
+                && align.is_power_of_two()
+                && align <= VULKAN_CONSTANTS.transient_buffer_max_align
+        );
+
+        let align = align.max(self.min_align);
+
+        if self.offset < size || self.current.is_none() {
+            let transient_buffer =
+                device.request_transient_buffer(VULKAN_CONSTANTS.transient_buffer_size, self.usage);
+
+            self.used_buffers.push(transient_buffer.clone());
+            self.current = Some(transient_buffer);
+            self.offset = VULKAN_CONSTANTS.transient_buffer_size;
+        }
+
+        let current = self.current.as_ref().unwrap();
+
+        self.offset = self.offset.wrapping_sub(size);
+        self.offset &= !(align - 1);
+
+        TransientBuffer {
+            ptr: NonNull::new(
+                current
+                    .memory
+                    .mapped_ptr()
+                    .wrapping_offset(self.offset as isize),
+            )
+            .unwrap(),
+            len: size as usize,
+            buffer: current.buffer.as_raw(),
+            offset: self.offset,
+            _phantom: &PhantomData,
+        }
+    }
+}
+
 struct VulkanCmdBuffer {
     command_buffer: vk::CommandBuffer,
     bound_pipeline: Option<VulkanBoundPipeline>,
     swapchains_touched: HashMap<vk::SurfaceKHR, (vk::Image, vk::PipelineStageFlags2)>,
+}
+
+impl Default for VulkanCmdBuffer {
+    fn default() -> Self {
+        Self {
+            command_buffer: default(),
+            bound_pipeline: default(),
+            swapchains_touched: default(),
+        }
+    }
 }
 
 struct VulkanCmdBufferPool {
@@ -919,9 +1006,13 @@ struct VulkanCmdBufferPool {
     command_buffers: Vec<vk::CommandBuffer>,
 }
 
+#[repr(align(64))]
 struct VulkanPerThread {
     cmd_buffer_pool: RefCell<VulkanCmdBufferPool>,
     descriptor_pool: Cell<vk::DescriptorPool>,
+    transient_index_allocator: RefCell<VulkanTransientAllocator>,
+    transient_storage_allocator: RefCell<VulkanTransientAllocator>,
+    transient_uniform_allocator: RefCell<VulkanTransientAllocator>,
     arena: Arena,
 }
 
@@ -969,7 +1060,6 @@ type SwapchainDestroyQueue = DelayQueue<(vk::SwapchainKHR, vk::SurfaceKHR, Box<[
 pub(crate) struct VulkanDevice {
     instance: vk::Instance,
     physical_device: vk::PhysicalDevice,
-    physical_device_memory_properties: Box<vk::PhysicalDeviceMemoryProperties>,
     device: vk::Device,
 
     universal_queue: vk::Queue,
@@ -994,7 +1084,21 @@ pub(crate) struct VulkanDevice {
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
     recycled_descriptor_pools: Mutex<VecDeque<vk::DescriptorPool>>,
 
+    recycled_transient_index_buffers: Mutex<VecDeque<VulkanTransientBuffer>>,
+    recycled_transient_storage_buffers: Mutex<VecDeque<VulkanTransientBuffer>>,
+    recycled_transient_uniform_buffers: Mutex<VecDeque<VulkanTransientBuffer>>,
+
     allocators: [Option<Box<VulkanAllocator>>; vk::MAX_MEMORY_TYPES as usize],
+
+    _physical_device_properties: Box<vk::PhysicalDeviceProperties2>,
+    _physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties>,
+    _physical_device_properties_12: Box<vk::PhysicalDeviceVulkan12Properties>,
+    _physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties>,
+    _physical_device_features: Box<vk::PhysicalDeviceFeatures2>,
+    _physical_device_features_11: Box<vk::PhysicalDeviceVulkan11Features>,
+    _physical_device_features_12: Box<vk::PhysicalDeviceVulkan12Features>,
+    _physical_device_features_13: Box<vk::PhysicalDeviceVulkan13Features>,
+    physical_device_memory_properties: Box<vk::PhysicalDeviceMemoryProperties>,
 
     _global_fn: vk::GlobalFunctions,
     instance_fn: vk::InstanceFunctions,
@@ -1120,72 +1224,85 @@ impl VulkanDevice {
             instance_fn.enumerate_physical_devices(instance, count, ptr)
         });
 
+        let mut physical_device_properties =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceProperties2>()) };
+        let mut physical_device_properties_11 =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan11Properties>()) };
+        let mut physical_device_properties_12 =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan12Properties>()) };
+        let mut physical_device_properties_13 =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan13Properties>()) };
+
+        physical_device_properties._type = vk::StructureType::PhysicalDeviceProperties2;
+        physical_device_properties_11._type = vk::StructureType::PhysicalDeviceVulkan11Properties;
+        physical_device_properties_12._type = vk::StructureType::PhysicalDeviceVulkan12Properties;
+        physical_device_properties_13._type = vk::StructureType::PhysicalDeviceVulkan13Properties;
+
+        physical_device_properties_12._next = physical_device_properties_13.as_mut()
+            as *mut vk::PhysicalDeviceVulkan13Properties
+            as *mut _;
+        physical_device_properties_11._next = physical_device_properties_12.as_mut()
+            as *mut vk::PhysicalDeviceVulkan12Properties
+            as *mut _;
+        physical_device_properties._next = physical_device_properties_11.as_mut()
+            as *mut vk::PhysicalDeviceVulkan11Properties
+            as *mut _;
+
+        let mut physical_device_features =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceFeatures2>()) };
+        let mut physical_device_features_11 =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan11Features>()) };
+        let mut physical_device_features_12 =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan12Features>()) };
+        let mut physical_device_features_13 =
+            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan13Features>()) };
+
+        physical_device_features._type = vk::StructureType::PhysicalDeviceFeatures2;
+        physical_device_features_11._type = vk::StructureType::PhysicalDeviceVulkan11Features;
+        physical_device_features_12._type = vk::StructureType::PhysicalDeviceVulkan12Features;
+        physical_device_features_13._type = vk::StructureType::PhysicalDeviceVulkan13Features;
+
+        physical_device_features_12._next = physical_device_features_13.as_mut()
+            as *mut vk::PhysicalDeviceVulkan13Features
+            as *mut _;
+        physical_device_features_11._next = physical_device_features_12.as_mut()
+            as *mut vk::PhysicalDeviceVulkan12Features
+            as *mut _;
+        physical_device_features._next = physical_device_features_11.as_mut()
+            as *mut vk::PhysicalDeviceVulkan11Features
+            as *mut _;
+
         let physical_device = physical_devices
             .iter()
             .copied()
             .find(|&physical_device| {
-                let (properties, _properties_11, _properties_12, _properties_13) = {
-                    let mut properties_13 = vk::PhysicalDeviceVulkan13Properties::default();
-                    let mut properties_12 = vk::PhysicalDeviceVulkan12Properties {
-                        _next: &mut properties_13 as *mut vk::PhysicalDeviceVulkan13Properties
-                            as *mut _,
-                        ..default()
-                    };
-                    let mut properties_11 = vk::PhysicalDeviceVulkan11Properties {
-                        _next: &mut properties_12 as *mut vk::PhysicalDeviceVulkan12Properties
-                            as *mut _,
-                        ..default()
-                    };
-                    let mut properties = vk::PhysicalDeviceProperties2 {
-                        _next: &mut properties_11 as *mut vk::PhysicalDeviceVulkan11Properties
-                            as *mut _,
-                        ..default()
-                    };
-                    unsafe {
-                        instance_fn
-                            .get_physical_device_properties2(physical_device, &mut properties);
-                    }
-                    (properties, properties_11, properties_12, properties_13)
-                };
+                unsafe {
+                    instance_fn.get_physical_device_properties2(
+                        physical_device,
+                        physical_device_properties.as_mut(),
+                    );
+                    instance_fn.get_physical_device_features2(
+                        physical_device,
+                        physical_device_features.as_mut(),
+                    );
+                }
 
-                let (_features, _features_11, features_12, features_13) = {
-                    let mut features_13 = vk::PhysicalDeviceVulkan13Features::default();
-                    let mut features_12 = vk::PhysicalDeviceVulkan12Features {
-                        _next: &mut features_13 as *mut vk::PhysicalDeviceVulkan13Features
-                            as *mut _,
-                        ..default()
-                    };
-                    let mut features_11 = vk::PhysicalDeviceVulkan11Features {
-                        _next: &mut features_12 as *mut vk::PhysicalDeviceVulkan12Features
-                            as *mut _,
-                        ..default()
-                    };
-                    let mut features = vk::PhysicalDeviceFeatures2 {
-                        _next: &mut features_11 as *mut vk::PhysicalDeviceVulkan11Features
-                            as *mut _,
-                        ..default()
-                    };
-
-                    unsafe {
-                        instance_fn.get_physical_device_features2(physical_device, &mut features);
-                    }
-                    (features.features, features_11, features_12, features_13)
-                };
-
-                properties.properties.api_version >= vk::VERSION_1_3
-                    && features_13.dynamic_rendering == vk::Bool32::True
-                    && features_12.timeline_semaphore == vk::Bool32::True
-                    && features_12.descriptor_indexing == vk::Bool32::True
-                    && features_12.descriptor_binding_partially_bound == vk::Bool32::True
-                    && features_12.draw_indirect_count == vk::Bool32::True
-                    && features_12.uniform_buffer_standard_layout == vk::Bool32::True
+                physical_device_properties.properties.api_version >= vk::VERSION_1_3
+                    && physical_device_features_13.dynamic_rendering == vk::Bool32::True
+                    && physical_device_features_12.timeline_semaphore == vk::Bool32::True
+                    && physical_device_features_12.descriptor_indexing == vk::Bool32::True
+                    && physical_device_features_12.descriptor_binding_partially_bound
+                        == vk::Bool32::True
+                    && physical_device_features_12.draw_indirect_count == vk::Bool32::True
+                    && physical_device_features_12.uniform_buffer_standard_layout
+                        == vk::Bool32::True
             })
             .expect("no supported physical devices reported");
 
         let physical_device_memory_properties = unsafe {
-            let mut memory_properties = vk::PhysicalDeviceMemoryProperties::default();
+            let mut memory_properties = Box::<vk::PhysicalDeviceMemoryProperties>::default();
             instance_fn
-                .get_physical_device_memory_properties(physical_device, &mut memory_properties);
+                .get_physical_device_memory_properties(physical_device, memory_properties.as_mut());
             memory_properties
         };
 
@@ -1290,9 +1407,29 @@ impl VulkanDevice {
                     command_buffers: Vec::new(),
                     next_free_index: 0,
                 };
+                let transient_index_allocator =
+                    VulkanTransientAllocator::new(vk::BufferUsageFlags::INDEX_BUFFER, 1);
+                let transient_storage_allocator = VulkanTransientAllocator::new(
+                    vk::BufferUsageFlags::STORAGE_BUFFER,
+                    physical_device_properties
+                        .properties
+                        .limits
+                        .min_storage_buffer_offset_alignment,
+                );
+                let transient_uniform_allocator = VulkanTransientAllocator::new(
+                    vk::BufferUsageFlags::UNIFORM_BUFFER,
+                    physical_device_properties
+                        .properties
+                        .limits
+                        .min_uniform_buffer_offset_alignment,
+                );
+
                 VulkanPerThread {
                     cmd_buffer_pool: RefCell::new(cmd_buffer_pool),
                     descriptor_pool: Cell::new(vk::DescriptorPool::null()),
+                    transient_index_allocator: RefCell::new(transient_index_allocator),
+                    transient_storage_allocator: RefCell::new(transient_storage_allocator),
+                    transient_uniform_allocator: RefCell::new(transient_uniform_allocator),
                     arena: Arena::new(),
                 }
             });
@@ -1326,7 +1463,15 @@ impl VulkanDevice {
         Self {
             instance,
             physical_device,
-            physical_device_memory_properties: Box::new(physical_device_memory_properties),
+            _physical_device_properties: physical_device_properties,
+            _physical_device_properties_11: physical_device_properties_11,
+            _physical_device_properties_12: physical_device_properties_12,
+            _physical_device_properties_13: physical_device_properties_13,
+            _physical_device_features: physical_device_features,
+            _physical_device_features_11: physical_device_features_11,
+            _physical_device_features_12: physical_device_features_12,
+            _physical_device_features_13: physical_device_features_13,
+            physical_device_memory_properties,
             device,
 
             universal_queue,
@@ -1349,6 +1494,9 @@ impl VulkanDevice {
 
             recycled_semaphores: default(),
             recycled_descriptor_pools: default(),
+            recycled_transient_index_buffers: default(),
+            recycled_transient_storage_buffers: default(),
+            recycled_transient_uniform_buffers: default(),
 
             allocators,
 
@@ -2384,6 +2532,51 @@ impl Device for VulkanDevice {
         }
     }
 
+    fn request_transient_index_buffer<'a>(
+        &self,
+        frame: &'a Frame,
+        thread_token: &'a ThreadToken,
+        size: usize,
+        align: usize,
+    ) -> TransientBuffer<'a> {
+        let frame = self.frame(frame);
+        let per_thread = frame.per_thread.get(thread_token);
+        per_thread
+            .transient_index_allocator
+            .borrow_mut()
+            .alloc(self, size as u64, align as u64)
+    }
+
+    fn request_transient_storage_buffer<'a>(
+        &self,
+        frame: &'a Frame,
+        thread_token: &'a ThreadToken,
+        size: usize,
+        align: usize,
+    ) -> TransientBuffer<'a> {
+        let frame = self.frame(frame);
+        let per_thread = frame.per_thread.get(thread_token);
+        per_thread
+            .transient_storage_allocator
+            .borrow_mut()
+            .alloc(self, size as u64, align as u64)
+    }
+
+    fn request_transient_uniform_buffer<'a>(
+        &self,
+        frame: &'a Frame,
+        thread_token: &'a ThreadToken,
+        size: usize,
+        align: usize,
+    ) -> TransientBuffer<'a> {
+        let frame = self.frame(frame);
+        let per_thread = frame.per_thread.get(thread_token);
+        per_thread
+            .transient_uniform_allocator
+            .borrow_mut()
+            .alloc(self, size as u64, align as u64)
+    }
+
     fn create_cmd_buffer<'a, 'thread>(
         &self,
         frame: &'a Frame,
@@ -2424,8 +2617,7 @@ impl Device for VulkanDevice {
 
         let vulkan_cmd_buffer = per_thread.arena.alloc(VulkanCmdBuffer {
             command_buffer,
-            bound_pipeline: None,
-            swapchains_touched: HashMap::new(),
+            ..default()
         });
 
         CmdBuffer {
@@ -2677,13 +2869,20 @@ impl Device for VulkanDevice {
             }
             TypedBind::UniformBuffer(buffers) => {
                 let buffer_pool = self.buffer_pool.lock();
-                let buffer_infos_iter = buffers.iter().map(|buffer| {
-                    let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
-                    vk::DescriptorBufferInfo {
-                        buffer,
-                        offset: 0,
-                        range: vk::WHOLE_SIZE,
+                let buffer_infos_iter = buffers.iter().map(|buffer| match buffer {
+                    BufferBind::Unmanaged(buffer) => {
+                        let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
+                        vk::DescriptorBufferInfo {
+                            buffer,
+                            offset: 0,
+                            range: vk::WHOLE_SIZE,
+                        }
                     }
+                    BufferBind::Transient(transient) => vk::DescriptorBufferInfo {
+                        buffer: vk::Buffer::from_raw(transient.buffer),
+                        offset: transient.offset,
+                        range: transient.len as u64,
+                    },
                 });
                 let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
                 vk::WriteDescriptorSet {
@@ -2698,13 +2897,20 @@ impl Device for VulkanDevice {
             }
             TypedBind::StorageBuffer(buffers) => {
                 let buffer_pool = self.buffer_pool.lock();
-                let buffer_infos_iter = buffers.iter().map(|buffer| {
-                    let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
-                    vk::DescriptorBufferInfo {
-                        buffer,
-                        offset: 0,
-                        range: vk::WHOLE_SIZE,
+                let buffer_infos_iter = buffers.iter().map(|buffer| match buffer {
+                    BufferBind::Unmanaged(buffer) => {
+                        let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
+                        vk::DescriptorBufferInfo {
+                            buffer,
+                            offset: 0,
+                            range: vk::WHOLE_SIZE,
+                        }
                     }
+                    BufferBind::Transient(transient) => vk::DescriptorBufferInfo {
+                        buffer: vk::Buffer::from_raw(transient.buffer),
+                        offset: transient.offset,
+                        range: transient.len as u64,
+                    },
                 });
                 let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
                 vk::WriteDescriptorSet {
@@ -3111,6 +3317,38 @@ impl Device for VulkanDevice {
                     ));
                     cmd_buffer_pool.next_free_index = 0;
                 }
+
+                let used_index_buffers =
+                    &mut per_thread.transient_index_allocator.get_mut().used_buffers;
+
+                if !used_index_buffers.is_empty() {
+                    self.recycled_transient_index_buffers
+                        .lock()
+                        .extend(used_index_buffers.drain(..))
+                }
+
+                let used_storage_buffers = &mut per_thread
+                    .transient_storage_allocator
+                    .get_mut()
+                    .used_buffers;
+
+                if !used_storage_buffers.is_empty() {
+                    self.recycled_transient_storage_buffers
+                        .lock()
+                        .extend(used_storage_buffers.drain(..))
+                }
+
+                let used_uniform_buffers = &mut per_thread
+                    .transient_uniform_allocator
+                    .get_mut()
+                    .used_buffers;
+
+                if !used_uniform_buffers.is_empty() {
+                    self.recycled_transient_uniform_buffers
+                        .lock()
+                        .extend(used_uniform_buffers.drain(..))
+                }
+
                 per_thread.arena.reset()
             }
 
@@ -3309,9 +3547,95 @@ impl Device for VulkanDevice {
             self.destroy_swapchain(surface)
         }
     }
+
+    #[cfg(debug_assertions)]
+    fn debug_allocator_dump_svg(&self) -> Result<(), std::io::Error> {
+        for (i, allocator) in self
+            .allocators
+            .iter()
+            .filter_map(Option::as_deref)
+            .enumerate()
+        {
+            let mut bitmap_file = std::fs::File::create(format!("target/{i}_bitmap.svg")).unwrap();
+            allocator.tlsf.lock().debug_bitmap_svg(&mut bitmap_file)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl VulkanDevice {
+    fn request_transient_buffer(
+        &self,
+        size: u64,
+        usage: vk::BufferUsageFlags,
+    ) -> VulkanTransientBuffer {
+        if let Some(transient_buffer) = if usage == vk::BufferUsageFlags::INDEX_BUFFER {
+            self.recycled_transient_index_buffers.lock().pop_back()
+        } else if usage == vk::BufferUsageFlags::STORAGE_BUFFER {
+            self.recycled_transient_storage_buffers.lock().pop_back()
+        } else if usage == vk::BufferUsageFlags::UNIFORM_BUFFER {
+            self.recycled_transient_uniform_buffers.lock().pop_back()
+        } else {
+            panic!()
+        } {
+            return transient_buffer;
+        }
+
+        let queue_family_indices = &[self.universal_queue_family_index];
+
+        let create_info = vk::BufferCreateInfo {
+            size,
+            usage,
+            queue_family_indices: queue_family_indices.into(),
+            sharing_mode: vk::SharingMode::Exclusive,
+            ..default()
+        };
+        let mut buffer = vk::Buffer::null();
+        vk_check!(self
+            .device_fn
+            .create_buffer(self.device, &create_info, None, &mut buffer));
+
+        let mut memory_requirements = vk::MemoryRequirements2::default();
+
+        self.device_fn.get_buffer_memory_requirements2(
+            self.device,
+            &vk::BufferMemoryRequirementsInfo2 {
+                buffer,
+                ..default()
+            },
+            &mut memory_requirements,
+        );
+
+        let memory = self.allocate_memory(&VulkanMemoryDesc {
+            requirements: memory_requirements.memory_requirements,
+            memory_location: MemoryLocation::HostMapped,
+            _linear: true,
+        });
+
+        assert!(!memory.mapped_ptr().is_null());
+        // SAFETY: The memory has just been allocated, so as long as the pointer is
+        // non-null, then we can create a slice for it.
+        unsafe {
+            let dst = std::slice::from_raw_parts_mut(memory.mapped_ptr(), memory.size().widen());
+            dst.fill(0);
+        }
+
+        unsafe {
+            self.device_fn.bind_buffer_memory2(
+                self.device,
+                &[vk::BindBufferMemoryInfo {
+                    buffer,
+                    memory: memory.device_memory(),
+                    offset: memory.offset(),
+                    ..default()
+                }],
+            )
+        };
+
+        VulkanTransientBuffer { buffer, memory }
+    }
+
     fn acquire_swapchain(
         &self,
         frame: &Frame,
@@ -3655,7 +3979,47 @@ impl Drop for VulkanDevice {
                 unsafe {
                     device_fn.destroy_command_pool(device, cmd_buffer_pool.command_pool, None)
                 }
+
+                for &VulkanTransientBuffer { buffer, memory: _ } in
+                    &per_thread.transient_index_allocator.get_mut().used_buffers
+                {
+                    unsafe { device_fn.destroy_buffer(device, buffer, None) }
+                }
+
+                for &VulkanTransientBuffer { buffer, memory: _ } in &per_thread
+                    .transient_storage_allocator
+                    .get_mut()
+                    .used_buffers
+                {
+                    unsafe { device_fn.destroy_buffer(device, buffer, None) }
+                }
+
+                for &VulkanTransientBuffer { buffer, memory: _ } in &per_thread
+                    .transient_uniform_allocator
+                    .get_mut()
+                    .used_buffers
+                {
+                    unsafe { device_fn.destroy_buffer(device, buffer, None) }
+                }
             }
+        }
+
+        for VulkanTransientBuffer { buffer, memory: _ } in
+            self.recycled_transient_index_buffers.get_mut()
+        {
+            unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+        }
+
+        for VulkanTransientBuffer { buffer, memory: _ } in
+            self.recycled_transient_storage_buffers.get_mut()
+        {
+            unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+        }
+
+        for VulkanTransientBuffer { buffer, memory: _ } in
+            self.recycled_transient_uniform_buffers.get_mut()
+        {
+            unsafe { device_fn.destroy_buffer(device, *buffer, None) }
         }
 
         for buffer in self.buffer_pool.get_mut().values() {

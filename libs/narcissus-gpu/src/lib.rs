@@ -1,4 +1,4 @@
-use std::{ffi::CStr, marker::PhantomData};
+use std::{ffi::CStr, marker::PhantomData, ptr::NonNull};
 
 use backend::vulkan;
 use narcissus_core::{
@@ -60,6 +60,21 @@ pub struct BindGroupLayout(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pipeline(Handle);
+
+pub struct TransientBuffer<'a> {
+    ptr: NonNull<u8>,
+    len: usize,
+    buffer: u64,
+    offset: u64,
+    _phantom: &'a PhantomData<()>,
+}
+
+impl<'a> TransientBuffer<'a> {
+    pub fn copy_from_slice(&mut self, bytes: &[u8]) {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+            .copy_from_slice(bytes)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryLocation {
@@ -464,11 +479,28 @@ pub struct Bind<'a> {
     pub typed: TypedBind<'a>,
 }
 
+pub enum BufferBind<'a> {
+    Unmanaged(Buffer),
+    Transient(TransientBuffer<'a>),
+}
+
+impl<'a> From<Buffer> for BufferBind<'a> {
+    fn from(value: Buffer) -> Self {
+        BufferBind::Unmanaged(value)
+    }
+}
+
+impl<'a> From<TransientBuffer<'a>> for BufferBind<'a> {
+    fn from(value: TransientBuffer<'a>) -> Self {
+        BufferBind::Transient(value)
+    }
+}
+
 pub enum TypedBind<'a> {
     Sampler(&'a [Sampler]),
     Image(&'a [(ImageLayout, Image)]),
-    UniformBuffer(&'a [Buffer]),
-    StorageBuffer(&'a [Buffer]),
+    UniformBuffer(&'a [BufferBind<'a>]),
+    StorageBuffer(&'a [BufferBind<'a>]),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -713,6 +745,33 @@ pub trait Device {
     unsafe fn unmap_buffer(&self, buffer: Buffer);
 
     #[must_use]
+    fn request_transient_uniform_buffer<'a>(
+        &self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        size: usize,
+        align: usize,
+    ) -> TransientBuffer<'a>;
+
+    #[must_use]
+    fn request_transient_storage_buffer<'a>(
+        &self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        size: usize,
+        align: usize,
+    ) -> TransientBuffer<'a>;
+
+    #[must_use]
+    fn request_transient_index_buffer<'a>(
+        &self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        size: usize,
+        align: usize,
+    ) -> TransientBuffer<'a>;
+
+    #[must_use]
     fn create_cmd_buffer<'a, 'thread>(
         &'a self,
         frame: &'a Frame,
@@ -804,4 +863,7 @@ pub trait Device {
     fn begin_frame(&self) -> Frame;
 
     fn end_frame<'device>(&'device self, frame: Frame<'device>);
+
+    #[cfg(debug_assertions)]
+    fn debug_allocator_dump_svg(&self) -> Result<(), std::io::Error>;
 }

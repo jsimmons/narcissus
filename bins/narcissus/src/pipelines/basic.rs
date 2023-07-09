@@ -4,7 +4,7 @@ use narcissus_gpu::{
     Buffer, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace, GraphicsPipelineDesc,
     GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType, Pipeline, PolygonMode,
     Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags,
-    Topology, TypedBind,
+    ThreadToken, Topology, TypedBind,
 };
 use narcissus_maths::Mat4;
 
@@ -15,6 +15,7 @@ const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]
+#[repr(align(16))]
 pub struct BasicUniforms {
     pub clip_from_model: Mat4,
 }
@@ -127,13 +128,23 @@ impl BasicPipeline {
         &self,
         device: &dyn Device,
         frame: &Frame,
+        thread_token: &ThreadToken,
         cmd_buffer: &mut CmdBuffer,
-        uniform_buffer: Buffer,
+        basic_uniforms: &BasicUniforms,
         vertex_buffer: Buffer,
         index_buffer: Buffer,
         transform_buffer: Buffer,
         texture: Image,
     ) {
+        let mut uniform_buffer = device.request_transient_uniform_buffer(
+            frame,
+            thread_token,
+            std::mem::size_of::<BasicUniforms>(),
+            std::mem::align_of::<BasicUniforms>(),
+        );
+
+        uniform_buffer.copy_from_slice(basic_uniforms.as_bytes());
+
         device.cmd_set_pipeline(cmd_buffer, self.pipeline);
 
         device.cmd_set_bind_group(
@@ -144,7 +155,7 @@ impl BasicPipeline {
             &[Bind {
                 binding: 0,
                 array_element: 0,
-                typed: TypedBind::UniformBuffer(&[uniform_buffer]),
+                typed: TypedBind::UniformBuffer(&[uniform_buffer.into()]),
             }],
         );
 
@@ -157,12 +168,12 @@ impl BasicPipeline {
                 Bind {
                     binding: 0,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[vertex_buffer]),
+                    typed: TypedBind::StorageBuffer(&[vertex_buffer.into()]),
                 },
                 Bind {
                     binding: 1,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[transform_buffer]),
+                    typed: TypedBind::StorageBuffer(&[transform_buffer.into()]),
                 },
                 Bind {
                     binding: 2,

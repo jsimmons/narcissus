@@ -601,7 +601,7 @@ where
         // The mask is a no-op if the alignment is already met, do it unconditionally.
         let offset = (self.blocks[block_index].offset as u64 + align - 1) & !(align - 1);
 
-        debug_assert_eq!(offset & align - 1, 0);
+        debug_assert_eq!(offset & (align - 1), 0);
 
         Some(Allocation {
             block_index,
@@ -646,6 +646,97 @@ where
 
         // Insert the merged free block.
         self.insert_block(block_index);
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn debug_bitmap_svg(&self, w: &mut dyn std::io::Write) -> Result<(), std::io::Error> {
+        use narcissus_core::svg::{self, svg_begin, svg_end};
+
+        struct Bytes {
+            bytes: u32,
+        }
+
+        impl Bytes {
+            fn new(bytes: u32) -> Self {
+                Self { bytes }
+            }
+        }
+
+        impl std::fmt::Display for Bytes {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                if self.bytes < 1024 {
+                    write!(f, "{}b", self.bytes)
+                } else if self.bytes < 1024 * 1024 {
+                    write!(f, "{:.2}KiB", self.bytes as f32 / (1024.0))
+                } else {
+                    write!(f, "{:.2}MiB", self.bytes as f32 / (1024.0 * 1024.0))
+                }
+            }
+        }
+
+        write!(w, "{}", svg_begin(615.0, 375.0))?;
+
+        const BOX_SIZE: f32 = 15.0;
+        const PAD: f32 = 30.0;
+
+        let stroke = svg::stroke(svg::black(), 2.0, 1.0);
+        let fg = svg::style(svg::fill(svg::rgb(0xdf, 0x73, 0x1a), 1.0), stroke);
+        let bg = svg::style(svg::fill(svg::rgb(0xfe, 0xfe, 0xfe), 0.0), stroke);
+
+        let mut y = 28.0;
+        let mut x = 0.0;
+
+        for i in 0..BIN_COUNT {
+            let bin = Bin::new(i as u32, 0);
+            write!(
+                w,
+                "{}",
+                svg::text(x, y, 14.0, fg, &Bytes::new(bin.lower_bound()))
+            )?;
+            y += BOX_SIZE;
+        }
+
+        y = PAD;
+        x = 100.0;
+
+        for i in 0..BIN_COUNT {
+            let empty = self.bitmap_0 & 1 << i == 0;
+            write!(
+                w,
+                "{}",
+                svg::rect(x, y, BOX_SIZE, BOX_SIZE).style(if empty { bg } else { fg })
+            )?;
+            y += BOX_SIZE;
+        }
+
+        y = PAD;
+        x = 100.0 + PAD * 2.0;
+
+        for (bin, bitmap) in self.bitmap_1.iter().enumerate() {
+            for sub_bin in 0..SUB_BIN_COUNT {
+                let bin = Bin::new(bin as u32, sub_bin as u32);
+                let lower_bound = Bytes::new(bin.lower_bound());
+                let upper_bound = Bytes::new(bin.upper_bound());
+                let range = format!("{lower_bound}-{upper_bound}");
+
+                let empty = bitmap & 1 << sub_bin == 0;
+
+                write!(
+                    w,
+                    "{}",
+                    svg::rect(x, y, BOX_SIZE, BOX_SIZE)
+                        .style(if empty { bg } else { fg })
+                        .title(&range)
+                )?;
+                x += BOX_SIZE;
+            }
+            x = 100.0 + PAD * 2.0;
+            y += BOX_SIZE;
+        }
+
+        write!(w, "{}", svg_end())?;
+
+        Ok(())
     }
 }
 

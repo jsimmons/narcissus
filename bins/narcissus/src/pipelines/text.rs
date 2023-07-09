@@ -4,8 +4,8 @@ use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
     Buffer, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace, GraphicsPipelineDesc,
     GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline, PolygonMode, Sampler,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags, Topology,
-    TypedBind,
+    SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags, ThreadToken,
+    Topology, TypedBind,
 };
 
 use crate::Blittable;
@@ -15,6 +15,7 @@ const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]
+#[repr(align(16))]
 pub struct TextUniforms {
     pub screen_width: u32,
     pub screen_height: u32,
@@ -126,12 +127,22 @@ impl TextPipeline {
         &self,
         device: &dyn Device,
         frame: &Frame,
+        thread_token: &ThreadToken,
         cmd_buffer: &mut CmdBuffer,
-        uniforms: Buffer,
+        text_uniforms: &TextUniforms,
         cached_glyphs: Buffer,
         glyph_instances: Buffer,
         atlas: Image,
     ) {
+        let mut uniforms = device.request_transient_uniform_buffer(
+            frame,
+            thread_token,
+            std::mem::size_of::<TextUniforms>(),
+            std::mem::align_of::<TextUniforms>(),
+        );
+
+        uniforms.copy_from_slice(text_uniforms.as_bytes());
+
         device.cmd_set_pipeline(cmd_buffer, self.pipeline);
         device.cmd_set_bind_group(
             frame,
@@ -142,17 +153,17 @@ impl TextPipeline {
                 Bind {
                     binding: 0,
                     array_element: 0,
-                    typed: TypedBind::UniformBuffer(&[uniforms]),
+                    typed: TypedBind::UniformBuffer(&[uniforms.into()]),
                 },
                 Bind {
                     binding: 1,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[cached_glyphs]),
+                    typed: TypedBind::StorageBuffer(&[cached_glyphs.into()]),
                 },
                 Bind {
                     binding: 2,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[glyph_instances]),
+                    typed: TypedBind::StorageBuffer(&[glyph_instances.into()]),
                 },
                 Bind {
                     binding: 3,
