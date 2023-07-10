@@ -944,6 +944,11 @@ impl VulkanTransientAllocator {
         }
     }
 
+    fn reset(&mut self) {
+        self.current = None;
+        self.offset = 0;
+    }
+
     fn alloc<'a>(&mut self, device: &VulkanDevice, size: u64, align: u64) -> TransientBuffer<'a> {
         assert!(size <= VULKAN_CONSTANTS.transient_buffer_size);
         assert!(
@@ -3327,6 +3332,8 @@ impl Device for VulkanDevice {
                         .extend(used_index_buffers.drain(..))
                 }
 
+                per_thread.transient_index_allocator.get_mut().reset();
+
                 let used_storage_buffers = &mut per_thread
                     .transient_storage_allocator
                     .get_mut()
@@ -3338,6 +3345,8 @@ impl Device for VulkanDevice {
                         .extend(used_storage_buffers.drain(..))
                 }
 
+                per_thread.transient_storage_allocator.get_mut().reset();
+
                 let used_uniform_buffers = &mut per_thread
                     .transient_uniform_allocator
                     .get_mut()
@@ -3348,6 +3357,8 @@ impl Device for VulkanDevice {
                         .lock()
                         .extend(used_uniform_buffers.drain(..))
                 }
+
+                per_thread.transient_uniform_allocator.get_mut().reset();
 
                 per_thread.arena.reset()
             }
@@ -3980,26 +3991,31 @@ impl Drop for VulkanDevice {
                     device_fn.destroy_command_pool(device, cmd_buffer_pool.command_pool, None)
                 }
 
-                for &VulkanTransientBuffer { buffer, memory: _ } in
-                    &per_thread.transient_index_allocator.get_mut().used_buffers
+                for VulkanTransientBuffer { buffer, memory: _ } in per_thread
+                    .transient_index_allocator
+                    .get_mut()
+                    .used_buffers
+                    .iter()
                 {
-                    unsafe { device_fn.destroy_buffer(device, buffer, None) }
+                    unsafe { device_fn.destroy_buffer(device, *buffer, None) }
                 }
 
-                for &VulkanTransientBuffer { buffer, memory: _ } in &per_thread
+                for VulkanTransientBuffer { buffer, memory: _ } in per_thread
                     .transient_storage_allocator
                     .get_mut()
                     .used_buffers
+                    .iter()
                 {
-                    unsafe { device_fn.destroy_buffer(device, buffer, None) }
+                    unsafe { device_fn.destroy_buffer(device, *buffer, None) }
                 }
 
-                for &VulkanTransientBuffer { buffer, memory: _ } in &per_thread
+                for VulkanTransientBuffer { buffer, memory: _ } in per_thread
                     .transient_uniform_allocator
                     .get_mut()
                     .used_buffers
+                    .iter()
                 {
-                    unsafe { device_fn.destroy_buffer(device, buffer, None) }
+                    unsafe { device_fn.destroy_buffer(device, *buffer, None) }
                 }
             }
         }
