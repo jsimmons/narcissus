@@ -1,6 +1,6 @@
 use std::{
     cell::{Cell, RefCell, UnsafeCell},
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     marker::PhantomData,
     os::raw::c_char,
     ptr::NonNull,
@@ -8,10 +8,8 @@ use std::{
 };
 
 use narcissus_core::{
-    box_assume_init, cstr, cstr_from_bytes_until_nul, default, is_aligned_to, manual_arc,
-    manual_arc::ManualArc,
-    raw_window::{AsRawWindow, RawWindow},
-    zeroed_box, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
+    box_assume_init, cstr, default, is_aligned_to, manual_arc, manual_arc::ManualArc,
+    raw_window::AsRawWindow, zeroed_box, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
 use vulkan_sys as vk;
@@ -31,21 +29,25 @@ use crate::{
     SwapchainOutOfDateError, ThreadToken, Topology, TransientBuffer, TypedBind,
 };
 
+mod wsi;
+
+use self::wsi::{VulkanWsi, VulkanWsiFrame};
+
 const NUM_FRAMES: usize = 2;
 
-/// How many frames to delay swapchain destruction.
-///
-/// There's no correct answer here (spec bug) we're just picking a big number and hoping for the best.
-const SWAPCHAIN_DESTROY_DELAY_FRAMES: usize = 8;
-
 pub struct VulkanConstants {
-    // How large should transient buffers be, this will limit the maximum size of transient allocations.
+    /// How many frames to delay swapchain destruction.
+    ///
+    /// There's no correct answer here (spec bug) we're just picking a big number and hoping for the best.
+    swapchain_destroy_delay: usize,
+    /// How large should transient buffers be, this will limit the maximum size of transient allocations.
     transient_buffer_size: u64,
-    // How should we align transient buffers, this will limit the maximum alignment of transient allocations.
+    /// How should we align transient buffers, this will limit the maximum alignment of transient allocations.
     transient_buffer_max_align: u64,
 }
 
 const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
+    swapchain_destroy_delay: 8,
     transient_buffer_size: 2 * 1024 * 1024,
     transient_buffer_max_align: 256,
 };
@@ -62,6 +64,7 @@ mod libc {
     }
 }
 
+#[macro_export]
 macro_rules! vk_check {
     ($e:expr) => ({
         #[allow(unused_unsafe)]
@@ -803,35 +806,6 @@ struct VulkanPipeline {
     pipeline_bind_point: vk::PipelineBindPoint,
 }
 
-enum VulkanSwapchainState {
-    Vacant,
-    Occupied {
-        width: u32,
-        height: u32,
-        suboptimal: bool,
-        swapchain: vk::SwapchainKHR,
-        image_views: Box<[Image]>,
-    },
-}
-
-struct VulkanSwapchain {
-    surface_format: vk::SurfaceFormatKHR,
-
-    state: VulkanSwapchainState,
-
-    _formats: Box<[vk::SurfaceFormatKHR]>,
-    _present_modes: Box<[vk::PresentModeKHR]>,
-    capabilities: vk::SurfaceCapabilitiesKHR,
-}
-
-#[derive(Default)]
-struct VulkanPresentInfo {
-    acquire: vk::Semaphore,
-    release: vk::Semaphore,
-    swapchain: vk::SwapchainKHR,
-    image_index: u32,
-}
-
 #[derive(Clone, Copy)]
 struct VulkanAllocationInfo {
     memory: vk::DeviceMemory,
@@ -1021,12 +995,12 @@ struct VulkanPerThread {
     arena: Arena,
 }
 
-struct VulkanFrame {
+pub(crate) struct VulkanFrame {
     universal_queue_fence: AtomicU64,
 
     per_thread: GpuConcurrent<VulkanPerThread>,
 
-    present_swapchains: Mutex<HashMap<vk::SurfaceKHR, VulkanPresentInfo>>,
+    wsi: VulkanWsiFrame,
 
     destroyed_allocations: Mutex<VecDeque<VulkanMemory>>,
     destroyed_buffers: Mutex<VecDeque<vk::Buffer>>,
@@ -1075,10 +1049,7 @@ pub(crate) struct VulkanDevice {
     frame_counter: FrameCounter,
     frames: Box<[UnsafeCell<VulkanFrame>; NUM_FRAMES]>,
 
-    surfaces: Mutex<HashMap<RawWindow, vk::SurfaceKHR>>,
-
-    swapchains: Mutex<HashMap<vk::SurfaceKHR, VulkanSwapchain>>,
-    destroyed_swapchains: Mutex<SwapchainDestroyQueue>,
+    wsi: Box<VulkanWsi>,
 
     image_pool: Mutex<Pool<VulkanImageHolder>>,
     buffer_pool: Mutex<Pool<VulkanBuffer>>,
@@ -1107,11 +1078,6 @@ pub(crate) struct VulkanDevice {
 
     _global_fn: vk::GlobalFunctions,
     instance_fn: vk::InstanceFunctions,
-    xcb_surface_fn: Option<vk::XcbSurfaceKHRFunctions>,
-    xlib_surface_fn: Option<vk::XlibSurfaceKHRFunctions>,
-    wayland_surface_fn: Option<vk::WaylandSurfaceKHRFunctions>,
-    surface_fn: vk::SurfaceKHRFunctions,
-    swapchain_fn: vk::SwapchainKHRFunctions,
     device_fn: vk::DeviceFunctions,
 }
 
@@ -1146,36 +1112,10 @@ impl VulkanDevice {
             global_fn.enumerate_instance_extension_properties(std::ptr::null(), count, ptr)
         });
 
-        let mut has_wayland_support = false;
-        let mut has_xlib_support = false;
-        let mut has_xcb_support = false;
-
         let mut enabled_extensions = vec![];
-        for extension in &extension_properties {
-            let extension_name = cstr_from_bytes_until_nul(&extension.extension_name).unwrap();
 
-            match extension_name.to_str().unwrap() {
-                "VK_KHR_wayland_surface" => {
-                    has_wayland_support = true;
-                    enabled_extensions.push(extension_name);
-                }
-                "VK_KHR_xlib_surface" => {
-                    has_xlib_support = true;
-                    enabled_extensions.push(extension_name);
-                }
-                "VK_KHR_xcb_surface" => {
-                    has_xcb_support = true;
-                    enabled_extensions.push(extension_name);
-                }
-                _ => {}
-            }
-        }
-
-        // If we found any surface extensions, we need to additionally enable
-        // `VK_KHR_surface`.
-        if !enabled_extensions.is_empty() {
-            enabled_extensions.push(cstr!("VK_KHR_surface"));
-        }
+        let wsi_support =
+            VulkanWsi::check_instance_extensions(&extension_properties, &mut enabled_extensions);
 
         let enabled_extensions = enabled_extensions
             .iter()
@@ -1204,26 +1144,7 @@ impl VulkanDevice {
 
         let instance_fn = vk::InstanceFunctions::new(&global_fn, instance, vk::VERSION_1_2);
 
-        let xcb_surface_fn = if has_xcb_support {
-            Some(vk::XcbSurfaceKHRFunctions::new(&global_fn, instance))
-        } else {
-            None
-        };
-
-        let xlib_surface_fn = if has_xlib_support {
-            Some(vk::XlibSurfaceKHRFunctions::new(&global_fn, instance))
-        } else {
-            None
-        };
-
-        let wayland_surface_fn = if has_wayland_support {
-            Some(vk::WaylandSurfaceKHRFunctions::new(&global_fn, instance))
-        } else {
-            None
-        };
-
-        let surface_fn = vk::SurfaceKHRFunctions::new(&global_fn, instance);
-        let swapchain_fn = vk::SwapchainKHRFunctions::new(&global_fn, instance, vk::VERSION_1_1);
+        let wsi = Box::new(VulkanWsi::new(&global_fn, instance, &wsi_support));
 
         let physical_devices = vk_vec(|count, ptr| unsafe {
             instance_fn.enumerate_physical_devices(instance, count, ptr)
@@ -1332,7 +1253,20 @@ impl VulkanDevice {
                 queue_priorities: queue_priorities.into(),
                 ..default()
             }];
-            let enabled_extensions = vec![cstr!("VK_KHR_swapchain")];
+
+            let extension_properties = vk_vec(|count, ptr| unsafe {
+                instance_fn.enumerate_device_extension_properties(
+                    physical_device,
+                    std::ptr::null(),
+                    count,
+                    ptr,
+                )
+            });
+
+            let mut enabled_extensions = vec![];
+
+            VulkanWsi::check_device_extensions(&extension_properties, &mut enabled_extensions);
+
             let enabled_extensions = enabled_extensions
                 .iter()
                 .map(|x| x.as_ptr())
@@ -1442,7 +1376,7 @@ impl VulkanDevice {
             UnsafeCell::new(VulkanFrame {
                 per_thread,
                 universal_queue_fence: AtomicU64::new(universal_queue_fence),
-                present_swapchains: default(),
+                wsi: default(),
                 destroyed_allocations: default(),
                 destroyed_buffers: default(),
                 destroyed_buffer_views: default(),
@@ -1487,9 +1421,7 @@ impl VulkanDevice {
             frame_counter: FrameCounter::new(),
             frames,
 
-            surfaces: default(),
-            swapchains: default(),
-            destroyed_swapchains: Mutex::new(DelayQueue::new(SWAPCHAIN_DESTROY_DELAY_FRAMES)),
+            wsi,
 
             image_pool: default(),
             buffer_pool: default(),
@@ -1507,11 +1439,6 @@ impl VulkanDevice {
 
             _global_fn: global_fn,
             instance_fn,
-            xcb_surface_fn,
-            xlib_surface_fn,
-            wayland_surface_fn,
-            surface_fn,
-            swapchain_fn,
             device_fn,
         }
     }
@@ -1879,31 +1806,6 @@ impl VulkanDevice {
         }
         for buffer in frame.destroyed_buffers.get_mut().drain(..) {
             unsafe { device_fn.destroy_buffer(device, buffer, None) }
-        }
-    }
-
-    fn destroy_swapchain_deferred(
-        &self,
-        surface: vk::SurfaceKHR,
-        swapchain: vk::SwapchainKHR,
-        image_views: &[vk::ImageView],
-    ) {
-        let device_fn = &self.device_fn;
-        let swapchain_fn = &self.swapchain_fn;
-        let surface_fn = &self.surface_fn;
-        let instance = self.instance;
-        let device = self.device;
-
-        if !image_views.is_empty() {
-            for &image_view in image_views {
-                unsafe { device_fn.destroy_image_view(device, image_view, None) }
-            }
-        }
-        if !swapchain.is_null() {
-            unsafe { swapchain_fn.destroy_swapchain(device, swapchain, None) }
-        }
-        if !surface.is_null() {
-            unsafe { surface_fn.destroy_surface(instance, surface, None) }
         }
     }
 }
@@ -3241,28 +3143,14 @@ impl Device for VulkanDevice {
         let mut signal_semaphores = Vec::new();
 
         if !cmd_buffer.swapchains_touched.is_empty() {
-            let mut present_swapchains = frame.present_swapchains.lock();
-
-            for (swapchain, (_, stage_mask)) in cmd_buffer.swapchains_touched.drain() {
-                let present_swapchain = present_swapchains
-                    .get_mut(&swapchain)
-                    .expect("presenting a swapchain that hasn't been acquired this frame");
-
-                assert!(
-                    !present_swapchain.acquire.is_null(),
-                    "acquiring a swapchain image multiple times"
-                );
-                present_swapchain.release = self.request_transient_semaphore(frame);
-
-                wait_semaphores.push(vk::SemaphoreSubmitInfo {
-                    semaphore: present_swapchain.acquire,
+            for (surface, (_, stage_mask)) in cmd_buffer.swapchains_touched.drain() {
+                self.touch_swapchain(
+                    frame,
+                    surface,
                     stage_mask,
-                    ..default()
-                });
-                signal_semaphores.push(vk::SemaphoreSubmitInfo {
-                    semaphore: present_swapchain.release,
-                    ..default()
-                });
+                    &mut wait_semaphores,
+                    &mut signal_semaphores,
+                );
             }
         }
 
@@ -3399,81 +3287,14 @@ impl Device for VulkanDevice {
                 }
             }
 
-            self.destroyed_swapchains
-                .lock()
-                .expire(|(swapchain, surface, image_views)| {
-                    self.destroy_swapchain_deferred(surface, swapchain, &image_views);
-                });
+            self.wsi_begin_frame()
         }
 
         frame
     }
 
     fn end_frame(&self, mut frame: Frame) {
-        let arena = HybridArena::<512>::new();
-
-        {
-            let frame = self.frame_mut(&mut frame);
-
-            self.swapchains.lock();
-
-            let present_swapchains = frame.present_swapchains.get_mut();
-            if !present_swapchains.is_empty() {
-                for present_info in present_swapchains.values() {
-                    assert!(
-                        !present_info.release.is_null(),
-                        "swapchain image was acquired, but not consumed"
-                    );
-                }
-
-                let windows = arena.alloc_slice_fill_iter(present_swapchains.keys().copied());
-                let wait_semaphores =
-                    arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.release));
-                let swapchains =
-                    arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.swapchain));
-                let swapchain_image_indices =
-                    arena.alloc_slice_fill_iter(present_swapchains.values().map(|x| x.image_index));
-
-                present_swapchains.clear();
-
-                let results = arena.alloc_slice_fill_copy(swapchains.len(), vk::Result::Success);
-
-                let present_info = vk::PresentInfoKHR {
-                    wait_semaphores: wait_semaphores.into(),
-                    swapchains: (swapchains, swapchain_image_indices).into(),
-                    results: results.as_mut_ptr(),
-                    ..default()
-                };
-
-                unsafe {
-                    // check results below, so ignore this return value.
-                    let _ = self
-                        .swapchain_fn
-                        .queue_present(self.universal_queue, &present_info);
-                };
-
-                for (i, &result) in results.iter().enumerate() {
-                    match result {
-                        vk::Result::Success => {}
-                        vk::Result::SuboptimalKHR => {
-                            // Yikes
-                            if let VulkanSwapchainState::Occupied {
-                                width: _,
-                                height: _,
-                                suboptimal,
-                                swapchain: _,
-                                image_views: _,
-                            } = &mut self.swapchains.lock().get_mut(&windows[i]).unwrap().state
-                            {
-                                *suboptimal = true;
-                            }
-                        }
-                        _ => vk_check!(result),
-                    }
-                }
-            }
-        }
-
+        self.wsi_end_frame(self.frame_mut(&mut frame));
         self.frame_counter.release(frame);
     }
 
@@ -3499,64 +3320,11 @@ impl Device for VulkanDevice {
         height: u32,
         format: ImageFormat,
     ) -> Result<(u32, u32, Image), SwapchainOutOfDateError> {
-        let raw_window = window.as_raw_window();
-        let mut surfaces = self.surfaces.lock();
-        let surface = surfaces
-            .entry(raw_window)
-            .or_insert_with(|| match raw_window {
-                RawWindow::Xcb(xcb) => {
-                    let create_info = vk::XcbSurfaceCreateInfoKHR {
-                        connection: xcb.connection,
-                        window: xcb.window,
-                        ..default()
-                    };
-                    let mut surface = vk::SurfaceKHR::null();
-                    vk_check!(self.xcb_surface_fn.as_ref().unwrap().create_xcb_surface(
-                        self.instance,
-                        &create_info,
-                        None,
-                        &mut surface,
-                    ));
-                    surface
-                }
-                RawWindow::Xlib(xlib) => {
-                    let create_info = vk::XlibSurfaceCreateInfoKHR {
-                        display: xlib.display,
-                        window: xlib.window,
-                        ..default()
-                    };
-                    let mut surface = vk::SurfaceKHR::null();
-                    vk_check!(self.xlib_surface_fn.as_ref().unwrap().create_xlib_surface(
-                        self.instance,
-                        &create_info,
-                        None,
-                        &mut surface,
-                    ));
-                    surface
-                }
-                RawWindow::Wayland(wayland) => {
-                    let create_info = vk::WaylandSurfaceCreateInfoKHR {
-                        display: wayland.display,
-                        surface: wayland.surface,
-                        ..default()
-                    };
-                    let mut surface = vk::SurfaceKHR::null();
-                    vk_check!(self
-                        .wayland_surface_fn
-                        .as_ref()
-                        .unwrap()
-                        .create_wayland_surface(self.instance, &create_info, None, &mut surface,));
-                    surface
-                }
-            });
-        self.acquire_swapchain(frame, *surface, width, height, format)
+        self.acquire_swapchain(frame, window, width, height, format)
     }
 
     fn destroy_swapchain(&self, window: &dyn AsRawWindow) {
-        let raw_window = window.as_raw_window();
-        if let Some(surface) = self.surfaces.lock().remove(&raw_window) {
-            self.destroy_swapchain(surface)
-        }
+        self.destroy_swapchain(window)
     }
 
     #[cfg(debug_assertions)]
@@ -3646,330 +3414,29 @@ impl VulkanDevice {
 
         VulkanTransientBuffer { buffer, memory }
     }
-
-    fn acquire_swapchain(
-        &self,
-        frame: &Frame,
-        surface: vk::SurfaceKHR,
-        width: u32,
-        height: u32,
-        format: ImageFormat,
-    ) -> Result<(u32, u32, Image), SwapchainOutOfDateError> {
-        let format = vulkan_format(format);
-
-        let mut swapchains = self.swapchains.lock();
-        let mut vulkan_swapchain = swapchains.entry(surface).or_insert_with(|| {
-            let mut supported = vk::Bool32::False;
-            vk_check!(self.surface_fn.get_physical_device_surface_support(
-                self.physical_device,
-                self.universal_queue_family_index,
-                surface,
-                &mut supported
-            ));
-
-            assert_eq!(
-                supported,
-                vk::Bool32::True,
-                "universal queue does not support presenting this surface"
-            );
-
-            let formats = vk_vec(|count, ptr| unsafe {
-                self.surface_fn.get_physical_device_surface_formats(
-                    self.physical_device,
-                    surface,
-                    count,
-                    ptr,
-                )
-            })
-            .into_boxed_slice();
-
-            let present_modes = vk_vec(|count, ptr| unsafe {
-                self.surface_fn.get_physical_device_surface_present_modes(
-                    self.physical_device,
-                    surface,
-                    count,
-                    ptr,
-                )
-            })
-            .into_boxed_slice();
-
-            let mut capabilities = vk::SurfaceCapabilitiesKHR::default();
-            vk_check!(self.surface_fn.get_physical_device_surface_capabilities(
-                self.physical_device,
-                surface,
-                &mut capabilities
-            ));
-
-            let surface_format = formats
-                .iter()
-                .copied()
-                .find(|&x| x.format == format)
-                .expect("failed to find matching surface format");
-
-            VulkanSwapchain {
-                surface_format,
-                state: VulkanSwapchainState::Vacant,
-                _formats: formats,
-                _present_modes: present_modes,
-                capabilities,
-            }
-        });
-
-        assert_eq!(format, vulkan_swapchain.surface_format.format);
-
-        let frame = self.frame(frame);
-        let mut image_pool = self.image_pool.lock();
-
-        let mut present_swapchains = frame.present_swapchains.lock();
-        let present_info = match present_swapchains.entry(surface) {
-            Entry::Occupied(_) => panic!("acquiring swapchain multiple times in a frame"),
-            Entry::Vacant(entry) => entry.insert(default()),
-        };
-
-        vk_check!(self.surface_fn.get_physical_device_surface_capabilities(
-            self.physical_device,
-            surface,
-            &mut vulkan_swapchain.capabilities
-        ));
-
-        let width = width.clamp(
-            vulkan_swapchain.capabilities.min_image_extent.width,
-            vulkan_swapchain.capabilities.max_image_extent.width,
-        );
-        let height = height.clamp(
-            vulkan_swapchain.capabilities.min_image_extent.height,
-            vulkan_swapchain.capabilities.max_image_extent.height,
-        );
-
-        let mut old_swapchain = vk::SwapchainKHR::null();
-        loop {
-            match &mut vulkan_swapchain.state {
-                VulkanSwapchainState::Vacant => {
-                    let mut new_swapchain = vk::SwapchainKHR::null();
-                    let create_info = vk::SwapchainCreateInfoKHR {
-                        surface,
-                        min_image_count: vulkan_swapchain.capabilities.min_image_count,
-                        image_format: vulkan_swapchain.surface_format.format,
-                        image_color_space: vulkan_swapchain.surface_format.color_space,
-                        image_extent: vk::Extent2d { width, height },
-                        image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
-                            | vk::ImageUsageFlags::TRANSFER_SRC
-                            | vk::ImageUsageFlags::TRANSFER_DST,
-                        image_array_layers: 1,
-                        image_sharing_mode: vk::SharingMode::Exclusive,
-                        pre_transform: vk::SurfaceTransformFlagsKHR::IDENTITY,
-                        composite_alpha: vk::CompositeAlphaFlagsKHR::OPAQUE,
-                        present_mode: vk::PresentModeKHR::Fifo,
-                        clipped: vk::Bool32::True,
-                        old_swapchain,
-                        ..default()
-                    };
-                    vk_check!(self.swapchain_fn.create_swapchain(
-                        self.device,
-                        &create_info,
-                        None,
-                        &mut new_swapchain
-                    ));
-                    assert!(!new_swapchain.is_null());
-
-                    let images = vk_vec(|count, ptr| unsafe {
-                        self.swapchain_fn.get_swapchain_images(
-                            self.device,
-                            new_swapchain,
-                            count,
-                            ptr,
-                        )
-                    });
-
-                    let image_views = images
-                        .iter()
-                        .map(|&image| {
-                            let create_info = vk::ImageViewCreateInfo {
-                                image,
-                                view_type: vk::ImageViewType::Type2d,
-                                format: vulkan_swapchain.surface_format.format,
-                                subresource_range: vk::ImageSubresourceRange {
-                                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                                    base_mip_level: 0,
-                                    level_count: 1,
-                                    base_array_layer: 0,
-                                    layer_count: 1,
-                                },
-                                ..default()
-                            };
-                            let mut view = vk::ImageView::null();
-                            vk_check!(self.device_fn.create_image_view(
-                                self.device,
-                                &create_info,
-                                None,
-                                &mut view,
-                            ));
-
-                            let handle = image_pool.insert(VulkanImageHolder::Swapchain(
-                                VulkanImageSwapchain {
-                                    surface,
-                                    image,
-                                    view,
-                                },
-                            ));
-                            Image(handle)
-                        })
-                        .collect::<Box<_>>();
-
-                    vulkan_swapchain.state = VulkanSwapchainState::Occupied {
-                        width,
-                        height,
-                        suboptimal: false,
-                        swapchain: new_swapchain,
-                        image_views,
-                    };
-                }
-                VulkanSwapchainState::Occupied {
-                    width: current_width,
-                    height: current_height,
-                    suboptimal,
-                    swapchain,
-                    image_views,
-                } => {
-                    let destroy_image_views =
-                        |images: &mut Pool<VulkanImageHolder>| -> Box<[vk::ImageView]> {
-                            let mut vulkan_image_views = Vec::new();
-                            for &image_view in image_views.iter() {
-                                match images.remove(image_view.0) {
-                                    Some(VulkanImageHolder::Swapchain(VulkanImageSwapchain {
-                                        surface: _,
-                                        image: _,
-                                        view,
-                                    })) => vulkan_image_views.push(view),
-                                    _ => panic!("swapchain image in wrong state"),
-                                }
-                            }
-                            vulkan_image_views.into_boxed_slice()
-                        };
-
-                    let swapchain = *swapchain;
-
-                    if width != *current_width || height != *current_height || *suboptimal {
-                        let image_views = destroy_image_views(&mut image_pool);
-                        old_swapchain = swapchain;
-                        self.destroyed_swapchains.lock().push((
-                            old_swapchain,
-                            vk::SurfaceKHR::null(),
-                            image_views,
-                        ));
-
-                        vulkan_swapchain.state = VulkanSwapchainState::Vacant;
-                        continue;
-                    }
-
-                    let acquire = self.request_transient_semaphore(frame);
-                    let mut image_index = 0;
-                    match unsafe {
-                        self.swapchain_fn.acquire_next_image2(
-                            self.device,
-                            &vk::AcquireNextImageInfoKHR {
-                                swapchain,
-                                timeout: !0,
-                                semaphore: acquire,
-                                fence: vk::Fence::null(),
-                                device_mask: 1,
-                                ..default()
-                            },
-                            &mut image_index,
-                        )
-                    } {
-                        vk::Result::Success => {}
-                        vk::Result::SuboptimalKHR => {
-                            *suboptimal = true;
-                        }
-                        vk::Result::ErrorOutOfDateKHR => {
-                            let image_views = destroy_image_views(&mut image_pool);
-
-                            old_swapchain = swapchain;
-                            self.destroyed_swapchains.lock().push((
-                                old_swapchain,
-                                vk::SurfaceKHR::null(),
-                                image_views,
-                            ));
-
-                            vulkan_swapchain.state = VulkanSwapchainState::Vacant;
-                            return Err(SwapchainOutOfDateError(()));
-                        }
-                        result => vk_check!(result),
-                    }
-
-                    present_info.acquire = acquire;
-                    present_info.image_index = image_index;
-                    present_info.swapchain = swapchain;
-                    let view = image_views[image_index.widen()];
-
-                    return Ok((width, height, view));
-                }
-            }
-        }
-    }
-
-    fn destroy_swapchain(&self, surface: vk::SurfaceKHR) {
-        if let Some(VulkanSwapchain {
-            surface_format: _,
-            state,
-            _formats: _,
-            _present_modes: _,
-            capabilities: _,
-        }) = self.swapchains.lock().remove(&surface)
-        {
-            let mut image_pool = self.image_pool.lock();
-
-            if let VulkanSwapchainState::Occupied {
-                width: _,
-                height: _,
-                suboptimal: _,
-                swapchain,
-                image_views,
-            } = state
-            {
-                let mut vulkan_image_views = Vec::new();
-                for &image_view in image_views.iter() {
-                    match image_pool.remove(image_view.0) {
-                        Some(VulkanImageHolder::Swapchain(VulkanImageSwapchain {
-                            surface: _,
-                            image: _,
-                            view,
-                        })) => vulkan_image_views.push(view),
-                        _ => panic!("swapchain image in wrong state"),
-                    }
-                }
-
-                self.destroyed_swapchains.lock().push((
-                    swapchain,
-                    surface,
-                    vulkan_image_views.into_boxed_slice(),
-                ));
-            }
-        }
-    }
 }
 
 impl Drop for VulkanDevice {
     fn drop(&mut self) {
         vk_check!(self.device_fn.device_wait_idle(self.device));
 
-        let device_fn = &self.device_fn;
-        let instance = self.instance;
         let device = self.device;
 
         for frame in self.frames.as_mut() {
             let frame = frame.get_mut();
 
             for semaphore in frame.recycled_semaphores.get_mut() {
-                unsafe { device_fn.destroy_semaphore(device, *semaphore, None) }
+                unsafe { self.device_fn.destroy_semaphore(device, *semaphore, None) }
             }
 
             for descriptor_pool in frame.recycled_descriptor_pools.get_mut() {
-                unsafe { device_fn.destroy_descriptor_pool(device, *descriptor_pool, None) }
+                unsafe {
+                    self.device_fn
+                        .destroy_descriptor_pool(device, *descriptor_pool, None)
+                }
             }
 
-            Self::destroy_deferred(device_fn, device, frame);
+            Self::destroy_deferred(&self.device_fn, device, frame);
 
             let mut arena = HybridArena::<512>::new();
 
@@ -3980,7 +3447,7 @@ impl Drop for VulkanDevice {
                     let command_buffers = arena
                         .alloc_slice_fill_iter(cmd_buffer_pool.command_buffers.iter().copied());
                     unsafe {
-                        device_fn.free_command_buffers(
+                        self.device_fn.free_command_buffers(
                             device,
                             cmd_buffer_pool.command_pool,
                             command_buffers,
@@ -3988,7 +3455,8 @@ impl Drop for VulkanDevice {
                     };
                 }
                 unsafe {
-                    device_fn.destroy_command_pool(device, cmd_buffer_pool.command_pool, None)
+                    self.device_fn
+                        .destroy_command_pool(device, cmd_buffer_pool.command_pool, None)
                 }
 
                 for VulkanTransientBuffer { buffer, memory: _ } in per_thread
@@ -3997,7 +3465,7 @@ impl Drop for VulkanDevice {
                     .used_buffers
                     .iter()
                 {
-                    unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+                    unsafe { self.device_fn.destroy_buffer(device, *buffer, None) }
                 }
 
                 for VulkanTransientBuffer { buffer, memory: _ } in per_thread
@@ -4006,7 +3474,7 @@ impl Drop for VulkanDevice {
                     .used_buffers
                     .iter()
                 {
-                    unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+                    unsafe { self.device_fn.destroy_buffer(device, *buffer, None) }
                 }
 
                 for VulkanTransientBuffer { buffer, memory: _ } in per_thread
@@ -4015,7 +3483,7 @@ impl Drop for VulkanDevice {
                     .used_buffers
                     .iter()
                 {
-                    unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+                    unsafe { self.device_fn.destroy_buffer(device, *buffer, None) }
                 }
             }
         }
@@ -4023,23 +3491,23 @@ impl Drop for VulkanDevice {
         for VulkanTransientBuffer { buffer, memory: _ } in
             self.recycled_transient_index_buffers.get_mut()
         {
-            unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+            unsafe { self.device_fn.destroy_buffer(device, *buffer, None) }
         }
 
         for VulkanTransientBuffer { buffer, memory: _ } in
             self.recycled_transient_storage_buffers.get_mut()
         {
-            unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+            unsafe { self.device_fn.destroy_buffer(device, *buffer, None) }
         }
 
         for VulkanTransientBuffer { buffer, memory: _ } in
             self.recycled_transient_uniform_buffers.get_mut()
         {
-            unsafe { device_fn.destroy_buffer(device, *buffer, None) }
+            unsafe { self.device_fn.destroy_buffer(device, *buffer, None) }
         }
 
         for buffer in self.buffer_pool.get_mut().values() {
-            unsafe { device_fn.destroy_buffer(device, buffer.buffer, None) }
+            unsafe { self.device_fn.destroy_buffer(device, buffer.buffer, None) }
         }
 
         {
@@ -4061,16 +3529,16 @@ impl Drop for VulkanDevice {
             }
 
             for image_view in image_views {
-                unsafe { device_fn.destroy_image_view(device, image_view, None) }
+                unsafe { self.device_fn.destroy_image_view(device, image_view, None) }
             }
 
             for image in images {
-                unsafe { device_fn.destroy_image(device, image, None) }
+                unsafe { self.device_fn.destroy_image(device, image, None) }
             }
         }
 
         for sampler in self.sampler_pool.get_mut().values() {
-            unsafe { device_fn.destroy_sampler(device, sampler.0, None) }
+            unsafe { self.device_fn.destroy_sampler(device, sampler.0, None) }
         }
 
         for pipeline in self.pipeline_pool.get_mut().values() {
@@ -4078,12 +3546,16 @@ impl Drop for VulkanDevice {
                 self.device_fn
                     .destroy_pipeline_layout(self.device, pipeline.pipeline_layout, None)
             };
-            unsafe { device_fn.destroy_pipeline(device, pipeline.pipeline, None) }
+            unsafe {
+                self.device_fn
+                    .destroy_pipeline(device, pipeline.pipeline, None)
+            }
         }
 
         for descriptor_set_layout in self.bind_group_layout_pool.get_mut().values() {
             unsafe {
-                device_fn.destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
+                self.device_fn
+                    .destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
             }
         }
 
@@ -4093,37 +3565,17 @@ impl Drop for VulkanDevice {
             .iter()
             .chain(std::iter::once(&self.universal_queue_semaphore))
         {
-            unsafe { device_fn.destroy_semaphore(device, *semaphore, None) }
+            unsafe { self.device_fn.destroy_semaphore(device, *semaphore, None) }
         }
 
         for descriptor_pool in self.recycled_descriptor_pools.get_mut() {
-            unsafe { device_fn.destroy_descriptor_pool(device, *descriptor_pool, None) }
-        }
-
-        {
-            let destroyed_swapchains = self
-                .destroyed_swapchains
-                .get_mut()
-                .drain(..)
-                .collect::<Vec<_>>();
-            for (_, (swapchain, surface, image_views)) in destroyed_swapchains {
-                self.destroy_swapchain_deferred(surface, swapchain, &image_views);
+            unsafe {
+                self.device_fn
+                    .destroy_descriptor_pool(device, *descriptor_pool, None)
             }
         }
 
-        for (&surface, swapchain) in self.swapchains.get_mut().iter() {
-            if let VulkanSwapchainState::Occupied {
-                width: _,
-                height: _,
-                suboptimal: _,
-                swapchain,
-                image_views: _,
-            } = swapchain.state
-            {
-                unsafe { self.swapchain_fn.destroy_swapchain(device, swapchain, None) }
-            }
-            unsafe { self.surface_fn.destroy_surface(instance, surface, None) }
-        }
+        self.wsi_drop();
 
         for allocator in self.allocators.iter_mut().flatten() {
             // Clear out all memory blocks held by the TLSF allocators.
@@ -4142,7 +3594,7 @@ impl Drop for VulkanDevice {
             }
         }
 
-        unsafe { device_fn.destroy_device(device, None) }
+        unsafe { self.device_fn.destroy_device(device, None) }
         unsafe { self.instance_fn.destroy_instance(self.instance, None) };
     }
 }
