@@ -581,6 +581,8 @@ impl VulkanDevice {
         let instance = self.instance;
         let device = self.device;
 
+        self.wsi.suboptimal_swapchains.lock().remove(&swapchain);
+
         if !image_views.is_empty() {
             for &image_view in image_views {
                 unsafe { self.device_fn.destroy_image_view(device, image_view, None) }
