@@ -370,6 +370,7 @@ impl GlobalFunctions {
 pub struct InstanceFunctions {
     destroy_instance: FnDestroyInstance,
     enumerate_physical_devices: FnEnumeratePhysicalDevices,
+    enumerate_device_extension_properties: FnEnumerateDeviceExtensionProperties,
     get_physical_device_features: FnGetPhysicalDeviceFeatures,
     get_physical_device_properties: FnGetPhysicalDeviceProperties,
     get_physical_device_queue_family_properties: FnGetPhysicalDeviceQueueFamilyProperties,
@@ -407,6 +408,10 @@ impl InstanceFunctions {
                 destroy_instance: transmute::<_, _>(load(cstr!("vkDestroyInstance"), VERSION_1_0)),
                 enumerate_physical_devices: transmute::<_, _>(load(
                     cstr!("vkEnumeratePhysicalDevices"),
+                    VERSION_1_0,
+                )),
+                enumerate_device_extension_properties: transmute::<_, _>(load(
+                    cstr!("vkEnumerateDeviceExtensionProperties"),
                     VERSION_1_0,
                 )),
                 get_physical_device_features: transmute::<_, _>(load(
@@ -461,6 +466,22 @@ impl InstanceFunctions {
         physical_devices: *mut PhysicalDevice,
     ) -> Result {
         (self.enumerate_physical_devices)(instance, physical_device_count, physical_devices)
+    }
+
+    #[inline]
+    pub unsafe fn enumerate_device_extension_properties(
+        &self,
+        physical_device: PhysicalDevice,
+        layer_name: *const c_char,
+        property_count: &mut u32,
+        properties: *mut ExtensionProperties,
+    ) -> Result {
+        (self.enumerate_device_extension_properties)(
+            physical_device,
+            layer_name,
+            property_count,
+            properties,
+        )
     }
 
     #[inline]

@@ -61,6 +61,13 @@ pub type FnEnumeratePhysicalDevices = extern "system" fn(
     physical_devices: *mut PhysicalDevice,
 ) -> Result;
 
+pub type FnEnumerateDeviceExtensionProperties = extern "system" fn(
+    physical_device: PhysicalDevice,
+    layer_name: *const c_char,
+    property_count: &mut u32,
+    properties: *mut ExtensionProperties,
+) -> Result;
+
 pub type FnGetPhysicalDeviceFeatures =
     extern "system" fn(physical_device: PhysicalDevice, features: *mut PhysicalDeviceFeatures);
 
