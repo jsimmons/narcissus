@@ -29,6 +29,7 @@ use crate::{
     SwapchainOutOfDateError, ThreadToken, Topology, TransientBuffer, TypedBind,
 };
 
+mod libc;
 mod wsi;
 
 use self::wsi::{VulkanWsi, VulkanWsiFrame};
@@ -51,18 +52,6 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     transient_buffer_size: 2 * 1024 * 1024,
     transient_buffer_max_align: 256,
 };
-
-mod libc {
-    use std::os::raw::{c_char, c_int, c_void};
-
-    pub const RTLD_NOW: c_int = 0x2;
-    pub const RTLD_LOCAL: c_int = 0;
-
-    extern "C" {
-        pub fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
-        pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-    }
-}
 
 #[macro_export]
 macro_rules! vk_check {
