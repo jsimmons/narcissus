@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{fmt::Write, time::Instant};
 
 use crate::{
     fonts::{FontFamily, Fonts},
@@ -177,6 +177,7 @@ pub fn main() {
         }
     }
 
+    let mut font_size_str = String::new();
     let mut glyph_instances = Vec::new();
     let mut line_glyph_indices = Vec::new();
     let mut line_kern_advances = Vec::new();
@@ -321,7 +322,8 @@ pub fn main() {
                 break;
             }
 
-            let font_size_str = format!("{font_size_px}: ");
+            font_size_str.clear();
+            write!(&mut font_size_str, "{font_size_px}: ").unwrap();
 
             line_glyph_indices.clear();
             line_glyph_indices.extend(font_size_str.chars().chain(text.chars()).map(|c| {
