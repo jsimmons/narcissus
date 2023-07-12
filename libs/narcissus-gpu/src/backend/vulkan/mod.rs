@@ -2910,12 +2910,11 @@ impl Device for VulkanDevice {
     }
 
     fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &crate::RenderingDesc) {
+        let arena = HybridArena::<1024>::new();
         let cmd_buffer = self.cmd_buffer_mut(cmd_buffer);
 
-        let color_attachments = desc
-            .color_attachments
-            .iter()
-            .map(|attachment| {
+        let color_attachments =
+            arena.alloc_slice_fill_iter(desc.color_attachments.iter().map(|attachment| {
                 let image_view = match self.image_pool.lock().get(attachment.image.0).unwrap() {
                     VulkanImageHolder::Unique(image) => image.view,
                     VulkanImageHolder::Shared(image) => image.view,
@@ -2978,8 +2977,7 @@ impl Device for VulkanDevice {
                     clear_value,
                     ..default()
                 }
-            })
-            .collect::<Vec<_>>();
+            }));
 
         let depth_attachment = desc.depth_attachment.as_ref().map(|attachment| {
             let image_view = match self.image_pool.lock().get(attachment.image.0).unwrap() {
@@ -3015,7 +3013,7 @@ impl Device for VulkanDevice {
             },
             layer_count: 1,
             view_mask: 0,
-            color_attachments: color_attachments.as_slice().into(),
+            color_attachments: color_attachments.into(),
             depth_attachment: depth_attachment.as_ref(),
             stencil_attachment: None,
             ..default()
