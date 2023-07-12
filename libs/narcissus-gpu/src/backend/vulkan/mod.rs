@@ -34,23 +34,51 @@ mod wsi;
 
 use self::wsi::{VulkanWsi, VulkanWsiFrame};
 
-const NUM_FRAMES: usize = 2;
-
+/// Important constant data configuration for the vulkan backend.
 pub struct VulkanConstants {
-    /// How many frames to delay swapchain destruction.
-    ///
-    /// There's no correct answer here (spec bug) we're just picking a big number and hoping for the best.
+    /// Per-frame data is duplicated this many times. Additional frames will
+    /// increase the latency between submission and when the frame fence is waited
+    /// on. This subsequently, increases the latency between submission and the
+    /// recycling of resources.
+    num_frames: usize,
+
+    /// How many frames to delay swapchain destruction. There's no correct answer
+    /// here (spec bug) we're just picking a big number and hoping for the best.
     swapchain_destroy_delay: usize,
-    /// How large should transient buffers be, this will limit the maximum size of transient allocations.
+
+    /// How large should transient buffers be, this will limit the maximum size of
+    /// transient allocations.
     transient_buffer_size: u64,
-    /// How should we align transient buffers, this will limit the maximum alignment of transient allocations.
+    /// How should we align transient buffers, this will limit the maximum alignment
+    /// of transient allocations.
     transient_buffer_max_align: u64,
+
+    /// Default size for backing allocations used by the TLSF allocator.
+    tlsf_block_size: u64,
+
+    /// The max number of descriptor sets allocatable from each descriptor pool.
+    descriptor_pool_max_sets: u32,
+    /// The number of sampler descriptors available in each descriptor pool.
+    descriptor_pool_sampler_count: u32,
+    /// The number of uniform buffer descriptors available in each descriptor pool.
+    descriptor_pool_uniform_buffer_count: u32,
+    /// The number of storage buffer descriptors available in each descriptor pool.
+    descriptor_pool_storage_buffer_count: u32,
+    /// The number of sampled image descriptors available in each descriptor pool.
+    descriptor_pool_sampled_image_count: u32,
 }
 
 const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
+    num_frames: 2,
     swapchain_destroy_delay: 8,
     transient_buffer_size: 2 * 1024 * 1024,
     transient_buffer_max_align: 256,
+    tlsf_block_size: 128 * 1024 * 1024,
+    descriptor_pool_max_sets: 500,
+    descriptor_pool_sampler_count: 100,
+    descriptor_pool_uniform_buffer_count: 500,
+    descriptor_pool_storage_buffer_count: 500,
+    descriptor_pool_sampled_image_count: 500,
 };
 
 #[macro_export]
@@ -1022,7 +1050,7 @@ pub(crate) struct VulkanDevice {
     universal_queue_family_index: u32,
 
     frame_counter: FrameCounter,
-    frames: Box<[UnsafeCell<VulkanFrame>; NUM_FRAMES]>,
+    frames: Box<[UnsafeCell<VulkanFrame>; VULKAN_CONSTANTS.num_frames]>,
 
     wsi: Box<VulkanWsi>,
 
@@ -1420,7 +1448,7 @@ impl VulkanDevice {
         // SAFETY: Reference is bound to the frame exposed by the API. only one frame
         // can be valid at a time. The returned VulkanFrame is only valid so long as we
         // have a ref on the frame.
-        unsafe { &*self.frames[frame.frame_index % NUM_FRAMES].get() }
+        unsafe { &*self.frames[frame.frame_index % VULKAN_CONSTANTS.num_frames].get() }
     }
 
     fn frame_mut<'token>(&self, frame: &'token mut Frame) -> &'token mut VulkanFrame {
@@ -1429,7 +1457,7 @@ impl VulkanDevice {
         // SAFETY: Reference is bound to the frame exposed by the API. only one frame
         // can be valid at a time. The returned VulkanFrame is only valid so long as we
         // have a ref on the frame.
-        unsafe { &mut *self.frames[frame.frame_index % NUM_FRAMES].get() }
+        unsafe { &mut *self.frames[frame.frame_index % VULKAN_CONSTANTS.num_frames].get() }
     }
 
     fn cmd_buffer_mut<'a>(&self, cmd_buffer: &'a mut CmdBuffer) -> &'a mut VulkanCmdBuffer {
@@ -1546,10 +1574,8 @@ impl VulkanDevice {
             {
                 allocation
             } else {
-                const BLOCK_SIZE: u64 = 128 * 1024 * 1024;
-
                 let allocate_info = vk::MemoryAllocateInfo {
-                    allocation_size: BLOCK_SIZE,
+                    allocation_size: VULKAN_CONSTANTS.tlsf_block_size,
                     memory_type_index,
                     ..default()
                 };
@@ -1581,7 +1607,10 @@ impl VulkanDevice {
                     std::ptr::null_mut()
                 };
 
-                tlsf.insert_super_block(BLOCK_SIZE, VulkanAllocationInfo { memory, mapped_ptr });
+                tlsf.insert_super_block(
+                    VULKAN_CONSTANTS.tlsf_block_size,
+                    VulkanAllocationInfo { memory, mapped_ptr },
+                );
 
                 tlsf.alloc(desc.requirements.size, desc.requirements.alignment)
                     .expect("failed to allocate")
@@ -1599,22 +1628,28 @@ impl VulkanDevice {
         if let Some(descriptor_pool) = self.recycled_descriptor_pools.lock().pop_front() {
             descriptor_pool
         } else {
-            let pool_sizes: [vk::DescriptorPoolSize; 6] = [
-                vk::DescriptorType::Sampler,
-                vk::DescriptorType::UniformBuffer,
-                vk::DescriptorType::UniformBufferDynamic,
-                vk::DescriptorType::StorageBuffer,
-                vk::DescriptorType::StorageBufferDynamic,
-                vk::DescriptorType::SampledImage,
-            ]
-            .map(|descriptor_type| vk::DescriptorPoolSize {
-                descriptor_type,
-                descriptor_count: 500,
-            });
+            let pool_sizes = &[
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::Sampler,
+                    descriptor_count: VULKAN_CONSTANTS.descriptor_pool_sampler_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::UniformBuffer,
+                    descriptor_count: VULKAN_CONSTANTS.descriptor_pool_uniform_buffer_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::StorageBuffer,
+                    descriptor_count: VULKAN_CONSTANTS.descriptor_pool_storage_buffer_count,
+                },
+                vk::DescriptorPoolSize {
+                    descriptor_type: vk::DescriptorType::SampledImage,
+                    descriptor_count: VULKAN_CONSTANTS.descriptor_pool_sampled_image_count,
+                },
+            ];
             let mut descriptor_pool = vk::DescriptorPool::null();
             let create_info = vk::DescriptorPoolCreateInfo {
-                max_sets: 500,
-                pool_sizes: pool_sizes.as_ref().into(),
+                max_sets: VULKAN_CONSTANTS.descriptor_pool_max_sets,
+                pool_sizes: pool_sizes.into(),
                 ..default()
             };
             vk_check!(self.device_fn.create_descriptor_pool(
