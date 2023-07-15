@@ -1695,11 +1695,8 @@ impl VulkanDevice {
         if desc.usage.contains(BufferUsageFlags::INDEX) {
             usage |= vk::BufferUsageFlags::INDEX_BUFFER;
         }
-        if desc.usage.contains(BufferUsageFlags::TRANSFER_SRC) {
-            usage |= vk::BufferUsageFlags::TRANSFER_SRC;
-        }
-        if desc.usage.contains(BufferUsageFlags::TRANSFER_DST) {
-            usage |= vk::BufferUsageFlags::TRANSFER_DST;
+        if desc.usage.contains(BufferUsageFlags::TRANSFER) {
+            usage |= vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST;
         }
 
         let queue_family_indices = &[self.universal_queue_family_index];
@@ -1877,11 +1874,8 @@ impl Device for VulkanDevice {
         if desc.usage.contains(ImageUsageFlags::COLOR_ATTACHMENT) {
             usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
         }
-        if desc.usage.contains(ImageUsageFlags::TRANSFER_DST) {
-            usage |= vk::ImageUsageFlags::TRANSFER_DST;
-        }
-        if desc.usage.contains(ImageUsageFlags::TRANSFER_SRC) {
-            usage |= vk::ImageUsageFlags::TRANSFER_SRC;
+        if desc.usage.contains(ImageUsageFlags::TRANSFER) {
+            usage |= vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC;
         }
 
         let queue_family_indices = &[self.universal_queue_family_index];

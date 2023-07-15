@@ -125,11 +125,11 @@ pub fn create_image_with_data(
 ) -> Image {
     let frame = device.begin_frame();
 
-    let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER_SRC, data);
+    let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER, data);
 
     let image = device.create_image(&ImageDesc {
         location: MemoryLocation::Device,
-        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
+        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::RGBA8_SRGB,
         initial_layout: ImageLayout::Optimal,

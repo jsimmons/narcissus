@@ -148,8 +148,7 @@ impl ImageUsageFlags {
     pub const STORAGE: Self = Self(1 << 1);
     pub const COLOR_ATTACHMENT: Self = Self(1 << 2);
     pub const DEPTH_STENCIL_ATTACHMENT: Self = Self(1 << 3);
-    pub const TRANSFER_SRC: Self = Self(1 << 4);
-    pub const TRANSFER_DST: Self = Self(1 << 5);
+    pub const TRANSFER: Self = Self(1 << 4);
 }
 
 pub struct ImageSubresourceLayers {
@@ -201,8 +200,7 @@ impl BufferUsageFlags {
     pub const UNIFORM: Self = Self(1 << 0);
     pub const STORAGE: Self = Self(1 << 1);
     pub const INDEX: Self = Self(1 << 2);
-    pub const TRANSFER_SRC: Self = Self(1 << 3);
-    pub const TRANSFER_DST: Self = Self(1 << 4);
+    pub const TRANSFER: Self = Self(1 << 3);
 }
 
 pub struct BufferDesc {

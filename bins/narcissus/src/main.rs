@@ -110,7 +110,7 @@ pub fn main() {
 
     let glyph_atlas = device.create_image(&ImageDesc {
         location: MemoryLocation::Device,
-        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST,
+        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::R8_UNORM,
         initial_layout: ImageLayout::Optimal,
@@ -393,8 +393,7 @@ pub fn main() {
             let image = glyph_atlas;
             let data = texture;
 
-            let buffer =
-                create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER_SRC, data);
+            let buffer = create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER, data);
 
             device.cmd_barrier(
                 &mut cmd_buffer,
