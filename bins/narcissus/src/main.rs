@@ -320,6 +320,13 @@ pub fn main() {
             depth_height = height;
         }
 
+        let _buffer = device.request_transient_buffer(
+            &frame,
+            &thread_token,
+            BufferUsageFlags::UNIFORM,
+            16 * 1024 * 1024,
+        );
+
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.125;
 

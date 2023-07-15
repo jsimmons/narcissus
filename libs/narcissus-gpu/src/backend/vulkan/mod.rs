@@ -190,6 +190,23 @@ fn vulkan_aspect(aspect: ImageAspectFlags) -> vk::ImageAspectFlags {
     aspect_flags
 }
 
+fn vulkan_buffer_usage_flags(usage: BufferUsageFlags) -> vk::BufferUsageFlags {
+    let mut usage_flags = vk::BufferUsageFlags::default();
+    if usage.contains(BufferUsageFlags::UNIFORM) {
+        usage_flags |= vk::BufferUsageFlags::UNIFORM_BUFFER;
+    }
+    if usage.contains(BufferUsageFlags::STORAGE) {
+        usage_flags |= vk::BufferUsageFlags::STORAGE_BUFFER;
+    }
+    if usage.contains(BufferUsageFlags::INDEX) {
+        usage_flags |= vk::BufferUsageFlags::INDEX_BUFFER;
+    }
+    if usage.contains(BufferUsageFlags::TRANSFER) {
+        usage_flags |= vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST;
+    }
+    usage_flags
+}
+
 #[must_use]
 fn vulkan_clear_value(clear_value: ClearValue) -> vk::ClearValue {
     match clear_value {
@@ -1625,25 +1642,11 @@ impl VulkanDevice {
     }
 
     fn create_buffer(&self, desc: &BufferDesc, initial_data: Option<&[u8]>) -> Buffer {
-        let mut usage = vk::BufferUsageFlags::default();
-        if desc.usage.contains(BufferUsageFlags::UNIFORM) {
-            usage |= vk::BufferUsageFlags::UNIFORM_BUFFER;
-        }
-        if desc.usage.contains(BufferUsageFlags::STORAGE) {
-            usage |= vk::BufferUsageFlags::STORAGE_BUFFER;
-        }
-        if desc.usage.contains(BufferUsageFlags::INDEX) {
-            usage |= vk::BufferUsageFlags::INDEX_BUFFER;
-        }
-        if desc.usage.contains(BufferUsageFlags::TRANSFER) {
-            usage |= vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST;
-        }
-
         let queue_family_indices = &[self.universal_queue_family_index];
 
         let create_info = vk::BufferCreateInfo {
             size: desc.size as u64,
-            usage,
+            usage: vulkan_buffer_usage_flags(desc.usage),
             queue_family_indices: queue_family_indices.into(),
             sharing_mode: vk::SharingMode::Exclusive,
             ..default()
@@ -3236,10 +3239,67 @@ impl VulkanDevice {
         size: u64,
     ) -> TransientBuffer<'a> {
         let frame = self.frame(frame);
+
+        // If the requested size is too large, fall back to a regular allocation that we
+        // queue for destruction right away.
+        if size > VULKAN_CONSTANTS.transient_buffer_size {
+            let queue_family_indices = &[self.universal_queue_family_index];
+            let create_info = vk::BufferCreateInfo {
+                size,
+                usage: vulkan_buffer_usage_flags(usage),
+                queue_family_indices: queue_family_indices.into(),
+                sharing_mode: vk::SharingMode::Exclusive,
+                ..default()
+            };
+            let mut buffer = vk::Buffer::null();
+            vk_check!(self
+                .device_fn
+                .create_buffer(self.device, &create_info, None, &mut buffer));
+
+            let mut memory_requirements = vk::MemoryRequirements2::default();
+            self.device_fn.get_buffer_memory_requirements2(
+                self.device,
+                &vk::BufferMemoryRequirementsInfo2 {
+                    buffer,
+                    ..default()
+                },
+                &mut memory_requirements,
+            );
+
+            let memory = self.allocate_memory(&VulkanMemoryDesc {
+                requirements: memory_requirements.memory_requirements,
+                memory_location: MemoryLocation::HostMapped,
+                _linear: true,
+            });
+
+            unsafe {
+                self.device_fn.bind_buffer_memory2(
+                    self.device,
+                    &[vk::BindBufferMemoryInfo {
+                        buffer,
+                        memory: memory.device_memory(),
+                        offset: memory.offset(),
+                        ..default()
+                    }],
+                )
+            };
+
+            let ptr = NonNull::new(memory.mapped_ptr()).unwrap();
+
+            frame.destroyed_buffers.lock().push_back(buffer);
+            frame.destroyed_allocations.lock().push_back(memory);
+
+            return TransientBuffer {
+                ptr,
+                len: size as usize,
+                buffer: buffer.as_raw(),
+                offset: 0,
+                phantom: PhantomData,
+            };
+        }
+
         let per_thread = frame.per_thread.get(thread_token);
         let mut allocator = per_thread.transient_buffer_allocator.borrow_mut();
-
-        assert!(size <= VULKAN_CONSTANTS.transient_buffer_size);
 
         let align = 1;
 
