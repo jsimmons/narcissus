@@ -1,10 +1,10 @@
 use narcissus_core::{cstr, default, include_bytes_align};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    Buffer, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace, GraphicsPipelineDesc,
-    GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType, Pipeline, PolygonMode,
-    Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags,
-    ThreadToken, Topology, TypedBind,
+    Buffer, BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace,
+    GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType,
+    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
+    ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
 use narcissus_maths::Mat4;
 
@@ -136,9 +136,10 @@ impl BasicPipeline {
         transform_buffer: Buffer,
         texture: Image,
     ) {
-        let mut uniform_buffer = device.request_transient_uniform_buffer(
+        let mut uniform_buffer = device.request_transient_buffer(
             frame,
             thread_token,
+            BufferUsageFlags::UNIFORM,
             std::mem::size_of::<BasicUniforms>(),
             std::mem::align_of::<BasicUniforms>(),
         );

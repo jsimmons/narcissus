@@ -743,28 +743,11 @@ pub trait Device {
     unsafe fn unmap_buffer(&self, buffer: Buffer);
 
     #[must_use]
-    fn request_transient_uniform_buffer<'a>(
+    fn request_transient_buffer<'a>(
         &self,
         frame: &'a Frame<'a>,
         thread_token: &'a ThreadToken,
-        size: usize,
-        align: usize,
-    ) -> TransientBuffer<'a>;
-
-    #[must_use]
-    fn request_transient_storage_buffer<'a>(
-        &self,
-        frame: &'a Frame<'a>,
-        thread_token: &'a ThreadToken,
-        size: usize,
-        align: usize,
-    ) -> TransientBuffer<'a>;
-
-    #[must_use]
-    fn request_transient_index_buffer<'a>(
-        &self,
-        frame: &'a Frame<'a>,
-        thread_token: &'a ThreadToken,
+        usage: BufferUsageFlags,
         size: usize,
         align: usize,
     ) -> TransientBuffer<'a>;

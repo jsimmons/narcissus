@@ -49,9 +49,6 @@ pub struct VulkanConstants {
     /// How large should transient buffers be, this will limit the maximum size of
     /// transient allocations.
     transient_buffer_size: u64,
-    /// How should we align transient buffers, this will limit the maximum alignment
-    /// of transient allocations.
-    transient_buffer_max_align: u64,
 
     /// Default size for backing allocations used by the TLSF allocator.
     tlsf_block_size: u64,
@@ -72,7 +69,6 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     num_frames: 2,
     swapchain_destroy_delay: 8,
     transient_buffer_size: 2 * 1024 * 1024,
-    transient_buffer_max_align: 256,
     tlsf_block_size: 128 * 1024 * 1024,
     descriptor_pool_max_sets: 500,
     descriptor_pool_sampler_count: 100,
@@ -910,58 +906,20 @@ struct VulkanBoundPipeline {
     pipeline_bind_point: vk::PipelineBindPoint,
 }
 
-#[derive(Clone, Copy)]
-enum VulkanTransientBufferType {
-    Index,
-    Storage,
-    Uniform,
-}
-
-impl VulkanTransientBufferType {
-    const fn count() -> usize {
-        3
-    }
-
-    const fn index(self) -> usize {
-        match self {
-            VulkanTransientBufferType::Index => 0,
-            VulkanTransientBufferType::Storage => 1,
-            VulkanTransientBufferType::Uniform => 2,
-        }
-    }
-
-    const fn usage(self) -> vk::BufferUsageFlags {
-        match self {
-            VulkanTransientBufferType::Index => vk::BufferUsageFlags::INDEX_BUFFER,
-            VulkanTransientBufferType::Storage => vk::BufferUsageFlags::STORAGE_BUFFER,
-            VulkanTransientBufferType::Uniform => vk::BufferUsageFlags::UNIFORM_BUFFER,
-        }
-    }
-}
-
 #[derive(Clone)]
 struct VulkanTransientBuffer {
     buffer: vk::Buffer,
     memory: VulkanMemory,
 }
 
-struct VulkanTransientAllocator {
-    min_align: u64,
+#[derive(Default)]
+struct VulkanTransientBufferAllocator {
     offset: u64,
     current: Option<VulkanTransientBuffer>,
     used_buffers: Vec<VulkanTransientBuffer>,
 }
 
-impl VulkanTransientAllocator {
-    fn new(min_align: u64) -> Self {
-        Self {
-            min_align,
-            offset: 0,
-            current: None,
-            used_buffers: default(),
-        }
-    }
-
+impl VulkanTransientBufferAllocator {
     fn reset(&mut self) {
         self.current = None;
         self.offset = 0;
@@ -994,7 +952,7 @@ struct VulkanCmdBufferPool {
 struct VulkanPerThread {
     cmd_buffer_pool: RefCell<VulkanCmdBufferPool>,
     descriptor_pool: Cell<vk::DescriptorPool>,
-    transient_allocators: RefCell<[VulkanTransientAllocator; VulkanTransientBufferType::count()]>,
+    transient_buffer_allocator: RefCell<VulkanTransientBufferAllocator>,
     arena: Arena,
 }
 
@@ -1063,12 +1021,11 @@ pub(crate) struct VulkanDevice {
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
     recycled_descriptor_pools: Mutex<VecDeque<vk::DescriptorPool>>,
 
-    recycled_transient_buffers:
-        [Mutex<VecDeque<VulkanTransientBuffer>>; VulkanTransientBufferType::count()],
+    recycled_transient_buffers: Mutex<VecDeque<VulkanTransientBuffer>>,
 
     allocators: [Option<Box<VulkanAllocator>>; vk::MAX_MEMORY_TYPES as usize],
 
-    _physical_device_properties: Box<vk::PhysicalDeviceProperties2>,
+    physical_device_properties: Box<vk::PhysicalDeviceProperties2>,
     _physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties>,
     _physical_device_properties_12: Box<vk::PhysicalDeviceVulkan12Properties>,
     _physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties>,
@@ -1348,28 +1305,11 @@ impl VulkanDevice {
                     command_buffers: Vec::new(),
                     next_free_index: 0,
                 };
-                let transient_index_allocator = VulkanTransientAllocator::new(1);
-                let transient_storage_allocator = VulkanTransientAllocator::new(
-                    physical_device_properties
-                        .properties
-                        .limits
-                        .min_storage_buffer_offset_alignment,
-                );
-                let transient_uniform_allocator = VulkanTransientAllocator::new(
-                    physical_device_properties
-                        .properties
-                        .limits
-                        .min_uniform_buffer_offset_alignment,
-                );
 
                 VulkanPerThread {
                     cmd_buffer_pool: RefCell::new(cmd_buffer_pool),
                     descriptor_pool: Cell::new(vk::DescriptorPool::null()),
-                    transient_allocators: RefCell::new([
-                        transient_index_allocator,
-                        transient_storage_allocator,
-                        transient_uniform_allocator,
-                    ]),
+                    transient_buffer_allocator: default(),
                     arena: Arena::new(),
                 }
             });
@@ -1403,7 +1343,7 @@ impl VulkanDevice {
         Self {
             instance,
             physical_device,
-            _physical_device_properties: physical_device_properties,
+            physical_device_properties,
             _physical_device_properties_11: physical_device_properties_11,
             _physical_device_properties_12: physical_device_properties_12,
             _physical_device_properties_13: physical_device_properties_13,
@@ -2439,52 +2379,15 @@ impl Device for VulkanDevice {
         }
     }
 
-    fn request_transient_index_buffer<'a>(
+    fn request_transient_buffer<'a>(
         &self,
         frame: &'a Frame,
         thread_token: &'a ThreadToken,
+        usage: BufferUsageFlags,
         size: usize,
         align: usize,
     ) -> TransientBuffer<'a> {
-        self.request_transient_buffer(
-            frame,
-            thread_token,
-            size as u64,
-            align as u64,
-            VulkanTransientBufferType::Index,
-        )
-    }
-
-    fn request_transient_storage_buffer<'a>(
-        &self,
-        frame: &'a Frame,
-        thread_token: &'a ThreadToken,
-        size: usize,
-        align: usize,
-    ) -> TransientBuffer<'a> {
-        self.request_transient_buffer(
-            frame,
-            thread_token,
-            size as u64,
-            align as u64,
-            VulkanTransientBufferType::Storage,
-        )
-    }
-
-    fn request_transient_uniform_buffer<'a>(
-        &self,
-        frame: &'a Frame,
-        thread_token: &'a ThreadToken,
-        size: usize,
-        align: usize,
-    ) -> TransientBuffer<'a> {
-        self.request_transient_buffer(
-            frame,
-            thread_token,
-            size as u64,
-            align as u64,
-            VulkanTransientBufferType::Uniform,
-        )
+        self.request_transient_buffer(frame, thread_token, usage, size as u64, align as u64)
     }
 
     fn create_cmd_buffer<'a, 'thread>(
@@ -3212,20 +3115,13 @@ impl Device for VulkanDevice {
                     cmd_buffer_pool.next_free_index = 0;
                 }
 
-                for (index, transient_allocator) in per_thread
-                    .transient_allocators
-                    .get_mut()
-                    .iter_mut()
-                    .enumerate()
-                {
-                    if !transient_allocator.used_buffers.is_empty() {
-                        self.recycled_transient_buffers[index]
-                            .lock()
-                            .extend(transient_allocator.used_buffers.drain(..))
-                    }
-
-                    transient_allocator.reset()
+                let transient_buffer_allocator = per_thread.transient_buffer_allocator.get_mut();
+                if !transient_buffer_allocator.used_buffers.is_empty() {
+                    self.recycled_transient_buffers
+                        .lock()
+                        .extend(transient_buffer_allocator.used_buffers.drain(..))
                 }
+                transient_buffer_allocator.reset();
 
                 per_thread.arena.reset()
             }
@@ -3327,35 +3223,63 @@ impl VulkanDevice {
         &self,
         frame: &'a Frame,
         thread_token: &'a ThreadToken,
+        usage: BufferUsageFlags,
         size: u64,
         align: u64,
-        transient_buffer_type: VulkanTransientBufferType,
     ) -> TransientBuffer<'a> {
         let frame = self.frame(frame);
         let per_thread = frame.per_thread.get(thread_token);
-        let mut transient_allocators = per_thread.transient_allocators.borrow_mut();
-        let allocator = &mut transient_allocators[transient_buffer_type.index()];
+        let mut allocator = per_thread.transient_buffer_allocator.borrow_mut();
 
         assert!(size <= VULKAN_CONSTANTS.transient_buffer_size);
-        assert!(
-            align != 0
-                && align.is_power_of_two()
-                && align <= VULKAN_CONSTANTS.transient_buffer_max_align
-        );
+        assert!(align != 0 && align.is_power_of_two());
 
-        let align = align.max(allocator.min_align);
+        let align = if usage.contains(BufferUsageFlags::UNIFORM) {
+            align.max(
+                self.physical_device_properties
+                    .properties
+                    .limits
+                    .min_uniform_buffer_offset_alignment,
+            )
+        } else {
+            align
+        };
+
+        let align = if usage.contains(BufferUsageFlags::STORAGE) {
+            align.max(
+                self.physical_device_properties
+                    .properties
+                    .limits
+                    .min_storage_buffer_offset_alignment,
+            )
+        } else {
+            align
+        };
+
+        // TODO: This is only necessary for buffer <-> image transfers, however
+        // we're applying it to all transfer enabled requests.
+        let align = if usage.contains(BufferUsageFlags::TRANSFER) {
+            align.max(
+                self.physical_device_properties
+                    .properties
+                    .limits
+                    .optimal_buffer_copy_offset_alignment,
+            )
+        } else {
+            align
+        };
 
         if allocator.offset < size || allocator.current.is_none() {
-            let transient_buffer = self.allocate_transient_buffer(transient_buffer_type);
+            let transient_buffer = self.allocate_transient_buffer();
             allocator.used_buffers.push(transient_buffer.clone());
             allocator.current = Some(transient_buffer);
             allocator.offset = VULKAN_CONSTANTS.transient_buffer_size;
         }
 
-        let current = allocator.current.as_ref().unwrap();
-
         allocator.offset = allocator.offset.wrapping_sub(size);
         allocator.offset &= !(align - 1);
+
+        let current = allocator.current.as_ref().unwrap();
 
         TransientBuffer {
             ptr: NonNull::new(
@@ -3372,23 +3296,22 @@ impl VulkanDevice {
         }
     }
 
-    fn allocate_transient_buffer(
-        &self,
-        transient_buffer_type: VulkanTransientBufferType,
-    ) -> VulkanTransientBuffer {
-        if let Some(transient_buffer) = self.recycled_transient_buffers
-            [transient_buffer_type.index()]
-        .lock()
-        .pop_back()
-        {
+    fn allocate_transient_buffer(&self) -> VulkanTransientBuffer {
+        if let Some(transient_buffer) = self.recycled_transient_buffers.lock().pop_back() {
             return transient_buffer;
         }
 
         let queue_family_indices = &[self.universal_queue_family_index];
 
+        // Allocate transient buffers with all possible usage flags so that we only
+        // need a single collection of temporary buffers.
         let create_info = vk::BufferCreateInfo {
             size: VULKAN_CONSTANTS.transient_buffer_size,
-            usage: transient_buffer_type.usage(),
+            usage: vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::TRANSFER_SRC
+                | vk::BufferUsageFlags::INDEX_BUFFER
+                | vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::UNIFORM_BUFFER,
             queue_family_indices: queue_family_indices.into(),
             sharing_mode: vk::SharingMode::Exclusive,
             ..default()
@@ -3482,18 +3405,19 @@ impl Drop for VulkanDevice {
                         .destroy_command_pool(device, cmd_buffer_pool.command_pool, None)
                 }
 
-                for transient_allocator in per_thread.transient_allocators.get_mut() {
-                    for buffer in transient_allocator.used_buffers.iter() {
-                        unsafe { self.device_fn.destroy_buffer(device, buffer.buffer, None) }
-                    }
+                for buffer in per_thread
+                    .transient_buffer_allocator
+                    .get_mut()
+                    .used_buffers
+                    .iter()
+                {
+                    unsafe { self.device_fn.destroy_buffer(device, buffer.buffer, None) }
                 }
             }
         }
 
-        for recycled_transient_buffers in &mut self.recycled_transient_buffers {
-            for buffer in recycled_transient_buffers.get_mut() {
-                unsafe { self.device_fn.destroy_buffer(device, buffer.buffer, None) }
-            }
+        for buffer in self.recycled_transient_buffers.get_mut() {
+            unsafe { self.device_fn.destroy_buffer(device, buffer.buffer, None) }
         }
 
         for buffer in self.buffer_pool.get_mut().values() {

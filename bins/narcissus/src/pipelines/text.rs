@@ -2,10 +2,10 @@ use narcissus_core::{cstr, default, include_bytes_align};
 use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    Buffer, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace, GraphicsPipelineDesc,
-    GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline, PolygonMode, Sampler,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags, ThreadToken,
-    Topology, TypedBind,
+    Buffer, BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace,
+    GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline,
+    PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
+    ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
 
 use crate::Blittable;
@@ -134,9 +134,10 @@ impl TextPipeline {
         glyph_instances: Buffer,
         atlas: Image,
     ) {
-        let mut uniforms = device.request_transient_uniform_buffer(
+        let mut uniforms = device.request_transient_buffer(
             frame,
             thread_token,
+            BufferUsageFlags::UNIFORM,
             std::mem::size_of::<TextUniforms>(),
             std::mem::align_of::<TextUniforms>(),
         );
