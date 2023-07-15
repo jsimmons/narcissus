@@ -15,7 +15,6 @@ const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]
-#[repr(align(16))]
 pub struct TextUniforms {
     pub screen_width: u32,
     pub screen_height: u32,
@@ -139,7 +138,6 @@ impl TextPipeline {
             thread_token,
             BufferUsageFlags::UNIFORM,
             std::mem::size_of::<TextUniforms>(),
-            std::mem::align_of::<TextUniforms>(),
         );
 
         uniforms.copy_from_slice(text_uniforms.as_bytes());

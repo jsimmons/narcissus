@@ -66,7 +66,7 @@ pub struct TransientBuffer<'a> {
     len: usize,
     buffer: u64,
     offset: u64,
-    _phantom: &'a PhantomData<()>,
+    phantom: PhantomData<&'a u8>,
 }
 
 impl<'a> TransientBuffer<'a> {
@@ -477,28 +477,28 @@ pub struct Bind<'a> {
     pub typed: TypedBind<'a>,
 }
 
-pub enum BufferBind<'a> {
+pub enum BufferArg<'a> {
     Unmanaged(Buffer),
     Transient(TransientBuffer<'a>),
 }
 
-impl<'a> From<Buffer> for BufferBind<'a> {
+impl<'a> From<Buffer> for BufferArg<'a> {
     fn from(value: Buffer) -> Self {
-        BufferBind::Unmanaged(value)
+        BufferArg::Unmanaged(value)
     }
 }
 
-impl<'a> From<TransientBuffer<'a>> for BufferBind<'a> {
+impl<'a> From<TransientBuffer<'a>> for BufferArg<'a> {
     fn from(value: TransientBuffer<'a>) -> Self {
-        BufferBind::Transient(value)
+        BufferArg::Transient(value)
     }
 }
 
 pub enum TypedBind<'a> {
     Sampler(&'a [Sampler]),
     Image(&'a [(ImageLayout, Image)]),
-    UniformBuffer(&'a [BufferBind<'a>]),
-    StorageBuffer(&'a [BufferBind<'a>]),
+    UniformBuffer(&'a [BufferArg<'a>]),
+    StorageBuffer(&'a [BufferArg<'a>]),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -749,7 +749,6 @@ pub trait Device {
         thread_token: &'a ThreadToken,
         usage: BufferUsageFlags,
         size: usize,
-        align: usize,
     ) -> TransientBuffer<'a>;
 
     #[must_use]
@@ -771,7 +770,7 @@ pub trait Device {
     fn cmd_set_index_buffer(
         &self,
         cmd_buffer: &mut CmdBuffer,
-        buffer: Buffer,
+        buffer: BufferArg,
         offset: u64,
         index_type: IndexType,
     );
@@ -792,7 +791,7 @@ pub trait Device {
     fn cmd_copy_buffer_to_image(
         &self,
         cmd_buffer: &mut CmdBuffer,
-        src_buffer: Buffer,
+        src_buffer: BufferArg,
         dst_image: Image,
         dst_image_layout: ImageLayout,
         copies: &[BufferImageCopy],

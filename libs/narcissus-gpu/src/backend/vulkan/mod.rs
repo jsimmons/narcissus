@@ -18,7 +18,7 @@ use crate::{
     delay_queue::DelayQueue,
     frame_counter::FrameCounter,
     tlsf::{self, Tlsf},
-    Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, BlendMode, Buffer, BufferBind,
+    Access, Bind, BindGroupLayout, BindGroupLayoutDesc, BindingType, BlendMode, Buffer, BufferArg,
     BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, CmdBuffer, CompareOp,
     ComputePipelineDesc, CullingMode, Device, Extent2d, Extent3d, Frame, FrontFace, GlobalBarrier,
     GpuConcurrent, GraphicsPipelineDesc, Image, ImageAspectFlags, ImageBarrier, ImageBlit,
@@ -2385,9 +2385,8 @@ impl Device for VulkanDevice {
         thread_token: &'a ThreadToken,
         usage: BufferUsageFlags,
         size: usize,
-        align: usize,
     ) -> TransientBuffer<'a> {
-        self.request_transient_buffer(frame, thread_token, usage, size as u64, align as u64)
+        self.request_transient_buffer(frame, thread_token, usage, size as u64)
     }
 
     fn create_cmd_buffer<'a, 'thread>(
@@ -2484,28 +2483,28 @@ impl Device for VulkanDevice {
     fn cmd_copy_buffer_to_image(
         &self,
         cmd_buffer: &mut CmdBuffer,
-        src_buffer: Buffer,
+        src_buffer: BufferArg,
         dst_image: Image,
         dst_image_layout: ImageLayout,
         copies: &[BufferImageCopy],
     ) {
         let arena = HybridArena::<4096>::new();
 
+        let (src_buffer, base_offset) = match src_buffer {
+            BufferArg::Unmanaged(buffer) => {
+                (self.buffer_pool.lock().get(buffer.0).unwrap().buffer, 0)
+            }
+            BufferArg::Transient(buffer) => (vk::Buffer::from_raw(buffer.buffer), buffer.offset),
+        };
+
         let regions = arena.alloc_slice_fill_iter(copies.iter().map(|copy| vk::BufferImageCopy {
-            buffer_offset: copy.buffer_offset,
+            buffer_offset: copy.buffer_offset + base_offset,
             buffer_row_length: copy.buffer_row_length,
             buffer_image_height: copy.buffer_image_height,
             image_subresource: vulkan_subresource_layers(&copy.image_subresource),
             image_offset: copy.image_offset.into(),
             image_extent: copy.image_extent.into(),
         }));
-
-        let src_buffer = self
-            .buffer_pool
-            .lock()
-            .get(src_buffer.0)
-            .expect("invalid buffer handle")
-            .buffer;
 
         let dst_image = self
             .image_pool
@@ -2683,7 +2682,7 @@ impl Device for VulkanDevice {
             TypedBind::UniformBuffer(buffers) => {
                 let buffer_pool = self.buffer_pool.lock();
                 let buffer_infos_iter = buffers.iter().map(|buffer| match buffer {
-                    BufferBind::Unmanaged(buffer) => {
+                    BufferArg::Unmanaged(buffer) => {
                         let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
                         vk::DescriptorBufferInfo {
                             buffer,
@@ -2691,7 +2690,7 @@ impl Device for VulkanDevice {
                             range: vk::WHOLE_SIZE,
                         }
                     }
-                    BufferBind::Transient(transient) => vk::DescriptorBufferInfo {
+                    BufferArg::Transient(transient) => vk::DescriptorBufferInfo {
                         buffer: vk::Buffer::from_raw(transient.buffer),
                         offset: transient.offset,
                         range: transient.len as u64,
@@ -2711,7 +2710,7 @@ impl Device for VulkanDevice {
             TypedBind::StorageBuffer(buffers) => {
                 let buffer_pool = self.buffer_pool.lock();
                 let buffer_infos_iter = buffers.iter().map(|buffer| match buffer {
-                    BufferBind::Unmanaged(buffer) => {
+                    BufferArg::Unmanaged(buffer) => {
                         let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
                         vk::DescriptorBufferInfo {
                             buffer,
@@ -2719,7 +2718,7 @@ impl Device for VulkanDevice {
                             range: vk::WHOLE_SIZE,
                         }
                     }
-                    BufferBind::Transient(transient) => vk::DescriptorBufferInfo {
+                    BufferArg::Transient(transient) => vk::DescriptorBufferInfo {
                         buffer: vk::Buffer::from_raw(transient.buffer),
                         offset: transient.offset,
                         range: transient.len as u64,
@@ -2771,16 +2770,26 @@ impl Device for VulkanDevice {
     fn cmd_set_index_buffer(
         &self,
         cmd_buffer: &mut CmdBuffer,
-        buffer: Buffer,
+        buffer: BufferArg,
         offset: u64,
         index_type: IndexType,
     ) {
-        let buffer = self.buffer_pool.lock().get(buffer.0).unwrap().buffer;
+        let (buffer, base_offset) = match buffer {
+            BufferArg::Unmanaged(buffer) => {
+                (self.buffer_pool.lock().get(buffer.0).unwrap().buffer, 0)
+            }
+            BufferArg::Transient(buffer) => (vk::Buffer::from_raw(buffer.buffer), buffer.offset),
+        };
+
         let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
         let index_type = vulkan_index_type(index_type);
         unsafe {
-            self.device_fn
-                .cmd_bind_index_buffer(command_buffer, buffer, offset, index_type)
+            self.device_fn.cmd_bind_index_buffer(
+                command_buffer,
+                buffer,
+                offset + base_offset,
+                index_type,
+            )
         }
     }
 
@@ -3225,14 +3234,14 @@ impl VulkanDevice {
         thread_token: &'a ThreadToken,
         usage: BufferUsageFlags,
         size: u64,
-        align: u64,
     ) -> TransientBuffer<'a> {
         let frame = self.frame(frame);
         let per_thread = frame.per_thread.get(thread_token);
         let mut allocator = per_thread.transient_buffer_allocator.borrow_mut();
 
         assert!(size <= VULKAN_CONSTANTS.transient_buffer_size);
-        assert!(align != 0 && align.is_power_of_two());
+
+        let align = 1;
 
         let align = if usage.contains(BufferUsageFlags::UNIFORM) {
             align.max(
@@ -3292,7 +3301,7 @@ impl VulkanDevice {
             len: size as usize,
             buffer: current.buffer.as_raw(),
             offset: allocator.offset,
-            _phantom: &PhantomData,
+            phantom: PhantomData,
         }
     }
 

@@ -4,7 +4,7 @@ use crate::{
     fonts::{FontFamily, Fonts},
     pipelines::{BasicPipeline, TextPipeline},
 };
-use helpers::{create_buffer_with_data, create_image_with_data, load_image, load_obj};
+use helpers::{create_host_buffer_with_data, load_image, load_obj};
 use mapped_buffer::MappedBuffer;
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{default, rand::Pcg64, slice::array_windows};
@@ -67,28 +67,33 @@ pub fn main() {
     let fonts = Fonts::new();
     let mut glyph_cache = GlyphCache::new(&fonts, GLYPH_CACHE_SIZE, GLYPH_CACHE_SIZE, 1);
 
-    let blåhaj_image = load_image("bins/narcissus/data/blåhaj.png");
+    let blåhaj_image_data = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
 
-    let blåhaj_vertex_buffer = create_buffer_with_data(
+    let blåhaj_vertex_buffer = create_host_buffer_with_data(
         device.as_ref(),
         BufferUsageFlags::STORAGE,
         blåhaj_vertices.as_slice(),
     );
 
-    let blåhaj_index_buffer = create_buffer_with_data(
+    let blåhaj_index_buffer = create_host_buffer_with_data(
         device.as_ref(),
         BufferUsageFlags::INDEX,
         blåhaj_indices.as_slice(),
     );
 
-    let blåhaj_image = create_image_with_data(
-        device.as_ref(),
-        &thread_token,
-        blåhaj_image.width() as u32,
-        blåhaj_image.height() as u32,
-        blåhaj_image.as_slice(),
-    );
+    let blåhaj_image = device.create_image(&ImageDesc {
+        location: MemoryLocation::Device,
+        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+        dimension: ImageDimension::Type2d,
+        format: ImageFormat::RGBA8_SRGB,
+        initial_layout: ImageLayout::Optimal,
+        width: blåhaj_image_data.width() as u32,
+        height: blåhaj_image_data.height() as u32,
+        depth: 1,
+        layer_count: 1,
+        mip_levels: 1,
+    });
 
     let mut basic_transform_buffer = MappedBuffer::new(
         device.as_ref(),
@@ -142,17 +147,66 @@ pub fn main() {
 
     {
         let frame = device.begin_frame();
+
+        let mut blåhaj_buffer = device.request_transient_buffer(
+            &frame,
+            &thread_token,
+            BufferUsageFlags::TRANSFER,
+            blåhaj_image_data.as_slice().len(),
+        );
+
+        blåhaj_buffer.copy_from_slice(blåhaj_image_data.as_slice());
+
         let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
         device.cmd_barrier(
             &mut cmd_buffer,
             None,
+            &[
+                ImageBarrier::layout_optimal(
+                    &[Access::None],
+                    &[Access::ShaderSampledImageRead],
+                    glyph_atlas,
+                    ImageAspectFlags::COLOR,
+                ),
+                ImageBarrier::layout_optimal(
+                    &[Access::None],
+                    &[Access::TransferWrite],
+                    blåhaj_image,
+                    ImageAspectFlags::COLOR,
+                ),
+            ],
+        );
+
+        device.cmd_copy_buffer_to_image(
+            &mut cmd_buffer,
+            blåhaj_buffer.into(),
+            blåhaj_image,
+            ImageLayout::Optimal,
+            &[BufferImageCopy {
+                buffer_offset: 0,
+                buffer_row_length: 0,
+                buffer_image_height: 0,
+                image_subresource: default(),
+                image_offset: Offset3d { x: 0, y: 0, z: 0 },
+                image_extent: Extent3d {
+                    width: blåhaj_image_data.width() as u32,
+                    height: blåhaj_image_data.width() as u32,
+                    depth: 1,
+                },
+            }],
+        );
+
+        device.cmd_barrier(
+            &mut cmd_buffer,
+            None,
             &[ImageBarrier::layout_optimal(
-                &[Access::None],
-                &[Access::ShaderSampledImageRead],
-                glyph_atlas,
+                &[Access::TransferWrite],
+                &[Access::FragmentShaderSampledImageRead],
+                blåhaj_image,
                 ImageAspectFlags::COLOR,
             )],
         );
+
         device.submit(&frame, cmd_buffer);
         device.end_frame(frame);
     }
@@ -391,9 +445,15 @@ pub fn main() {
             let width = atlas_width;
             let height = atlas_height;
             let image = glyph_atlas;
-            let data = texture;
 
-            let buffer = create_buffer_with_data(device.as_ref(), BufferUsageFlags::TRANSFER, data);
+            let mut buffer = device.request_transient_buffer(
+                &frame,
+                &thread_token,
+                BufferUsageFlags::TRANSFER,
+                texture.len(),
+            );
+
+            buffer.copy_from_slice(texture);
 
             device.cmd_barrier(
                 &mut cmd_buffer,
@@ -408,7 +468,7 @@ pub fn main() {
 
             device.cmd_copy_buffer_to_image(
                 &mut cmd_buffer,
-                buffer,
+                buffer.into(),
                 image,
                 ImageLayout::Optimal,
                 &[BufferImageCopy {
@@ -435,8 +495,6 @@ pub fn main() {
                     ImageAspectFlags::COLOR,
                 )],
             );
-
-            device.destroy_buffer(&frame, buffer);
         }
 
         device.cmd_begin_rendering(

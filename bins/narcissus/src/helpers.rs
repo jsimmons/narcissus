@@ -1,11 +1,7 @@
 use std::path::Path;
 
-use narcissus_core::{default, obj, Widen};
-use narcissus_gpu::{
-    Access, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, Device, Extent3d, Image,
-    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
-    ImageUsageFlags, MemoryLocation, Offset3d, ThreadToken,
-};
+use narcissus_core::{obj, Widen};
+use narcissus_gpu::{Buffer, BufferDesc, BufferUsageFlags, Device, MemoryLocation};
 use narcissus_image as image;
 use narcissus_maths::{vec2, vec3, vec4, Vec2, Vec3};
 
@@ -93,7 +89,7 @@ pub fn load_image<P: AsRef<Path>>(path: P) -> image::Image {
     texture
 }
 
-pub fn create_buffer_with_data<T>(
+pub fn create_host_buffer_with_data<T>(
     device: &dyn Device,
     usage: BufferUsageFlags,
     data: &[T],
@@ -114,80 +110,4 @@ where
             initial_data,
         )
     }
-}
-
-pub fn create_image_with_data(
-    device: &dyn Device,
-    thread_token: &ThreadToken,
-    width: u32,
-    height: u32,
-    data: &[u8],
-) -> Image {
-    let frame = device.begin_frame();
-
-    let buffer = create_buffer_with_data(device, BufferUsageFlags::TRANSFER, data);
-
-    let image = device.create_image(&ImageDesc {
-        location: MemoryLocation::Device,
-        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-        dimension: ImageDimension::Type2d,
-        format: ImageFormat::RGBA8_SRGB,
-        initial_layout: ImageLayout::Optimal,
-        width,
-        height,
-        depth: 1,
-        layer_count: 1,
-        mip_levels: 1,
-    });
-
-    let mut cmd_buffer = device.create_cmd_buffer(&frame, thread_token);
-
-    device.cmd_barrier(
-        &mut cmd_buffer,
-        None,
-        &[ImageBarrier::layout_optimal(
-            &[Access::None],
-            &[Access::TransferWrite],
-            image,
-            ImageAspectFlags::COLOR,
-        )],
-    );
-
-    device.cmd_copy_buffer_to_image(
-        &mut cmd_buffer,
-        buffer,
-        image,
-        ImageLayout::Optimal,
-        &[BufferImageCopy {
-            buffer_offset: 0,
-            buffer_row_length: 0,
-            buffer_image_height: 0,
-            image_subresource: default(),
-            image_offset: Offset3d { x: 0, y: 0, z: 0 },
-            image_extent: Extent3d {
-                width,
-                height,
-                depth: 1,
-            },
-        }],
-    );
-
-    device.cmd_barrier(
-        &mut cmd_buffer,
-        None,
-        &[ImageBarrier::layout_optimal(
-            &[Access::TransferWrite],
-            &[Access::FragmentShaderSampledImageRead],
-            image,
-            ImageAspectFlags::COLOR,
-        )],
-    );
-
-    device.submit(&frame, cmd_buffer);
-
-    device.destroy_buffer(&frame, buffer);
-
-    device.end_frame(frame);
-
-    image
 }

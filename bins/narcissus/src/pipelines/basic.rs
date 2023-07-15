@@ -15,7 +15,6 @@ const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]
-#[repr(align(16))]
 pub struct BasicUniforms {
     pub clip_from_model: Mat4,
 }
@@ -141,7 +140,6 @@ impl BasicPipeline {
             thread_token,
             BufferUsageFlags::UNIFORM,
             std::mem::size_of::<BasicUniforms>(),
-            std::mem::align_of::<BasicUniforms>(),
         );
 
         uniform_buffer.copy_from_slice(basic_uniforms.as_bytes());
@@ -189,6 +187,6 @@ impl BasicPipeline {
             ],
         );
 
-        device.cmd_set_index_buffer(cmd_buffer, index_buffer, 0, IndexType::U16);
+        device.cmd_set_index_buffer(cmd_buffer, index_buffer.into(), 0, IndexType::U16);
     }
 }
