@@ -2603,21 +2603,6 @@ impl Device for VulkanDevice {
     fn destroy_swapchain(&self, window: &dyn AsRawWindow) {
         self.destroy_swapchain(window)
     }
-
-    #[cfg(debug_assertions)]
-    fn debug_allocator_dump_svg(&self) -> Result<(), std::io::Error> {
-        for (i, allocator) in self
-            .allocators
-            .iter()
-            .filter_map(Option::as_deref)
-            .enumerate()
-        {
-            let mut bitmap_file = std::fs::File::create(format!("target/{i}_bitmap.svg")).unwrap();
-            allocator.tlsf.lock().debug_bitmap_svg(&mut bitmap_file)?;
-        }
-
-        Ok(())
-    }
 }
 
 impl VulkanDevice {

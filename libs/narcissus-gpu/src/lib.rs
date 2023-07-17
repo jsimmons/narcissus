@@ -857,7 +857,4 @@ pub trait Device {
     fn begin_frame(&self) -> Frame;
 
     fn end_frame<'device>(&'device self, frame: Frame<'device>);
-
-    #[cfg(debug_assertions)]
-    fn debug_allocator_dump_svg(&self) -> Result<(), std::io::Error>;
 }

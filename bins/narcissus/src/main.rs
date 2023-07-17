@@ -591,9 +591,4 @@ pub fn main() {
 
         device.end_frame(frame);
     }
-
-    #[cfg(debug_assertions)]
-    {
-        device.debug_allocator_dump_svg().unwrap();
-    }
 }
