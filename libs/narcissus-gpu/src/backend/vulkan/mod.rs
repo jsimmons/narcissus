@@ -68,7 +68,7 @@ pub struct VulkanConstants {
 const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     num_frames: 2,
     swapchain_destroy_delay: 8,
-    transient_buffer_size: 2 * 1024 * 1024,
+    transient_buffer_size: 4 * 1024 * 1024,
     tlsf_block_size: 128 * 1024 * 1024,
     descriptor_pool_max_sets: 500,
     descriptor_pool_sampler_count: 100,
