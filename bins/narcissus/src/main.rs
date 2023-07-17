@@ -83,7 +83,7 @@ pub fn main() {
     );
 
     let blåhaj_image = device.create_image(&ImageDesc {
-        location: MemoryLocation::Device,
+        memory_location: MemoryLocation::Device,
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::RGBA8_SRGB,
@@ -114,7 +114,7 @@ pub fn main() {
     );
 
     let glyph_atlas = device.create_image(&ImageDesc {
-        location: MemoryLocation::Device,
+        memory_location: MemoryLocation::Device,
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::R8_UNORM,
@@ -130,7 +130,8 @@ pub fn main() {
     let mut buffers = (0..4096)
         .map(|_| {
             device.create_buffer(&BufferDesc {
-                location: MemoryLocation::HostMapped,
+                memory_location: MemoryLocation::Host,
+                host_mapped: true,
                 usage: BufferUsageFlags::STORAGE,
                 size: 16 + rng.next_bound_usize(1024 - 16),
             })
@@ -139,7 +140,8 @@ pub fn main() {
 
     buffers.extend((0..512).map(|_| {
         device.create_buffer(&BufferDesc {
-            location: MemoryLocation::HostMapped,
+            memory_location: MemoryLocation::Host,
+            host_mapped: true,
             usage: BufferUsageFlags::STORAGE,
             size: 16 + rng.next_bound_usize(10 * 1024 * 1024 - 16),
         })
@@ -291,7 +293,7 @@ pub fn main() {
         if width != depth_width || height != depth_height {
             device.destroy_image(&frame, depth_image);
             depth_image = device.create_image(&ImageDesc {
-                location: MemoryLocation::Device,
+                memory_location: MemoryLocation::Device,
                 usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 dimension: ImageDimension::Type2d,
                 format: ImageFormat::DEPTH_F32,

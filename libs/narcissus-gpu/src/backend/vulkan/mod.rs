@@ -31,7 +31,7 @@ mod libc;
 mod wsi;
 
 use self::{
-    allocator::{VulkanAllocator, VulkanMemory, VulkanMemoryDedicatedDesc, VulkanMemoryDesc},
+    allocator::{VulkanAllocator, VulkanMemory, VulkanMemoryDedicatedDesc},
     barrier::{vulkan_image_memory_barrier, vulkan_memory_barrier},
     convert::*,
     wsi::{VulkanWsi, VulkanWsiFrame},
@@ -826,19 +826,15 @@ impl VulkanDevice {
             || memory_dedicated_requirements.requires_dedicated_allocation == vk::Bool32::True
         {
             self.allocate_memory_dedicated(
-                &VulkanMemoryDesc {
-                    requirements: memory_requirements.memory_requirements,
-                    memory_location: desc.location,
-                    _linear: true,
-                },
+                desc.memory_location,
+                &memory_requirements.memory_requirements,
                 &VulkanMemoryDedicatedDesc::Buffer(buffer),
             )
         } else {
-            self.allocate_memory(&VulkanMemoryDesc {
-                requirements: memory_requirements.memory_requirements,
-                memory_location: desc.location,
-                _linear: true,
-            })
+            self.allocate_memory(
+                desc.memory_location,
+                &memory_requirements.memory_requirements,
+            )
         };
 
         if let Some(initial_data) = initial_data {
@@ -1010,19 +1006,15 @@ impl Device for VulkanDevice {
             || memory_dedicated_requirements.requires_dedicated_allocation == vk::Bool32::True
         {
             self.allocate_memory_dedicated(
-                &VulkanMemoryDesc {
-                    requirements: memory_requirements.memory_requirements,
-                    memory_location: desc.location,
-                    _linear: true,
-                },
+                desc.memory_location,
+                &memory_requirements.memory_requirements,
                 &VulkanMemoryDedicatedDesc::Image(image),
             )
         } else {
-            self.allocate_memory(&VulkanMemoryDesc {
-                requirements: memory_requirements.memory_requirements,
-                memory_location: desc.location,
-                _linear: true,
-            })
+            self.allocate_memory(
+                desc.memory_location,
+                &memory_requirements.memory_requirements,
+            )
         };
 
         unsafe {
@@ -2384,11 +2376,10 @@ impl VulkanDevice {
                 &mut memory_requirements,
             );
 
-            let memory = self.allocate_memory(&VulkanMemoryDesc {
-                requirements: memory_requirements.memory_requirements,
-                memory_location: MemoryLocation::HostMapped,
-                _linear: true,
-            });
+            let memory = self.allocate_memory(
+                MemoryLocation::Host,
+                &memory_requirements.memory_requirements,
+            );
 
             unsafe {
                 self.device_fn.bind_buffer_memory2(
@@ -2519,11 +2510,10 @@ impl VulkanDevice {
             &mut memory_requirements,
         );
 
-        let memory = self.allocate_memory(&VulkanMemoryDesc {
-            requirements: memory_requirements.memory_requirements,
-            memory_location: MemoryLocation::HostMapped,
-            _linear: true,
-        });
+        let memory = self.allocate_memory(
+            MemoryLocation::Host,
+            &memory_requirements.memory_requirements,
+        );
 
         assert!(!memory.mapped_ptr().is_null());
         // SAFETY: The memory has just been allocated, so as long as the pointer is

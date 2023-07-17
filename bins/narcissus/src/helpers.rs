@@ -103,7 +103,8 @@ where
         let initial_data = std::slice::from_raw_parts(data.as_ptr() as *const u8, len);
         device.create_buffer_with_data(
             &BufferDesc {
-                location: MemoryLocation::HostMapped,
+                memory_location: MemoryLocation::Host,
+                host_mapped: true,
                 usage,
                 size: len,
             },

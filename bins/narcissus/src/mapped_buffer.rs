@@ -11,7 +11,8 @@ pub struct MappedBuffer<'a> {
 impl<'a> MappedBuffer<'a> {
     pub fn new(device: &'a dyn Device, usage: BufferUsageFlags, len: usize) -> Self {
         let buffer = device.create_buffer(&BufferDesc {
-            location: MemoryLocation::HostMapped,
+            memory_location: MemoryLocation::Host,
+            host_mapped: true,
             usage,
             size: len,
         });

@@ -78,7 +78,7 @@ impl<'a> TransientBuffer<'a> {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryLocation {
-    HostMapped,
+    Host,
     Device,
 }
 
@@ -204,13 +204,14 @@ impl BufferUsageFlags {
 }
 
 pub struct BufferDesc {
-    pub location: MemoryLocation,
+    pub memory_location: MemoryLocation,
+    pub host_mapped: bool,
     pub usage: BufferUsageFlags,
     pub size: usize,
 }
 
 pub struct ImageDesc {
-    pub location: MemoryLocation,
+    pub memory_location: MemoryLocation,
     pub usage: ImageUsageFlags,
     pub dimension: ImageDimension,
     pub format: ImageFormat,

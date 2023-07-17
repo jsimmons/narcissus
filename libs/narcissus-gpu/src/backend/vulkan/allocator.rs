@@ -28,12 +28,6 @@ pub enum VulkanMemoryDedicatedDesc {
     Buffer(vk::Buffer),
 }
 
-pub struct VulkanMemoryDesc {
-    pub requirements: vk::MemoryRequirements,
-    pub memory_location: MemoryLocation,
-    pub _linear: bool,
-}
-
 #[derive(Clone)]
 pub struct VulkanMemoryDedicated {
     memory: vk::DeviceMemory,
@@ -116,23 +110,26 @@ impl VulkanDevice {
 
     pub fn allocate_memory_dedicated(
         &self,
-        desc: &VulkanMemoryDesc,
+        memory_location: MemoryLocation,
+        requirements: &vk::MemoryRequirements,
         dedicated_desc: &VulkanMemoryDedicatedDesc,
     ) -> VulkanMemory {
-        let memory_property_flags = match desc.memory_location {
-            MemoryLocation::HostMapped => vk::MemoryPropertyFlags::HOST_VISIBLE,
+        let memory_property_flags = match memory_location {
+            MemoryLocation::Host => vk::MemoryPropertyFlags::HOST_VISIBLE,
             MemoryLocation::Device => vk::MemoryPropertyFlags::DEVICE_LOCAL,
         };
 
+        let size = requirements.size;
+
         let memory_type_index =
-            self.find_memory_type_index(desc.requirements.memory_type_bits, memory_property_flags);
+            self.find_memory_type_index(requirements.memory_type_bits, memory_property_flags);
 
         let allocator = self.allocators[memory_type_index.widen()]
             .as_ref()
             .expect("returned a memory type index that has no associated allocator");
 
         let mut allocate_info = vk::MemoryAllocateInfo {
-            allocation_size: desc.requirements.size,
+            allocation_size: size,
             memory_type_index,
             ..default()
         };
@@ -177,19 +174,26 @@ impl VulkanDevice {
         VulkanMemory::Dedicated(VulkanMemoryDedicated {
             memory,
             mapped_ptr,
-            size: desc.requirements.size,
+            size,
             memory_type_index,
         })
     }
 
-    pub fn allocate_memory(&self, desc: &VulkanMemoryDesc) -> VulkanMemory {
-        let memory_property_flags = match desc.memory_location {
-            MemoryLocation::HostMapped => vk::MemoryPropertyFlags::HOST_VISIBLE,
+    pub fn allocate_memory(
+        &self,
+        memory_location: MemoryLocation,
+        requirements: &vk::MemoryRequirements,
+    ) -> VulkanMemory {
+        let memory_property_flags = match memory_location {
+            MemoryLocation::Host => vk::MemoryPropertyFlags::HOST_VISIBLE,
             MemoryLocation::Device => vk::MemoryPropertyFlags::DEVICE_LOCAL,
         };
 
+        let size = requirements.size;
+        let align = requirements.alignment;
+
         let memory_type_index =
-            self.find_memory_type_index(desc.requirements.memory_type_bits, memory_property_flags);
+            self.find_memory_type_index(requirements.memory_type_bits, memory_property_flags);
 
         let allocator = self.allocators[memory_type_index.widen()]
             .as_ref()
@@ -198,9 +202,7 @@ impl VulkanDevice {
         let mut tlsf = allocator.tlsf.lock();
 
         let allocation = {
-            if let Some(allocation) =
-                tlsf.alloc(desc.requirements.size, desc.requirements.alignment)
-            {
+            if let Some(allocation) = tlsf.alloc(size, align) {
                 allocation
             } else {
                 let allocate_info = vk::MemoryAllocateInfo {
@@ -241,14 +243,13 @@ impl VulkanDevice {
                     VulkanAllocationInfo { memory, mapped_ptr },
                 );
 
-                tlsf.alloc(desc.requirements.size, desc.requirements.alignment)
-                    .expect("failed to allocate")
+                tlsf.alloc(size, align).expect("failed to allocate")
             }
         };
 
         VulkanMemory::SubAlloc(VulkanMemorySubAlloc {
             allocation,
-            size: desc.requirements.size,
+            size: requirements.size,
             memory_type_index,
         })
     }
