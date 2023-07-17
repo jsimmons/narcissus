@@ -148,14 +148,12 @@ pub fn main() {
     {
         let frame = device.begin_frame();
 
-        let mut blåhaj_buffer = device.request_transient_buffer(
+        let blåhaj_buffer = device.request_transient_buffer_with_data(
             &frame,
             &thread_token,
             BufferUsageFlags::TRANSFER,
-            blåhaj_image_data.as_slice().len(),
+            blåhaj_image_data.as_slice(),
         );
-
-        blåhaj_buffer.copy_from_slice(blåhaj_image_data.as_slice());
 
         let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
         device.cmd_barrier(
@@ -453,14 +451,12 @@ pub fn main() {
             let height = atlas_height;
             let image = glyph_atlas;
 
-            let mut buffer = device.request_transient_buffer(
+            let buffer = device.request_transient_buffer_with_data(
                 &frame,
                 &thread_token,
                 BufferUsageFlags::TRANSFER,
-                texture.len(),
+                texture,
             );
-
-            buffer.copy_from_slice(texture);
 
             device.cmd_barrier(
                 &mut cmd_buffer,

@@ -752,6 +752,20 @@ pub trait Device {
     ) -> TransientBuffer<'a>;
 
     #[must_use]
+    fn request_transient_buffer_with_data<'a>(
+        &self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        usage: BufferUsageFlags,
+        data: &[u8],
+    ) -> TransientBuffer<'a> {
+        let mut transient_buffer =
+            self.request_transient_buffer(frame, thread_token, usage, data.len());
+        transient_buffer.copy_from_slice(data);
+        transient_buffer
+    }
+
+    #[must_use]
     fn create_cmd_buffer<'a, 'thread>(
         &'a self,
         frame: &'a Frame,
