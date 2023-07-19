@@ -61,6 +61,9 @@ pub struct VulkanConstants {
     /// `tlsf_small_super_block_divisor` as the super block size.
     tlsf_small_super_block_divisor: u64,
 
+    /// Force use of separate allocators for images and buffers.
+    tlsf_force_segregated_image_allocator: bool,
+
     /// The max number of descriptor sets allocatable from each descriptor pool.
     descriptor_pool_max_sets: u32,
     /// The number of sampler descriptors available in each descriptor pool.
@@ -79,6 +82,7 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     transient_buffer_size: 4 * 1024 * 1024,
     tlsf_default_super_block_size: 128 * 1024 * 1024,
     tlsf_small_super_block_divisor: 16,
+    tlsf_force_segregated_image_allocator: false,
     descriptor_pool_max_sets: 500,
     descriptor_pool_sampler_count: 100,
     descriptor_pool_uniform_buffer_count: 500,
@@ -658,7 +662,13 @@ impl VulkanDevice {
             })
         }));
 
-        let allocator = VulkanAllocator::new(physical_device_memory_properties.as_ref());
+        let allocator = VulkanAllocator::new(
+            physical_device_properties
+                .properties
+                .limits
+                .buffer_image_granularity,
+            physical_device_memory_properties.as_ref(),
+        );
 
         Self {
             instance,
@@ -805,33 +815,10 @@ impl VulkanDevice {
             .device_fn
             .create_buffer(self.device, &create_info, None, &mut buffer));
 
-        let mut memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
-        let mut memory_requirements = vk::MemoryRequirements2 {
-            _next: &mut memory_dedicated_requirements as *mut vk::MemoryDedicatedRequirements
-                as *mut _,
-            ..default()
-        };
-
-        self.device_fn.get_buffer_memory_requirements2(
-            self.device,
-            &vk::BufferMemoryRequirementsInfo2 {
-                buffer,
-                ..default()
-            },
-            &mut memory_requirements,
-        );
-
-        let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo {
-            buffer,
-            ..default()
-        };
-
         let memory = self.allocate_memory(
             desc.memory_location,
             desc.host_mapped,
-            &memory_requirements.memory_requirements,
-            &memory_dedicated_requirements,
-            &memory_dedicated_allocate_info,
+            allocator::VulkanAllocationResource::Buffer(buffer),
         );
 
         if let Some(data) = data {
@@ -985,27 +972,10 @@ impl Device for VulkanDevice {
             .device_fn
             .create_image(self.device, &create_info, None, &mut image));
 
-        let mut memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
-        let mut memory_requirements = vk::MemoryRequirements2 {
-            _next: &mut memory_dedicated_requirements as *mut vk::MemoryDedicatedRequirements
-                as *mut _,
-            ..default()
-        };
-
-        self.device_fn.get_image_memory_requirements2(
-            self.device,
-            &vk::ImageMemoryRequirementsInfo2 { image, ..default() },
-            &mut memory_requirements,
-        );
-
-        let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo { image, ..default() };
-
         let memory = self.allocate_memory(
             desc.memory_location,
             desc.host_mapped,
-            &memory_requirements.memory_requirements,
-            &memory_dedicated_requirements,
-            &memory_dedicated_allocate_info,
+            allocator::VulkanAllocationResource::Image(image),
         );
 
         unsafe {
@@ -2357,25 +2327,10 @@ impl VulkanDevice {
                 .device_fn
                 .create_buffer(self.device, &create_info, None, &mut buffer));
 
-            let mut memory_requirements = vk::MemoryRequirements2::default();
-            self.device_fn.get_buffer_memory_requirements2(
-                self.device,
-                &vk::BufferMemoryRequirementsInfo2 {
-                    buffer,
-                    ..default()
-                },
-                &mut memory_requirements,
-            );
-
-            let memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
-            let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default();
-
             let memory = self.allocate_memory(
                 MemoryLocation::Host,
                 true,
-                &memory_requirements.memory_requirements,
-                &memory_dedicated_requirements,
-                &memory_dedicated_allocate_info,
+                allocator::VulkanAllocationResource::Buffer(buffer),
             );
 
             unsafe {
@@ -2496,26 +2451,10 @@ impl VulkanDevice {
             .device_fn
             .create_buffer(self.device, &create_info, None, &mut buffer));
 
-        let mut memory_requirements = vk::MemoryRequirements2::default();
-
-        self.device_fn.get_buffer_memory_requirements2(
-            self.device,
-            &vk::BufferMemoryRequirementsInfo2 {
-                buffer,
-                ..default()
-            },
-            &mut memory_requirements,
-        );
-
-        let memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
-        let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default();
-
         let memory = self.allocate_memory(
             MemoryLocation::Host,
             true,
-            &memory_requirements.memory_requirements,
-            &memory_dedicated_requirements,
-            &memory_dedicated_allocate_info,
+            allocator::VulkanAllocationResource::Buffer(buffer),
         );
 
         assert!(!memory.mapped_ptr().is_null());

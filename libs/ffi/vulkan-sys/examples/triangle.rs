@@ -397,11 +397,13 @@ pub fn main() {
 
         let memory_requirements = {
             let mut memory_requirements = vk::MemoryRequirements2::default();
-            device_fn.get_image_memory_requirements2(
-                device,
-                &vk::ImageMemoryRequirementsInfo2 { image, ..default() },
-                &mut memory_requirements,
-            );
+            unsafe {
+                device_fn.get_image_memory_requirements2(
+                    device,
+                    &vk::ImageMemoryRequirementsInfo2 { image, ..default() },
+                    &mut memory_requirements,
+                )
+            };
             memory_requirements
         };
 

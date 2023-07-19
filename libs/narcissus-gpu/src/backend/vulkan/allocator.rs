@@ -7,12 +7,11 @@ use narcissus_core::{default, BitIter, Mutex, Widen};
 
 use vulkan_sys as vk;
 
-use crate::{
-    tlsf::{self, Tlsf},
-    vk_check, MemoryLocation,
-};
+use crate::{tlsf, vk_check, MemoryLocation};
 
 use super::{VulkanDevice, VulkanFrame, VULKAN_CONSTANTS};
+
+type Tlsf = tlsf::Tlsf<VulkanSuperBlockInfo>;
 
 #[derive(Default, Debug)]
 pub struct VulkanMemoryHeap {
@@ -30,7 +29,10 @@ pub struct VulkanMemoryHeap {
 
 #[derive(Default)]
 pub struct VulkanMemoryType {
-    tlsf: Mutex<Tlsf<VulkanSuperBlockInfo>>,
+    tlsf: Mutex<Tlsf>,
+
+    /// Tlsf instance used exclusively for images when the
+    tlsf_images: Mutex<Tlsf>,
 }
 
 #[derive(Default)]
@@ -38,11 +40,15 @@ pub struct VulkanAllocator {
     memory_heaps: [VulkanMemoryHeap; vk::MAX_MEMORY_HEAPS as usize],
     memory_types: [VulkanMemoryType; vk::MAX_MEMORY_TYPES as usize],
     dedicated: Mutex<HashSet<vk::DeviceMemory>>,
+    use_segregated_image_allocator: bool,
     allocation_count: AtomicU32,
 }
 
 impl VulkanAllocator {
-    pub fn new(memory_properties: &vk::PhysicalDeviceMemoryProperties) -> Self {
+    pub fn new(
+        buffer_image_granularity: u64,
+        memory_properties: &vk::PhysicalDeviceMemoryProperties,
+    ) -> Self {
         let memory_heaps = std::array::from_fn(|memory_heap_index| {
             let memory_heap_properties = &memory_properties.memory_heaps[memory_heap_index];
             let tlsf_super_block_size = if memory_heap_properties.size
@@ -59,8 +65,16 @@ impl VulkanAllocator {
             }
         });
 
+        // buffer_image_granularity is an additional alignment constraint for buffers
+        // and images that are allocated adjacently. Rather than trying to handle this
+        // restriction cleverly, use a separate Tlsf allocator for images if
+        // `buffer_image_granularity` is greater than the guaranteed alignment of the
+        // Tlsf configuration.
+        let use_segregated_image_allocator = buffer_image_granularity > tlsf::MIN_ALIGNMENT as u64;
+
         Self {
             memory_heaps,
+            use_segregated_image_allocator,
             ..default()
         }
     }
@@ -70,6 +84,7 @@ impl VulkanAllocator {
 pub struct VulkanSuperBlockInfo {
     memory: vk::DeviceMemory,
     mapped_ptr: *mut u8,
+    image_allocator: bool,
     memory_type_index: u32,
 }
 
@@ -91,6 +106,12 @@ pub struct VulkanMemorySubAlloc {
 pub enum VulkanMemory {
     Dedicated(VulkanMemoryDedicated),
     SubAlloc(VulkanMemorySubAlloc),
+}
+
+#[derive(Clone)]
+pub enum VulkanAllocationResource {
+    Buffer(vk::Buffer),
+    Image(vk::Image),
 }
 
 impl VulkanMemory {
@@ -162,19 +183,22 @@ impl VulkanDevice {
                 }
             }
             VulkanMemory::SubAlloc(sub_alloc) => {
-                let mut allocator = self.allocator.memory_types
-                    [sub_alloc.allocation.user_data().memory_type_index.widen()]
-                .tlsf
-                .lock();
-                allocator.free(sub_alloc.allocation)
+                let user_data = sub_alloc.allocation.user_data();
+                let memory_type = &self.allocator.memory_types[user_data.memory_type_index.widen()];
+                let mut tlsf = if user_data.image_allocator {
+                    memory_type.tlsf_images.lock()
+                } else {
+                    memory_type.tlsf.lock()
+                };
+                tlsf.free(sub_alloc.allocation)
             }
         }
     }
 
-    fn try_allocate_memory(
+    fn try_allocate_device_memory(
         &self,
         host_mapped: bool,
-        allocation_size: u64,
+        size: u64,
         memory_type_index: u32,
         memory_dedicated_allocate_info: Option<&vk::MemoryDedicatedAllocateInfo>,
     ) -> Option<(vk::DeviceMemory, *mut u8)> {
@@ -199,12 +223,12 @@ impl VulkanDevice {
 
         // Can't allocate if we would blow this heap's size.
         let current_allocated_bytes = memory_heap.total_allocated_bytes.load(Ordering::Relaxed);
-        if current_allocated_bytes + allocation_size > memory_heap_properties.size {
+        if current_allocated_bytes + size > memory_heap_properties.size {
             return None;
         }
 
         let mut allocate_info = vk::MemoryAllocateInfo {
-            allocation_size,
+            allocation_size: size,
             memory_type_index,
             ..default()
         };
@@ -232,7 +256,7 @@ impl VulkanDevice {
 
         memory_heap
             .total_allocated_bytes
-            .fetch_add(allocation_size, Ordering::SeqCst);
+            .fetch_add(size, Ordering::SeqCst);
 
         let mapped_ptr = if host_mapped {
             let mut data = std::ptr::null_mut();
@@ -256,9 +280,7 @@ impl VulkanDevice {
         &self,
         memory_location: MemoryLocation,
         host_mapped: bool,
-        memory_requirements: &vk::MemoryRequirements,
-        memory_dedicated_requirements: &vk::MemoryDedicatedRequirements,
-        memory_dedicated_allocate_info: &vk::MemoryDedicatedAllocateInfo,
+        resource: VulkanAllocationResource,
     ) -> VulkanMemory {
         let required_memory_property_flags = if host_mapped {
             vk::MemoryPropertyFlags::HOST_VISIBLE
@@ -270,6 +292,46 @@ impl VulkanDevice {
             MemoryLocation::Host => vk::MemoryPropertyFlags::HOST_VISIBLE,
             MemoryLocation::Device => vk::MemoryPropertyFlags::DEVICE_LOCAL,
         };
+
+        let mut memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
+
+        let mut memory_requirements = vk::MemoryRequirements2 {
+            _next: &mut memory_dedicated_requirements as *mut vk::MemoryDedicatedRequirements
+                as *mut _,
+            ..default()
+        };
+
+        let (is_image_allocation, memory_dedicated_allocate_info) = match resource {
+            // SAFETY: Safe so long as `_next` on `memory_requirements` is valid.
+            VulkanAllocationResource::Buffer(buffer) => unsafe {
+                self.device_fn.get_buffer_memory_requirements2(
+                    self.device,
+                    &vk::BufferMemoryRequirementsInfo2 {
+                        buffer,
+                        ..default()
+                    },
+                    &mut memory_requirements,
+                );
+                (
+                    false,
+                    vk::MemoryDedicatedAllocateInfo {
+                        buffer,
+                        ..default()
+                    },
+                )
+            },
+            // SAFETY: Safe so long as `_next` on `memory_requirements` is valid.
+            VulkanAllocationResource::Image(image) => unsafe {
+                self.device_fn.get_image_memory_requirements2(
+                    self.device,
+                    &vk::ImageMemoryRequirementsInfo2 { image, ..default() },
+                    &mut memory_requirements,
+                );
+                (true, vk::MemoryDedicatedAllocateInfo { image, ..default() })
+            },
+        };
+
+        let memory_requirements = &memory_requirements.memory_requirements;
 
         let size = memory_requirements.size;
         let align = memory_requirements.alignment;
@@ -299,11 +361,11 @@ impl VulkanDevice {
                     || memory_dedicated_requirements.prefers_dedicated_allocation
                         == vk::Bool32::True
                 {
-                    if let Some((memory, mapped_ptr)) = self.try_allocate_memory(
+                    if let Some((memory, mapped_ptr)) = self.try_allocate_device_memory(
                         host_mapped,
                         size,
                         memory_type_index as u32,
-                        Some(memory_dedicated_allocate_info),
+                        Some(&memory_dedicated_allocate_info),
                     ) {
                         self.allocator.dedicated.lock().insert(memory);
 
@@ -319,7 +381,15 @@ impl VulkanDevice {
                 // If the allocation is smaller than the Tlsf super-block size for this
                 // allocation type, we should attempt sub-allocation.
                 if size <= memory_heap.tlsf_super_block_size {
-                    let mut tlsf = memory_type.tlsf.lock();
+                    let (image_allocator, mut tlsf) = if (VULKAN_CONSTANTS
+                        .tlsf_force_segregated_image_allocator
+                        || self.allocator.use_segregated_image_allocator)
+                        && is_image_allocation
+                    {
+                        (true, memory_type.tlsf_images.lock())
+                    } else {
+                        (false, memory_type.tlsf.lock())
+                    };
 
                     if let Some(allocation) = tlsf.alloc(size, align) {
                         return VulkanMemory::SubAlloc(VulkanMemorySubAlloc { allocation, size });
@@ -327,7 +397,7 @@ impl VulkanDevice {
                         // When allocating backing storage for Tlsf super-blocks, ensure that all memory
                         // is mapped if the memory type supports host mapping. This ensures we never
                         // have to map a super-block later if an individual allocation desires it.
-                        if let Some((memory, mapped_ptr)) = self.try_allocate_memory(
+                        if let Some((memory, mapped_ptr)) = self.try_allocate_device_memory(
                             memory_type_property_flags
                                 .contains(vk::MemoryPropertyFlags::HOST_VISIBLE),
                             memory_heap.tlsf_super_block_size,
@@ -339,6 +409,7 @@ impl VulkanDevice {
                                 VulkanSuperBlockInfo {
                                     memory,
                                     mapped_ptr,
+                                    image_allocator,
                                     memory_type_index: memory_type_index as u32,
                                 },
                             );
@@ -360,9 +431,12 @@ impl VulkanDevice {
                 // If the requested allocation size was too large for the Tlsf allocator,
                 //
                 // Attempt a dedicated allocation for the exact requested size.
-                if let Some((memory, mapped_ptr)) =
-                    self.try_allocate_memory(host_mapped, size, memory_type_index as u32, None)
-                {
+                if let Some((memory, mapped_ptr)) = self.try_allocate_device_memory(
+                    host_mapped,
+                    size,
+                    memory_type_index as u32,
+                    None,
+                ) {
                     self.allocator.dedicated.lock().insert(memory);
 
                     return VulkanMemory::Dedicated(VulkanMemoryDedicated {
@@ -391,23 +465,15 @@ impl VulkanDevice {
     }
 
     pub fn allocator_drop(&mut self) {
-        println!(
-            "{:?}",
-            &self.allocator.memory_heaps[..self
-                .physical_device_memory_properties
-                .memory_heap_count
-                .widen()]
-        );
-
-        println!(
-            "count: {}",
-            self.allocator.allocation_count.load(Ordering::Relaxed)
-        );
-
         for memory_type in self.allocator.memory_types.iter_mut() {
             // Clear out all memory blocks held by the Tlsf allocators.
-            let tlsf = memory_type.tlsf.get_mut();
-            for super_block in tlsf.super_blocks() {
+            for super_block in memory_type.tlsf.get_mut().super_blocks() {
+                unsafe {
+                    self.device_fn
+                        .free_memory(self.device, super_block.user_data.memory, None)
+                }
+            }
+            for super_block in memory_type.tlsf_images.get_mut().super_blocks() {
                 unsafe {
                     self.device_fn
                         .free_memory(self.device, super_block.user_data.memory, None)

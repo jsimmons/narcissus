@@ -2326,7 +2326,7 @@ impl DeviceFunctions {
     }
 
     #[inline]
-    pub fn get_image_memory_requirements2(
+    pub unsafe fn get_image_memory_requirements2(
         &self,
         device: Device,
         info: &ImageMemoryRequirementsInfo2,
@@ -2341,7 +2341,7 @@ impl DeviceFunctions {
     }
 
     #[inline]
-    pub fn get_buffer_memory_requirements2(
+    pub unsafe fn get_buffer_memory_requirements2(
         &self,
         device: Device,
         info: &BufferMemoryRequirementsInfo2,
