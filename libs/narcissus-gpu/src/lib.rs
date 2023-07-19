@@ -212,6 +212,7 @@ pub struct BufferDesc {
 
 pub struct ImageDesc {
     pub memory_location: MemoryLocation,
+    pub host_mapped: bool,
     pub usage: ImageUsageFlags,
     pub dimension: ImageDimension,
     pub format: ImageFormat,

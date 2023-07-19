@@ -31,7 +31,7 @@ mod libc;
 mod wsi;
 
 use self::{
-    allocator::{VulkanAllocator, VulkanMemory, VulkanMemoryDedicatedDesc},
+    allocator::{VulkanAllocator, VulkanMemory},
     barrier::{vulkan_image_memory_barrier, vulkan_memory_barrier},
     convert::*,
     wsi::{VulkanWsi, VulkanWsiFrame},
@@ -53,8 +53,8 @@ pub struct VulkanConstants {
     /// transient allocations.
     transient_buffer_size: u64,
 
-    /// Default size for backing allocations used by the TLSF allocator.
-    tlsf_block_size: u64,
+    /// Maximum size for backing allocations used by the TLSF allocator.
+    tlsf_maximum_block_size: u64,
 
     /// The max number of descriptor sets allocatable from each descriptor pool.
     descriptor_pool_max_sets: u32,
@@ -72,7 +72,7 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     num_frames: 2,
     swapchain_destroy_delay: 8,
     transient_buffer_size: 4 * 1024 * 1024,
-    tlsf_block_size: 128 * 1024 * 1024,
+    tlsf_maximum_block_size: 128 * 1024 * 1024,
     descriptor_pool_max_sets: 500,
     descriptor_pool_sampler_count: 100,
     descriptor_pool_uniform_buffer_count: 500,
@@ -343,7 +343,7 @@ pub(crate) struct VulkanDevice {
 
     recycled_transient_buffers: Mutex<VecDeque<VulkanTransientBuffer>>,
 
-    allocators: [Option<Box<VulkanAllocator>>; vk::MAX_MEMORY_TYPES as usize],
+    allocator: VulkanAllocator,
 
     physical_device_properties: Box<vk::PhysicalDeviceProperties2>,
     _physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties>,
@@ -652,14 +652,6 @@ impl VulkanDevice {
             })
         }));
 
-        let allocators = std::array::from_fn(|i| {
-            if i < physical_device_memory_properties.memory_type_count.widen() {
-                Some(default())
-            } else {
-                None
-            }
-        });
-
         Self {
             instance,
             physical_device,
@@ -694,7 +686,7 @@ impl VulkanDevice {
             recycled_descriptor_pools: default(),
             recycled_transient_buffers: default(),
 
-            allocators,
+            allocator: default(),
 
             _global_fn: global_fn,
             instance_fn,
@@ -790,7 +782,7 @@ impl VulkanDevice {
         semaphore
     }
 
-    fn create_buffer(&self, desc: &BufferDesc, initial_data: Option<&[u8]>) -> Buffer {
+    fn create_buffer(&self, desc: &BufferDesc, data: Option<&[u8]>) -> Buffer {
         let queue_family_indices = &[self.universal_queue_family_index];
 
         let create_info = vk::BufferCreateInfo {
@@ -821,30 +813,27 @@ impl VulkanDevice {
             &mut memory_requirements,
         );
 
-        let memory = if memory_dedicated_requirements.prefers_dedicated_allocation
-            == vk::Bool32::True
-            || memory_dedicated_requirements.requires_dedicated_allocation == vk::Bool32::True
-        {
-            self.allocate_memory_dedicated(
-                desc.memory_location,
-                &memory_requirements.memory_requirements,
-                &VulkanMemoryDedicatedDesc::Buffer(buffer),
-            )
-        } else {
-            self.allocate_memory(
-                desc.memory_location,
-                &memory_requirements.memory_requirements,
-            )
+        let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo {
+            buffer,
+            ..default()
         };
 
-        if let Some(initial_data) = initial_data {
+        let memory = self.allocate_memory(
+            desc.memory_location,
+            desc.host_mapped,
+            &memory_requirements.memory_requirements,
+            &memory_dedicated_requirements,
+            &memory_dedicated_allocate_info,
+        );
+
+        if let Some(data) = data {
             assert!(!memory.mapped_ptr().is_null());
             // SAFETY: The memory has just been allocated, so as long as the pointer is
             // non-null, then we can create a slice for it.
             unsafe {
                 let dst =
                     std::slice::from_raw_parts_mut(memory.mapped_ptr(), memory.size().widen());
-                dst[..desc.size].copy_from_slice(initial_data);
+                dst[..desc.size].copy_from_slice(data);
             }
         }
 
@@ -1001,21 +990,15 @@ impl Device for VulkanDevice {
             &mut memory_requirements,
         );
 
-        let memory = if memory_dedicated_requirements.prefers_dedicated_allocation
-            == vk::Bool32::True
-            || memory_dedicated_requirements.requires_dedicated_allocation == vk::Bool32::True
-        {
-            self.allocate_memory_dedicated(
-                desc.memory_location,
-                &memory_requirements.memory_requirements,
-                &VulkanMemoryDedicatedDesc::Image(image),
-            )
-        } else {
-            self.allocate_memory(
-                desc.memory_location,
-                &memory_requirements.memory_requirements,
-            )
-        };
+        let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo { image, ..default() };
+
+        let memory = self.allocate_memory(
+            desc.memory_location,
+            desc.host_mapped,
+            &memory_requirements.memory_requirements,
+            &memory_dedicated_requirements,
+            &memory_dedicated_allocate_info,
+        );
 
         unsafe {
             self.device_fn.bind_image_memory2(
@@ -2376,9 +2359,15 @@ impl VulkanDevice {
                 &mut memory_requirements,
             );
 
+            let memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
+            let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default();
+
             let memory = self.allocate_memory(
                 MemoryLocation::Host,
+                true,
                 &memory_requirements.memory_requirements,
+                &memory_dedicated_requirements,
+                &memory_dedicated_allocate_info,
             );
 
             unsafe {
@@ -2510,9 +2499,15 @@ impl VulkanDevice {
             &mut memory_requirements,
         );
 
+        let memory_dedicated_requirements = vk::MemoryDedicatedRequirements::default();
+        let memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default();
+
         let memory = self.allocate_memory(
             MemoryLocation::Host,
+            true,
             &memory_requirements.memory_requirements,
+            &memory_dedicated_requirements,
+            &memory_dedicated_allocate_info,
         );
 
         assert!(!memory.mapped_ptr().is_null());

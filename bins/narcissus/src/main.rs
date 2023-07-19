@@ -84,6 +84,7 @@ pub fn main() {
 
     let blåhaj_image = device.create_image(&ImageDesc {
         memory_location: MemoryLocation::Device,
+        host_mapped: false,
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::RGBA8_SRGB,
@@ -116,6 +117,7 @@ pub fn main() {
     let glyph_atlas = device.create_image(&ImageDesc {
         memory_location: MemoryLocation::Device,
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+        host_mapped: false,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::R8_UNORM,
         initial_layout: ImageLayout::Optimal,
@@ -294,6 +296,7 @@ pub fn main() {
             device.destroy_image(&frame, depth_image);
             depth_image = device.create_image(&ImageDesc {
                 memory_location: MemoryLocation::Device,
+                host_mapped: false,
                 usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 dimension: ImageDimension::Type2d,
                 format: ImageFormat::DEPTH_F32,
