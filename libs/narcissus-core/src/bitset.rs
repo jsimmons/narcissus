@@ -60,6 +60,20 @@ impl Bits for u64 {
     }
 }
 
+impl Bits for u32 {
+    fn is_zero(self) -> bool {
+        self == 0
+    }
+
+    fn clear_least_significant_set_bit(&mut self) -> u32 {
+        let b = *self;
+        let t = b & (!b + 1);
+        let index = b.trailing_zeros();
+        *self ^= t;
+        index
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::*;
@@ -67,7 +81,7 @@ mod tests {
     fn iterate_bits() {
         {
             let bits_iter = BitIter::new(std::iter::once(
-                0b0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101,
+                0b0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_u64,
             ));
             let mut i = 0;
             for index in bits_iter {
@@ -80,7 +94,7 @@ mod tests {
         {
             let bits_iter = BitIter::new(
             std::iter::repeat(
-                0b0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101,
+                0b0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_0101_u64,
             )
             .take(10),
         );
@@ -93,6 +107,6 @@ mod tests {
         }
 
         assert_eq!(BitIter::new(std::iter::empty::<u64>()).next(), None);
-        assert_eq!(BitIter::new(std::iter::repeat(0).take(10)).next(), None);
+        assert_eq!(BitIter::new(std::iter::repeat(0_u64).take(10)).next(), None);
     }
 }
