@@ -1,7 +1,7 @@
 //! Two Level Seggregated Fit Allocator
 //! ===
 //!
-//! [TLSF][tlsf] is a constant time, low fragmentation good-fit allocator based
+//! [Tlsf][tlsf] is a constant time, low fragmentation good-fit allocator based
 //! on seggregated free-lists with a two-level bitmap acceleration structure.
 //!
 //! Memory is allocated by the underlying allocator into super-blocks,
