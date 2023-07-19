@@ -53,8 +53,13 @@ pub struct VulkanConstants {
     /// transient allocations.
     transient_buffer_size: u64,
 
-    /// Maximum size for backing allocations used by the TLSF allocator.
-    tlsf_maximum_block_size: u64,
+    /// Default size for backing allocations used by the Tlsf allocator.
+    tlsf_default_super_block_size: u64,
+
+    /// For memory heaps that are smaller than `tlsf_default_super_block_size` *
+    /// `tlsf_small_super_block_divisor`, use heap size divided by
+    /// `tlsf_small_super_block_divisor` as the super block size.
+    tlsf_small_super_block_divisor: u64,
 
     /// The max number of descriptor sets allocatable from each descriptor pool.
     descriptor_pool_max_sets: u32,
@@ -72,7 +77,8 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     num_frames: 2,
     swapchain_destroy_delay: 8,
     transient_buffer_size: 4 * 1024 * 1024,
-    tlsf_maximum_block_size: 128 * 1024 * 1024,
+    tlsf_default_super_block_size: 128 * 1024 * 1024,
+    tlsf_small_super_block_divisor: 16,
     descriptor_pool_max_sets: 500,
     descriptor_pool_sampler_count: 100,
     descriptor_pool_uniform_buffer_count: 500,
@@ -652,6 +658,8 @@ impl VulkanDevice {
             })
         }));
 
+        let allocator = VulkanAllocator::new(physical_device_memory_properties.as_ref());
+
         Self {
             instance,
             physical_device,
@@ -686,7 +694,7 @@ impl VulkanDevice {
             recycled_descriptor_pools: default(),
             recycled_transient_buffers: default(),
 
-            allocator: default(),
+            allocator,
 
             _global_fn: global_fn,
             instance_fn,
