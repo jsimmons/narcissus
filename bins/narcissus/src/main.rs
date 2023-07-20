@@ -12,7 +12,7 @@ use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics, TouchedGlyph
 use narcissus_gpu::{
     create_device, Access, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, Extent2d,
     Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
-    ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
+    ImageTiling, ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
 use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, HalfTurn, Mat3, Mat4, Point3, Vec3};
@@ -88,7 +88,7 @@ pub fn main() {
         usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::RGBA8_SRGB,
-        initial_layout: ImageLayout::Optimal,
+        tiling: ImageTiling::Optimal,
         width: blåhaj_image_data.width() as u32,
         height: blåhaj_image_data.height() as u32,
         depth: 1,
@@ -120,7 +120,7 @@ pub fn main() {
         host_mapped: false,
         dimension: ImageDimension::Type2d,
         format: ImageFormat::R8_UNORM,
-        initial_layout: ImageLayout::Optimal,
+        tiling: ImageTiling::Optimal,
         width: glyph_cache.width() as u32,
         height: glyph_cache.height() as u32,
         depth: 1,
@@ -300,7 +300,7 @@ pub fn main() {
                 usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 dimension: ImageDimension::Type2d,
                 format: ImageFormat::DEPTH_F32,
-                initial_layout: ImageLayout::Optimal,
+                tiling: ImageTiling::Optimal,
                 width,
                 height,
                 depth: 1,

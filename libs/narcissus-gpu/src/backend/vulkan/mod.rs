@@ -19,9 +19,9 @@ use crate::{
     BindGroupLayoutDesc, Buffer, BufferArg, BufferDesc, BufferImageCopy, BufferUsageFlags,
     CmdBuffer, ComputePipelineDesc, Device, Extent2d, Extent3d, Frame, GlobalBarrier,
     GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit, ImageDesc, ImageDimension,
-    ImageFormat, ImageLayout, ImageUsageFlags, ImageViewDesc, IndexType, MemoryLocation, Offset2d,
-    Offset3d, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter,
-    SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
+    ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, ImageViewDesc, IndexType,
+    MemoryLocation, Offset2d, Offset3d, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp,
+    SamplerDesc, SamplerFilter, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
 };
 
 mod allocator;
@@ -61,8 +61,8 @@ pub struct VulkanConstants {
     /// `tlsf_small_super_block_divisor` as the super block size.
     tlsf_small_super_block_divisor: u64,
 
-    /// Force use of separate allocators for images and buffers.
-    tlsf_force_segregated_image_allocator: bool,
+    /// Force use of separate allocators for optimal tiling images and buffers.
+    tlsf_force_segregated_non_linear_allocator: bool,
 
     /// The max number of descriptor sets allocatable from each descriptor pool.
     descriptor_pool_max_sets: u32,
@@ -82,7 +82,7 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     transient_buffer_size: 4 * 1024 * 1024,
     tlsf_default_super_block_size: 128 * 1024 * 1024,
     tlsf_small_super_block_divisor: 16,
-    tlsf_force_segregated_image_allocator: false,
+    tlsf_force_segregated_non_linear_allocator: false,
     descriptor_pool_max_sets: 500,
     descriptor_pool_sampler_count: 100,
     descriptor_pool_uniform_buffer_count: 500,
@@ -817,6 +817,7 @@ impl VulkanDevice {
 
         let memory = self.allocate_memory(
             desc.memory_location,
+            false,
             desc.host_mapped,
             allocator::VulkanAllocationResource::Buffer(buffer),
         );
@@ -930,6 +931,8 @@ impl Device for VulkanDevice {
             depth: desc.depth,
         };
 
+        let tiling = vulkan_image_tiling(desc.tiling);
+
         let mut usage = default();
         if desc.usage.contains(ImageUsageFlags::SAMPLED) {
             usage |= vk::ImageUsageFlags::SAMPLED;
@@ -959,7 +962,7 @@ impl Device for VulkanDevice {
             mip_levels: desc.mip_levels,
             array_layers: desc.layer_count,
             samples: vk::SampleCountFlags::SAMPLE_COUNT_1,
-            tiling: vk::ImageTiling::OPTIMAL,
+            tiling,
             usage,
             sharing_mode: vk::SharingMode::Exclusive,
             queue_family_indices: queue_family_indices.into(),
@@ -974,6 +977,7 @@ impl Device for VulkanDevice {
 
         let memory = self.allocate_memory(
             desc.memory_location,
+            desc.tiling == ImageTiling::Optimal,
             desc.host_mapped,
             allocator::VulkanAllocationResource::Image(image),
         );
@@ -2329,6 +2333,7 @@ impl VulkanDevice {
 
             let memory = self.allocate_memory(
                 MemoryLocation::Host,
+                false,
                 true,
                 allocator::VulkanAllocationResource::Buffer(buffer),
             );
@@ -2453,6 +2458,7 @@ impl VulkanDevice {
 
         let memory = self.allocate_memory(
             MemoryLocation::Host,
+            false,
             true,
             allocator::VulkanAllocationResource::Buffer(buffer),
         );

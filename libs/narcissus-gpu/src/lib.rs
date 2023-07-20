@@ -216,7 +216,7 @@ pub struct ImageDesc {
     pub usage: ImageUsageFlags,
     pub dimension: ImageDimension,
     pub format: ImageFormat,
-    pub initial_layout: ImageLayout,
+    pub tiling: ImageTiling,
     pub width: u32,
     pub height: u32,
     pub depth: u32,
@@ -624,6 +624,12 @@ impl Access {
 pub enum ImageLayout {
     Optimal,
     General,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ImageTiling {
+    Linear,
+    Optimal,
 }
 
 pub struct GlobalBarrier<'a> {

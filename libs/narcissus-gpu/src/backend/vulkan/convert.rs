@@ -6,7 +6,8 @@ use vulkan_sys as vk;
 use crate::{
     BindingType, BlendMode, BufferUsageFlags, ClearValue, CompareOp, CullingMode, FrontFace,
     ImageAspectFlags, ImageDimension, ImageFormat, ImageSubresourceLayers, ImageSubresourceRange,
-    IndexType, LoadOp, PolygonMode, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Topology,
+    ImageTiling, IndexType, LoadOp, PolygonMode, ShaderStageFlags, StencilOp, StencilOpState,
+    StoreOp, Topology,
 };
 
 #[must_use]
@@ -300,5 +301,12 @@ pub fn vulkan_subresource_range(subresource: &ImageSubresourceRange) -> vk::Imag
         level_count: subresource.mip_level_count,
         base_array_layer: subresource.base_array_layer,
         layer_count: subresource.array_layer_count,
+    }
+}
+
+pub fn vulkan_image_tiling(tiling: ImageTiling) -> vk::ImageTiling {
+    match tiling {
+        ImageTiling::Linear => vk::ImageTiling::LINEAR,
+        ImageTiling::Optimal => vk::ImageTiling::OPTIMAL,
     }
 }

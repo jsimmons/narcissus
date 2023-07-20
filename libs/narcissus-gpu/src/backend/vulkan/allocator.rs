@@ -31,8 +31,10 @@ pub struct VulkanMemoryHeap {
 pub struct VulkanMemoryType {
     tlsf: Mutex<Tlsf>,
 
-    /// Tlsf instance used exclusively for images when the
-    tlsf_images: Mutex<Tlsf>,
+    /// Tlsf instance used exclusively for non-linear images when the
+    /// `buffer_image_granularity` limit is greater than the minimum alignment
+    /// guaranteed by the current Tlsf configuration.
+    tlsf_non_linear: Mutex<Tlsf>,
 }
 
 #[derive(Default)]
@@ -40,7 +42,7 @@ pub struct VulkanAllocator {
     memory_heaps: [VulkanMemoryHeap; vk::MAX_MEMORY_HEAPS as usize],
     memory_types: [VulkanMemoryType; vk::MAX_MEMORY_TYPES as usize],
     dedicated: Mutex<HashSet<vk::DeviceMemory>>,
-    use_segregated_image_allocator: bool,
+    use_segregated_non_linear_allocator: bool,
     allocation_count: AtomicU32,
 }
 
@@ -74,7 +76,7 @@ impl VulkanAllocator {
 
         Self {
             memory_heaps,
-            use_segregated_image_allocator,
+            use_segregated_non_linear_allocator: use_segregated_image_allocator,
             ..default()
         }
     }
@@ -84,7 +86,7 @@ impl VulkanAllocator {
 pub struct VulkanSuperBlockInfo {
     memory: vk::DeviceMemory,
     mapped_ptr: *mut u8,
-    image_allocator: bool,
+    non_linear: bool,
     memory_type_index: u32,
 }
 
@@ -185,8 +187,8 @@ impl VulkanDevice {
             VulkanMemory::SubAlloc(sub_alloc) => {
                 let user_data = sub_alloc.allocation.user_data();
                 let memory_type = &self.allocator.memory_types[user_data.memory_type_index.widen()];
-                let mut tlsf = if user_data.image_allocator {
-                    memory_type.tlsf_images.lock()
+                let mut tlsf = if user_data.non_linear {
+                    memory_type.tlsf_non_linear.lock()
                 } else {
                     memory_type.tlsf.lock()
                 };
@@ -279,6 +281,7 @@ impl VulkanDevice {
     pub fn allocate_memory(
         &self,
         memory_location: MemoryLocation,
+        non_linear: bool,
         host_mapped: bool,
         resource: VulkanAllocationResource,
     ) -> VulkanMemory {
@@ -301,7 +304,7 @@ impl VulkanDevice {
             ..default()
         };
 
-        let (is_image_allocation, memory_dedicated_allocate_info) = match resource {
+        let memory_dedicated_allocate_info = match resource {
             // SAFETY: Safe so long as `_next` on `memory_requirements` is valid.
             VulkanAllocationResource::Buffer(buffer) => unsafe {
                 self.device_fn.get_buffer_memory_requirements2(
@@ -312,13 +315,10 @@ impl VulkanDevice {
                     },
                     &mut memory_requirements,
                 );
-                (
-                    false,
-                    vk::MemoryDedicatedAllocateInfo {
-                        buffer,
-                        ..default()
-                    },
-                )
+                vk::MemoryDedicatedAllocateInfo {
+                    buffer,
+                    ..default()
+                }
             },
             // SAFETY: Safe so long as `_next` on `memory_requirements` is valid.
             VulkanAllocationResource::Image(image) => unsafe {
@@ -327,7 +327,7 @@ impl VulkanDevice {
                     &vk::ImageMemoryRequirementsInfo2 { image, ..default() },
                     &mut memory_requirements,
                 );
-                (true, vk::MemoryDedicatedAllocateInfo { image, ..default() })
+                vk::MemoryDedicatedAllocateInfo { image, ..default() }
             },
         };
 
@@ -381,12 +381,12 @@ impl VulkanDevice {
                 // If the allocation is smaller than the Tlsf super-block size for this
                 // allocation type, we should attempt sub-allocation.
                 if size <= memory_heap.tlsf_super_block_size {
-                    let (image_allocator, mut tlsf) = if (VULKAN_CONSTANTS
-                        .tlsf_force_segregated_image_allocator
-                        || self.allocator.use_segregated_image_allocator)
-                        && is_image_allocation
+                    let (non_linear, mut tlsf) = if (VULKAN_CONSTANTS
+                        .tlsf_force_segregated_non_linear_allocator
+                        || self.allocator.use_segregated_non_linear_allocator)
+                        && non_linear
                     {
-                        (true, memory_type.tlsf_images.lock())
+                        (true, memory_type.tlsf_non_linear.lock())
                     } else {
                         (false, memory_type.tlsf.lock())
                     };
@@ -409,7 +409,9 @@ impl VulkanDevice {
                                 VulkanSuperBlockInfo {
                                     memory,
                                     mapped_ptr,
-                                    image_allocator,
+                                    // `non_linear` is only true here if we're allocating in the `tlsf_non_linear`
+                                    // allocator, *not* if the resource we're allocating for is non-linear.
+                                    non_linear,
                                     memory_type_index: memory_type_index as u32,
                                 },
                             );
@@ -473,7 +475,7 @@ impl VulkanDevice {
                         .free_memory(self.device, super_block.user_data.memory, None)
                 }
             }
-            for super_block in memory_type.tlsf_images.get_mut().super_blocks() {
+            for super_block in memory_type.tlsf_non_linear.get_mut().super_blocks() {
                 unsafe {
                     self.device_fn
                         .free_memory(self.device, super_block.user_data.memory, None)
