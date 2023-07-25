@@ -90,7 +90,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use narcissus_core::{linear_log_binning, static_assert, Widen};
+use narcissus_core::{default, linear_log_binning, static_assert, Widen};
 
 // The log2 of the size of the 'linear' bin.
 pub const LINEAR_LOG2: u32 = 9; // 2^9 = 512
@@ -117,8 +117,21 @@ pub struct SuperBlock<T>
 where
     T: Copy + Default,
 {
-    _first_block_index: BlockIndex,
+    /// Index of the first block allocated from this super block.
+    ///
+    /// Since we always merge left the block at offset 0 in a SuperBlock will never
+    /// be merged away, the index is stable and we can store it in the SuperBlock.
+    first_block_index: BlockIndex,
     pub user_data: T,
+}
+
+impl<T: Copy + Default> Default for SuperBlock<T> {
+    fn default() -> Self {
+        Self {
+            first_block_index: INVALID_BLOCK_INDEX,
+            user_data: default(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -284,6 +297,8 @@ where
     free_block_head: Option<BlockIndex>,
     blocks: Vec<Block>,
 
+    super_block_free_dirty: bool,
+    free_super_blocks: Vec<SuperBlockIndex>,
     super_blocks: Vec<SuperBlock<T>>,
 }
 
@@ -307,26 +322,25 @@ where
             empty_block_heads: [None; SUB_BIN_COUNT * BIN_COUNT],
             free_block_head: None,
             blocks: vec![DUMMY_BLOCK],
+            super_block_free_dirty: false,
+            free_super_blocks: vec![],
             super_blocks: vec![],
         }
     }
 
-    /// Returns a slice containing all the super_blocks added to the allocator.
-    /// Only the `user_data` field is accessible.
-    pub fn super_blocks(&self) -> &[SuperBlock<T>] {
-        &self.super_blocks
-    }
-
     /// Clear the allocator state.
-    ///
-    /// Make sure to clean up any super blocks before calling this.
-    pub fn clear(&mut self) {
+    pub fn clear<F: FnMut(T)>(&mut self, mut f: F) {
+        for super_block in &self.super_blocks {
+            f(super_block.user_data)
+        }
+
         self.bitmap_0 = 0;
         self.bitmap_1.fill(0);
         self.empty_block_heads.fill(None);
         self.free_block_head = None;
         self.blocks.clear();
         self.blocks.push(DUMMY_BLOCK);
+        self.free_super_blocks.clear();
         self.super_blocks.clear()
     }
 
@@ -524,25 +538,88 @@ where
         self.free_block_head = Some(block_index);
     }
 
+    /// Insert a super block into the memory allocator.
     pub fn insert_super_block(&mut self, size: u64, user_data: T) {
         assert!(size != 0 && size < i32::MAX as u64);
-        assert!(self.super_blocks.len() < i32::MAX as usize);
 
-        // Ranges checked in asserts above.
-        let size = size as u32;
-        let len = self.super_blocks.len() as u32;
+        let super_block_index = if let Some(super_block_index) = self.free_super_blocks.pop() {
+            super_block_index
+        } else {
+            assert!(self.super_blocks.len() < u32::MAX.widen());
+            let super_block_index = SuperBlockIndex(self.super_blocks.len() as u32);
+            self.super_blocks.push(default());
+            super_block_index
+        };
 
-        let super_block_index = SuperBlockIndex(len);
-        let block_index = self.request_block(0, size, super_block_index);
-
-        self.super_blocks.push(SuperBlock {
-            // The block at offset 0 in a SuperBlock will never be merged away, so the index
-            // is stable and we can store it in the SuperBlock itself.
-            _first_block_index: block_index,
-            user_data,
-        });
-
+        let block_index = self.request_block(0, size as u32, super_block_index);
         self.insert_block(block_index);
+
+        // Just in case we add a super block then never use it.
+        self.super_block_free_dirty = true;
+
+        let super_block = &mut self.super_blocks[super_block_index];
+        super_block.first_block_index = block_index;
+        super_block.user_data = user_data;
+    }
+
+    fn recycle_super_block(&mut self, super_block_index: SuperBlockIndex) {
+        let super_block = &self.super_blocks[super_block_index];
+
+        let block = &self.blocks[super_block.first_block_index];
+        debug_assert!(block.is_free());
+        debug_assert!(block.phys_link.is_unlinked());
+        let block_index = super_block.first_block_index;
+
+        // Block is free so we always need to extract it first.
+        self.extract_block(block_index);
+        self.recycle_block(block_index);
+
+        self.super_blocks[super_block_index] = default();
+
+        self.free_super_blocks.push(super_block_index);
+    }
+
+    /// Walk all the super blocks in this Tlsf instance, removing all empty blocks.
+    ///
+    /// The callback `f` will be called for each freed block, passing the user_data
+    /// for that super block.
+    pub fn remove_empty_super_blocks<F>(&mut self, mut f: F)
+    where
+        F: FnMut(T),
+    {
+        // Only scan when we've made a super block free since the last scan.
+        if !self.super_block_free_dirty {
+            return;
+        }
+
+        self.super_block_free_dirty = false;
+
+        let super_blocks_to_remove = self
+            .super_blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(super_block_index, super_block)| {
+                // The `first_block_index` will be invalid if the super block is already freed.
+                if super_block.first_block_index == INVALID_BLOCK_INDEX {
+                    return None;
+                }
+
+                let block = &self.blocks[super_block.first_block_index];
+
+                // Check whether this block is unallocated, and also not split.
+                if block.is_free() && block.phys_link.is_unlinked() {
+                    Some(SuperBlockIndex(super_block_index as u32))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for super_block_index in super_blocks_to_remove {
+            let user_data = self.super_blocks[super_block_index].user_data;
+            f(user_data);
+            self.recycle_super_block(super_block_index)
+        }
     }
 
     pub fn alloc(&mut self, size: u64, align: u64) -> Option<Allocation<T>> {
@@ -643,6 +720,10 @@ where
                 block_index = into_block_index;
             }
         }
+
+        // If this block is now the only block left in the super block, flag this
+        // so we can attempt to free unused blocks.
+        self.super_block_free_dirty |= self.blocks[block_index].phys_link.is_unlinked();
 
         // Insert the merged free block.
         self.insert_block(block_index);

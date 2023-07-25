@@ -152,6 +152,10 @@ pub fn main() {
     {
         let frame = device.begin_frame();
 
+        for buffer in buffers.drain(..) {
+            device.destroy_buffer(&frame, buffer);
+        }
+
         let blåhaj_buffer = device.request_transient_buffer_with_data(
             &frame,
             &thread_token,

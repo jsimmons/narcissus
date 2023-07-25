@@ -475,29 +475,47 @@ impl VulkanDevice {
         for allocation in frame.destroyed_allocations.get_mut().drain(..) {
             self.free_memory(allocation);
         }
+
+        for memory_type in &self.allocator.memory_types[..self
+            .physical_device_memory_properties
+            .memory_type_count
+            .widen()]
+        {
+            memory_type
+                .tlsf
+                .lock()
+                .remove_empty_super_blocks(|user_data| unsafe {
+                    self.device_fn
+                        .free_memory(self.device, user_data.memory, None)
+                });
+
+            memory_type
+                .tlsf_non_linear
+                .lock()
+                .remove_empty_super_blocks(|user_data| unsafe {
+                    self.device_fn
+                        .free_memory(self.device, user_data.memory, None)
+                })
+        }
     }
 
     pub fn allocator_drop(&mut self) {
         for memory_type in self.allocator.memory_types.iter_mut() {
-            // Clear out all memory blocks held by the Tlsf allocators.
-            for super_block in memory_type.tlsf.get_mut().super_blocks() {
-                unsafe {
+            memory_type.tlsf.get_mut().clear(|user_data| unsafe {
+                self.device_fn
+                    .free_memory(self.device, user_data.memory, None)
+            });
+            memory_type
+                .tlsf_non_linear
+                .get_mut()
+                .clear(|user_data| unsafe {
                     self.device_fn
-                        .free_memory(self.device, super_block.user_data.memory, None)
-                }
-            }
-            for super_block in memory_type.tlsf_non_linear.get_mut().super_blocks() {
-                unsafe {
-                    self.device_fn
-                        .free_memory(self.device, super_block.user_data.memory, None)
-                }
-            }
+                        .free_memory(self.device, user_data.memory, None)
+                });
         }
 
-        // Clear out all dedicated allocations.
-        let dedicated = self.allocator.dedicated.get_mut();
-        for memory in dedicated.iter() {
-            unsafe { self.device_fn.free_memory(self.device, *memory, None) }
+        for &memory in self.allocator.dedicated.get_mut().iter() {
+            unsafe { self.device_fn.free_memory(self.device, memory, None) }
         }
     }
 }
