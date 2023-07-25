@@ -289,6 +289,47 @@ impl VulkanDevice {
         Some((memory, mapped_ptr))
     }
 
+    unsafe fn free_super_block(&self, user_data: &VulkanSuperBlockInfo) {
+        self.device_fn
+            .free_memory(self.device, user_data.memory, None);
+
+        let heap_index = self.physical_device_memory_properties.memory_types
+            [user_data.memory_type_index.widen()]
+        .heap_index;
+        let memory_heap = &self.allocator.memory_heaps[heap_index.widen()];
+
+        self.allocator
+            .allocation_count
+            .fetch_sub(1, Ordering::SeqCst);
+
+        memory_heap
+            .total_allocated_bytes
+            .fetch_sub(memory_heap.tlsf_super_block_size, Ordering::SeqCst);
+    }
+
+    #[cold]
+    fn emergency_gc(&self) {
+        for memory_type in &self.allocator.memory_types[..self
+            .physical_device_memory_properties
+            .memory_type_count
+            .widen()]
+        {
+            memory_type
+                .tlsf
+                .lock()
+                .remove_empty_super_blocks(|user_data| unsafe {
+                    self.free_super_block(&user_data)
+                });
+
+            memory_type
+                .tlsf_non_linear
+                .lock()
+                .remove_empty_super_blocks(|user_data| unsafe {
+                    self.free_super_block(&user_data)
+                });
+        }
+    }
+
     pub fn allocate_memory(
         &self,
         memory_location: MemoryLocation,
@@ -347,9 +388,23 @@ impl VulkanDevice {
         let size = memory_requirements.size;
         let align = memory_requirements.alignment;
 
-        // Outer loop here so that if we fail the first time around, we can clear the
-        // preferred memory property flags and try again.
-        loop {
+        #[derive(PartialEq)]
+        enum Pass {
+            /// Normal first pass attempt to allocate.
+            Initial,
+            /// Clear the preferred memory_property_flags and try again.
+            NoPreferredFlags,
+            /// Finally trigger an emergency release of unused Tlsf super blocks.
+            EmergencyGc,
+        }
+
+        for pass in [Pass::Initial, Pass::NoPreferredFlags, Pass::EmergencyGc] {
+            match pass {
+                Pass::Initial => {}
+                Pass::NoPreferredFlags => preferred_memory_property_flags = default(),
+                Pass::EmergencyGc => self.emergency_gc(),
+            }
+
             for memory_type_index in
                 BitIter::new(std::iter::once(memory_requirements.memory_type_bits))
             {
@@ -460,15 +515,9 @@ impl VulkanDevice {
                     });
                 }
             }
-
-            // If we have any preferred flags, then try clearing those and trying again.
-            // If there's no preferred flags left, then we couldn't allocate any memory.
-            if preferred_memory_property_flags == default() {
-                panic!("allocation failure")
-            } else {
-                preferred_memory_property_flags = default()
-            }
         }
+
+        panic!("allocation failure")
     }
 
     pub fn allocator_begin_frame(&self, frame: &mut VulkanFrame) {
@@ -485,17 +534,13 @@ impl VulkanDevice {
                 .tlsf
                 .lock()
                 .remove_empty_super_blocks(|user_data| unsafe {
-                    self.device_fn
-                        .free_memory(self.device, user_data.memory, None)
+                    self.free_super_block(&user_data)
                 });
 
             memory_type
                 .tlsf_non_linear
                 .lock()
-                .remove_empty_super_blocks(|user_data| unsafe {
-                    self.device_fn
-                        .free_memory(self.device, user_data.memory, None)
-                })
+                .remove_empty_super_blocks(|user_data| unsafe { self.free_super_block(&user_data) })
         }
     }
 
