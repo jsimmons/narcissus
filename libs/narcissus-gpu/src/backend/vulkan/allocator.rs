@@ -90,6 +90,17 @@ pub struct VulkanSuperBlockInfo {
     memory_type_index: u32,
 }
 
+impl Default for VulkanSuperBlockInfo {
+    fn default() -> Self {
+        Self {
+            memory: vk::DeviceMemory::null(),
+            mapped_ptr: std::ptr::null_mut(),
+            non_linear: false,
+            memory_type_index: !0,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct VulkanMemoryDedicated {
     memory: vk::DeviceMemory,

@@ -115,7 +115,7 @@ struct SuperBlockIndex(u32);
 
 pub struct SuperBlock<T>
 where
-    T: Copy,
+    T: Copy + Default,
 {
     _first_block_index: BlockIndex,
     pub user_data: T,
@@ -234,7 +234,7 @@ impl IndexMut<BlockIndex> for Vec<Block> {
 
 impl<T> Index<SuperBlockIndex> for Vec<SuperBlock<T>>
 where
-    T: Copy,
+    T: Copy + Default,
 {
     type Output = SuperBlock<T>;
 
@@ -246,7 +246,7 @@ where
 
 impl<T> IndexMut<SuperBlockIndex> for Vec<SuperBlock<T>>
 where
-    T: Copy,
+    T: Copy + Default,
 {
     #[inline(always)]
     fn index_mut(&mut self, index: SuperBlockIndex) -> &mut Self::Output {
@@ -275,7 +275,7 @@ impl<T> Allocation<T> {
 
 pub struct Tlsf<T>
 where
-    T: Copy,
+    T: Copy + Default,
 {
     bitmap_0: u32,
     bitmap_1: [u32; BIN_COUNT],
@@ -289,7 +289,7 @@ where
 
 impl<T> Default for Tlsf<T>
 where
-    T: Copy,
+    T: Copy + Default,
 {
     fn default() -> Self {
         Self::new()
@@ -298,7 +298,7 @@ where
 
 impl<T> Tlsf<T>
 where
-    T: Copy,
+    T: Copy + Default,
 {
     pub fn new() -> Self {
         Self {
