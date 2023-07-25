@@ -17,8 +17,8 @@ type Tlsf = tlsf::Tlsf<VulkanSuperBlockInfo>;
 pub struct VulkanMemoryHeap {
     /// The calculated Tlsf super-block size for this memory heap.
     ///
-    /// Smaller heaps will require a smaller super block size to prevent excess
-    /// memory waste. Calculate a suitable super block size using
+    /// Smaller heaps will require a smaller super-block size to prevent excess
+    /// memory waste. Calculate a suitable super-block size using
     /// `VULKAN_CONSTANTS.tlsf_default_super_block_size` and
     /// `VULKAN_CONSTANTS.tlsf_small_super_block_divisor`.
     tlsf_super_block_size: u64,
@@ -394,7 +394,7 @@ impl VulkanDevice {
             Initial,
             /// Clear the preferred memory_property_flags and try again.
             NoPreferredFlags,
-            /// Finally trigger an emergency release of unused Tlsf super blocks.
+            /// Finally trigger an emergency release of unused Tlsf super-blocks.
             EmergencyGc,
         }
 
