@@ -72,11 +72,12 @@ impl VulkanAllocator {
         // restriction cleverly, use a separate Tlsf allocator for images if
         // `buffer_image_granularity` is greater than the guaranteed alignment of the
         // Tlsf configuration.
-        let use_segregated_image_allocator = buffer_image_granularity > tlsf::MIN_ALIGNMENT as u64;
+        let use_segregated_non_linear_allocator =
+            buffer_image_granularity > tlsf::MIN_ALIGNMENT as u64;
 
         Self {
             memory_heaps,
-            use_segregated_non_linear_allocator: use_segregated_image_allocator,
+            use_segregated_non_linear_allocator,
             ..default()
         }
     }
