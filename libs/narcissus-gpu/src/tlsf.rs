@@ -538,6 +538,23 @@ where
         self.free_block_head = Some(block_index);
     }
 
+    fn recycle_super_block(&mut self, super_block_index: SuperBlockIndex) {
+        let super_block = &self.super_blocks[super_block_index];
+
+        let block = &self.blocks[super_block.first_block_index];
+        debug_assert!(block.is_free());
+        debug_assert!(block.phys_link.is_unlinked());
+        let block_index = super_block.first_block_index;
+
+        // Block is free so we always need to extract it first.
+        self.extract_block(block_index);
+        self.recycle_block(block_index);
+
+        self.super_blocks[super_block_index] = default();
+
+        self.free_super_blocks.push(super_block_index);
+    }
+
     /// Insert a super block into the memory allocator.
     pub fn insert_super_block(&mut self, size: u64, user_data: T) {
         assert!(size != 0 && size < i32::MAX as u64);
@@ -560,23 +577,6 @@ where
         let super_block = &mut self.super_blocks[super_block_index];
         super_block.first_block_index = block_index;
         super_block.user_data = user_data;
-    }
-
-    fn recycle_super_block(&mut self, super_block_index: SuperBlockIndex) {
-        let super_block = &self.super_blocks[super_block_index];
-
-        let block = &self.blocks[super_block.first_block_index];
-        debug_assert!(block.is_free());
-        debug_assert!(block.phys_link.is_unlinked());
-        let block_index = super_block.first_block_index;
-
-        // Block is free so we always need to extract it first.
-        self.extract_block(block_index);
-        self.recycle_block(block_index);
-
-        self.super_blocks[super_block_index] = default();
-
-        self.free_super_blocks.push(super_block_index);
     }
 
     /// Walk all the super blocks in this Tlsf instance, removing all empty blocks.
@@ -622,7 +622,7 @@ where
         }
     }
 
-    pub fn alloc(&mut self, size: u64, align: u64) -> Option<Allocation<T>> {
+    pub fn allocate(&mut self, size: u64, align: u64) -> Option<Allocation<T>> {
         assert!(
             size != 0
                 && align != 0
@@ -833,9 +833,9 @@ mod tests {
 
         tlsf.insert_super_block(1024, ());
 
-        let alloc0 = tlsf.alloc(512, 1).unwrap();
-        let alloc1 = tlsf.alloc(512, 1).unwrap();
-        assert!(tlsf.alloc(512, 1).is_none());
+        let alloc0 = tlsf.allocate(512, 1).unwrap();
+        let alloc1 = tlsf.allocate(512, 1).unwrap();
+        assert!(tlsf.allocate(512, 1).is_none());
 
         // Freeing should merge the blocks.
 
@@ -843,16 +843,16 @@ mod tests {
         tlsf.free(alloc1);
 
         // and allow us to allocate the full size again.
-        let alloc2 = tlsf.alloc(1024, 1).unwrap();
-        assert!(tlsf.alloc(512, 1).is_none());
+        let alloc2 = tlsf.allocate(1024, 1).unwrap();
+        assert!(tlsf.allocate(512, 1).is_none());
         tlsf.free(alloc2);
 
         {
             let mut allocations = (0..64)
-                .map(|_| tlsf.alloc(16, 1).unwrap())
+                .map(|_| tlsf.allocate(16, 1).unwrap())
                 .collect::<Vec<_>>();
 
-            assert!(tlsf.alloc(16, 1).is_none());
+            assert!(tlsf.allocate(16, 1).is_none());
 
             for allocation in allocations.drain(..).rev() {
                 tlsf.free(allocation);
@@ -860,16 +860,16 @@ mod tests {
         }
 
         // and allow us to allocate the full size again.
-        let alloc2 = tlsf.alloc(1024, 1).unwrap();
-        assert!(tlsf.alloc(512, 1).is_none());
+        let alloc2 = tlsf.allocate(1024, 1).unwrap();
+        assert!(tlsf.allocate(512, 1).is_none());
         tlsf.free(alloc2);
 
         {
             let mut allocations = (0..64)
-                .map(|_| tlsf.alloc(16, 1).unwrap())
+                .map(|_| tlsf.allocate(16, 1).unwrap())
                 .collect::<Vec<_>>();
 
-            assert!(tlsf.alloc(16, 1).is_none());
+            assert!(tlsf.allocate(16, 1).is_none());
 
             for allocation in allocations.drain(..) {
                 tlsf.free(allocation);
@@ -877,8 +877,8 @@ mod tests {
         }
 
         // and allow us to allocate the full size again.
-        let alloc2 = tlsf.alloc(1024, 1).unwrap();
-        assert!(tlsf.alloc(512, 1).is_none());
+        let alloc2 = tlsf.allocate(1024, 1).unwrap();
+        assert!(tlsf.allocate(512, 1).is_none());
         tlsf.free(alloc2);
     }
 
@@ -903,7 +903,7 @@ mod tests {
             let mut rng = Pcg64::with_seed(seed);
 
             let mut allocations = (0..(TOTAL_SIZE / ALLOCATION_SIZE))
-                .map(|_| tlsf.alloc(ALLOCATION_SIZE, 1).unwrap())
+                .map(|_| tlsf.allocate(ALLOCATION_SIZE, 1).unwrap())
                 .collect::<Vec<_>>();
 
             rng.shuffle(allocations.as_mut_slice());
@@ -923,14 +923,14 @@ mod tests {
         let small_size = 30;
 
         // Make a large allocation that splits the block.
-        let large = tlsf.alloc(large_size, 1).unwrap();
+        let large = tlsf.allocate(large_size, 1).unwrap();
         // Make a small allocation to inhibit merging upon free.
-        tlsf.alloc(small_size, 1).unwrap();
+        tlsf.allocate(small_size, 1).unwrap();
         // Free the large block, if all goes well this will be added to a bin which is
         // large enough to service another allocation of the same size.
         tlsf.free(large);
         // Allocate another large block, if this fails we've "lost" memory.
-        tlsf.alloc(large_size, 1).unwrap();
+        tlsf.allocate(large_size, 1).unwrap();
     }
 
     #[test]
@@ -938,7 +938,7 @@ mod tests {
     fn double_free() {
         let mut tlsf = Tlsf::new();
         tlsf.insert_super_block(1024, ());
-        let alloc = tlsf.alloc(512, 1).unwrap();
+        let alloc = tlsf.allocate(512, 1).unwrap();
         tlsf.free(alloc.clone());
         tlsf.free(alloc);
     }

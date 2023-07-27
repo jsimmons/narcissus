@@ -14,36 +14,82 @@ use super::{VulkanDevice, VulkanFrame, VULKAN_CONSTANTS};
 type Tlsf = tlsf::Tlsf<VulkanSuperBlockInfo>;
 
 #[derive(Default, Debug)]
-pub struct VulkanMemoryHeap {
-    /// The calculated Tlsf super-block size for this memory heap.
+pub struct VulkanHeapStats {
+    num_allocated_bytes: AtomicU64,
+    num_allocations: AtomicU32,
+}
+
+#[derive(Default, Debug)]
+pub struct VulkanAllocatorStats {
+    heap_stats: [VulkanHeapStats; vk::MAX_MEMORY_HEAPS as usize],
+    num_allocations: AtomicU32,
+}
+
+impl VulkanAllocatorStats {
+    /// Returns the total number of allocations made with `vkAllocateMemory` for all
+    /// memory types.
+    fn num_allocations(&self) -> u32 {
+        self.num_allocations.load(Ordering::Relaxed)
+    }
+
+    /// Returns the total number of bytes allocated from the given heap index.
+    fn num_allocated_bytes(&self, memory_heap_index: u32) -> u64 {
+        self.heap_stats[memory_heap_index.widen()]
+            .num_allocated_bytes
+            .load(Ordering::Relaxed)
+    }
+
+    /// Update the stats with an allocation of the given size and heap index.
+    fn allocate(&self, memory_heap_index: u32, size: u64) {
+        self.num_allocations.fetch_add(1, Ordering::SeqCst);
+        let heap_stats = &self.heap_stats[memory_heap_index.widen()];
+        heap_stats.num_allocations.fetch_add(1, Ordering::SeqCst);
+        heap_stats
+            .num_allocated_bytes
+            .fetch_add(size, Ordering::SeqCst);
+    }
+
+    /// Update the stats with a free of the given size and heap index.
+    fn free(&self, memory_heap_index: u32, size: u64) {
+        self.num_allocations.fetch_sub(1, Ordering::SeqCst);
+        let heap_stats = &self.heap_stats[memory_heap_index.widen()];
+        heap_stats.num_allocations.fetch_sub(1, Ordering::SeqCst);
+        heap_stats
+            .num_allocated_bytes
+            .fetch_sub(size, Ordering::SeqCst);
+    }
+}
+
+#[derive(Default)]
+pub struct VulkanAllocator {
+    /// The calculated Tlsf super-block size for each memory heap.
     ///
     /// Smaller heaps will require a smaller super-block size to prevent excess
     /// memory waste. Calculate a suitable super-block size using
     /// `VULKAN_CONSTANTS.tlsf_default_super_block_size` and
     /// `VULKAN_CONSTANTS.tlsf_small_super_block_divisor`.
-    tlsf_super_block_size: u64,
+    tlsf_super_block_size: [u64; vk::MAX_MEMORY_HEAPS as usize],
 
-    /// Total size in bytes we have allocated against this memory heap.
-    total_allocated_bytes: AtomicU64,
-}
+    /// Tracker for allocation statistics used for both debugging / profiling
+    /// features and budget decisions.
+    stats: VulkanAllocatorStats,
 
-#[derive(Default)]
-pub struct VulkanMemoryType {
-    tlsf: Mutex<Tlsf>,
+    /// Tlsf instance for each vulkan memory type.
+    tlsf: [Mutex<Tlsf>; vk::MAX_MEMORY_TYPES as usize],
 
-    /// Tlsf instance used exclusively for non-linear images when the
-    /// `buffer_image_granularity` limit is greater than the minimum alignment
-    /// guaranteed by the current Tlsf configuration.
-    tlsf_non_linear: Mutex<Tlsf>,
-}
+    /// Tlsf instance for each vulkan memory type used exclusively for non-linear
+    /// images when `use_segregated_non_linear_allocator` is true.
+    tlsf_non_linear: [Mutex<Tlsf>; vk::MAX_MEMORY_TYPES as usize],
 
-#[derive(Default)]
-pub struct VulkanAllocator {
-    memory_heaps: [VulkanMemoryHeap; vk::MAX_MEMORY_HEAPS as usize],
-    memory_types: [VulkanMemoryType; vk::MAX_MEMORY_TYPES as usize],
+    /// Tracks all live dedicated allocations, excluding those which are used as
+    /// Tlsf super-blocks.
     dedicated: Mutex<HashSet<vk::DeviceMemory>>,
+
+    /// When the physical device `buffer_image_granularity` limit is greater than
+    /// the minimum alignment guaranteed by the current Tlsf configuration this will
+    /// be true, and `tlsf_non_linear` Tlsf instances will be used for non-linear
+    /// image allocations.
     use_segregated_non_linear_allocator: bool,
-    allocation_count: AtomicU32,
 }
 
 impl VulkanAllocator {
@@ -51,32 +97,32 @@ impl VulkanAllocator {
         buffer_image_granularity: u64,
         memory_properties: &vk::PhysicalDeviceMemoryProperties,
     ) -> Self {
-        let memory_heaps = std::array::from_fn(|memory_heap_index| {
+        // Try to estimate a suitable Tlsf super-block size.
+        // Some heaps are very small and their super-block size must be scaled down
+        // to avoid exhausting the entire heap with one or two block allocations.
+        // For everything else we just use the constant super block size.
+        let tlsf_super_block_size = std::array::from_fn(|memory_heap_index| {
             let memory_heap_properties = &memory_properties.memory_heaps[memory_heap_index];
-            let tlsf_super_block_size = if memory_heap_properties.size
+            if memory_heap_properties.size
                 >= VULKAN_CONSTANTS.tlsf_small_super_block_divisor
                     * VULKAN_CONSTANTS.tlsf_default_super_block_size
             {
                 VULKAN_CONSTANTS.tlsf_default_super_block_size
             } else {
                 memory_heap_properties.size / VULKAN_CONSTANTS.tlsf_small_super_block_divisor
-            };
-            VulkanMemoryHeap {
-                tlsf_super_block_size,
-                total_allocated_bytes: default(),
             }
         });
 
         // buffer_image_granularity is an additional alignment constraint for buffers
         // and images that are allocated adjacently. Rather than trying to handle this
-        // restriction cleverly, use a separate Tlsf allocator for images if
-        // `buffer_image_granularity` is greater than the guaranteed alignment of the
-        // Tlsf configuration.
+        // restriction within the Tlsf allocator, use a separate Tlsf instance for
+        // images if `buffer_image_granularity` is greater than the guaranteed
+        // alignment of the Tlsf configuration.
         let use_segregated_non_linear_allocator =
             buffer_image_granularity > tlsf::MIN_ALIGNMENT as u64;
 
         Self {
-            memory_heaps,
+            tlsf_super_block_size,
             use_segregated_non_linear_allocator,
             ..default()
         }
@@ -172,43 +218,7 @@ impl VulkanMemory {
 }
 
 impl VulkanDevice {
-    fn free_memory(&self, memory: VulkanMemory) {
-        match memory {
-            VulkanMemory::Dedicated(dedicated) => {
-                self.allocator.dedicated.lock().remove(&dedicated.memory);
-
-                let memory_heap = &self.allocator.memory_heaps[self
-                    .physical_device_memory_properties
-                    .memory_types[dedicated.memory_type_index.widen()]
-                .heap_index
-                .widen()];
-
-                memory_heap
-                    .total_allocated_bytes
-                    .fetch_sub(dedicated.size, Ordering::SeqCst);
-
-                self.allocator
-                    .allocation_count
-                    .fetch_sub(1, Ordering::SeqCst);
-
-                unsafe {
-                    self.device_fn
-                        .free_memory(self.device, dedicated.memory, None)
-                }
-            }
-            VulkanMemory::SubAlloc(sub_alloc) => {
-                let user_data = sub_alloc.allocation.user_data();
-                let memory_type = &self.allocator.memory_types[user_data.memory_type_index.widen()];
-                let mut tlsf = if user_data.non_linear {
-                    memory_type.tlsf_non_linear.lock()
-                } else {
-                    memory_type.tlsf.lock()
-                };
-                tlsf.free(sub_alloc.allocation)
-            }
-        }
-    }
-
+    /// Attempt to allocate a block of memory from vulkan.
     fn try_allocate_device_memory(
         &self,
         host_mapped: bool,
@@ -216,8 +226,7 @@ impl VulkanDevice {
         memory_type_index: u32,
         memory_dedicated_allocate_info: Option<&vk::MemoryDedicatedAllocateInfo>,
     ) -> Option<(vk::DeviceMemory, *mut u8)> {
-        // Can't allocate if we would blow the global allocation limit.
-        if self.allocator.allocation_count.load(Ordering::Relaxed)
+        if self.allocator.stats.num_allocations()
             >= self
                 .physical_device_properties
                 .properties
@@ -227,17 +236,19 @@ impl VulkanDevice {
             return None;
         }
 
-        let heap_index = self.physical_device_memory_properties.memory_types
+        let memory_heap_index = self.physical_device_memory_properties.memory_types
             [memory_type_index.widen()]
         .heap_index;
 
         let memory_heap_properties =
-            &self.physical_device_memory_properties.memory_heaps[heap_index.widen()];
-        let memory_heap = &self.allocator.memory_heaps[heap_index.widen()];
+            &self.physical_device_memory_properties.memory_heaps[memory_heap_index.widen()];
 
         // Can't allocate if we would blow this heap's size.
-        let current_allocated_bytes = memory_heap.total_allocated_bytes.load(Ordering::Relaxed);
-        if current_allocated_bytes + size > memory_heap_properties.size {
+        // TODO: This should calculate a smaller budget than the heap's total
+        //       capacity.
+        if self.allocator.stats.num_allocated_bytes(memory_heap_index) + size
+            > memory_heap_properties.size
+        {
             return None;
         }
 
@@ -263,14 +274,7 @@ impl VulkanDevice {
             _ => panic!(),
         };
 
-        // Update allocation statistics.
-        self.allocator
-            .allocation_count
-            .fetch_add(1, Ordering::AcqRel);
-
-        memory_heap
-            .total_allocated_bytes
-            .fetch_add(size, Ordering::SeqCst);
+        self.allocator.stats.allocate(memory_heap_index, size);
 
         let mapped_ptr = if host_mapped {
             let mut data = std::ptr::null_mut();
@@ -294,41 +298,12 @@ impl VulkanDevice {
         self.device_fn
             .free_memory(self.device, user_data.memory, None);
 
-        let heap_index = self.physical_device_memory_properties.memory_types
-            [user_data.memory_type_index.widen()]
-        .heap_index;
-        let memory_heap = &self.allocator.memory_heaps[heap_index.widen()];
+        let memory_type_index = user_data.memory_type_index.widen();
+        let memory_heap_index =
+            self.physical_device_memory_properties.memory_types[memory_type_index].heap_index;
+        let size = self.allocator.tlsf_super_block_size[memory_heap_index.widen()];
 
-        self.allocator
-            .allocation_count
-            .fetch_sub(1, Ordering::SeqCst);
-
-        memory_heap
-            .total_allocated_bytes
-            .fetch_sub(memory_heap.tlsf_super_block_size, Ordering::SeqCst);
-    }
-
-    #[cold]
-    fn emergency_gc(&self) {
-        for memory_type in &self.allocator.memory_types[..self
-            .physical_device_memory_properties
-            .memory_type_count
-            .widen()]
-        {
-            memory_type
-                .tlsf
-                .lock()
-                .remove_empty_super_blocks(|user_data| unsafe {
-                    self.free_super_block(&user_data)
-                });
-
-            memory_type
-                .tlsf_non_linear
-                .lock()
-                .remove_empty_super_blocks(|user_data| unsafe {
-                    self.free_super_block(&user_data)
-                });
-        }
+        self.allocator.stats.free(memory_heap_index, size);
     }
 
     pub fn allocate_memory(
@@ -420,9 +395,6 @@ impl VulkanDevice {
                     continue;
                 }
 
-                let memory_type = &self.allocator.memory_types[memory_type_index];
-                let memory_heap = &self.allocator.memory_heaps[memory_heap_index];
-
                 // Does the driver want a dedicated allocation?
                 if memory_dedicated_requirements.requires_dedicated_allocation == vk::Bool32::True
                     || memory_dedicated_requirements.prefers_dedicated_allocation
@@ -447,32 +419,38 @@ impl VulkanDevice {
 
                 // If the allocation is smaller than the Tlsf super-block size for this
                 // allocation type, we should attempt sub-allocation.
-                if size <= memory_heap.tlsf_super_block_size {
+                if size <= self.allocator.tlsf_super_block_size[memory_heap_index] {
                     let (non_linear, mut tlsf) = if (VULKAN_CONSTANTS
                         .tlsf_force_segregated_non_linear_allocator
                         || self.allocator.use_segregated_non_linear_allocator)
                         && non_linear
                     {
-                        (true, memory_type.tlsf_non_linear.lock())
+                        (
+                            true,
+                            self.allocator.tlsf_non_linear[memory_type_index].lock(),
+                        )
                     } else {
-                        (false, memory_type.tlsf.lock())
+                        (false, self.allocator.tlsf[memory_type_index].lock())
                     };
 
-                    if let Some(allocation) = tlsf.alloc(size, align) {
+                    if let Some(allocation) = tlsf.allocate(size, align) {
                         return VulkanMemory::SubAlloc(VulkanMemorySubAlloc { allocation, size });
                     } else {
+                        let super_block_size =
+                            self.allocator.tlsf_super_block_size[memory_heap_index];
+
                         // When allocating backing storage for Tlsf super-blocks, ensure that all memory
                         // is mapped if the memory type supports host mapping. This ensures we never
                         // have to map a super-block later if an individual allocation desires it.
                         if let Some((memory, mapped_ptr)) = self.try_allocate_device_memory(
                             memory_type_property_flags
                                 .contains(vk::MemoryPropertyFlags::HOST_VISIBLE),
-                            memory_heap.tlsf_super_block_size,
+                            super_block_size,
                             memory_type_index as u32,
                             None,
                         ) {
                             tlsf.insert_super_block(
-                                memory_heap.tlsf_super_block_size,
+                                super_block_size,
                                 VulkanSuperBlockInfo {
                                     memory,
                                     mapped_ptr,
@@ -485,7 +463,7 @@ impl VulkanDevice {
 
                             // After inserting a new super-block we should always be able to service the
                             // allocation request since the outer condition checks `size` <= `block_size`.
-                            let allocation = tlsf.alloc(size, align).unwrap();
+                            let allocation = tlsf.allocate(size, align).unwrap();
 
                             return VulkanMemory::SubAlloc(VulkanMemorySubAlloc {
                                 allocation,
@@ -521,47 +499,112 @@ impl VulkanDevice {
         panic!("allocation failure")
     }
 
+    /// Called once per frame to flush deferred allocations and release any empty
+    /// super-blocks.
     pub fn allocator_begin_frame(&self, frame: &mut VulkanFrame) {
         for allocation in frame.destroyed_allocations.get_mut().drain(..) {
-            self.free_memory(allocation);
+            match allocation {
+                VulkanMemory::Dedicated(dedicated) => {
+                    self.allocator.dedicated.lock().remove(&dedicated.memory);
+
+                    let memory_heap_index = self.physical_device_memory_properties.memory_types
+                        [dedicated.memory_type_index.widen()]
+                    .heap_index;
+
+                    self.allocator.stats.free(memory_heap_index, dedicated.size);
+
+                    unsafe {
+                        self.device_fn
+                            .free_memory(self.device, dedicated.memory, None)
+                    }
+                }
+                VulkanMemory::SubAlloc(sub_alloc) => {
+                    let user_data = sub_alloc.allocation.user_data();
+                    let mut tlsf = if user_data.non_linear {
+                        self.allocator.tlsf_non_linear[user_data.memory_type_index.widen()].lock()
+                    } else {
+                        self.allocator.tlsf[user_data.memory_type_index.widen()].lock()
+                    };
+                    tlsf.free(sub_alloc.allocation)
+                }
+            }
         }
 
-        for memory_type in &self.allocator.memory_types[..self
+        let memory_type_count = self
             .physical_device_memory_properties
             .memory_type_count
-            .widen()]
+            .widen();
+
+        if self.allocator.use_segregated_non_linear_allocator
+            || VULKAN_CONSTANTS.tlsf_force_segregated_non_linear_allocator
         {
-            memory_type
-                .tlsf
-                .lock()
-                .remove_empty_super_blocks(|user_data| unsafe {
+            for tlsf in &self.allocator.tlsf_non_linear[..memory_type_count] {
+                tlsf.lock().remove_empty_super_blocks(|user_data| unsafe {
                     self.free_super_block(&user_data)
                 });
+            }
+        }
 
-            memory_type
-                .tlsf_non_linear
-                .lock()
-                .remove_empty_super_blocks(|user_data| unsafe { self.free_super_block(&user_data) })
+        for tlsf in &self.allocator.tlsf[..memory_type_count] {
+            tlsf.lock().remove_empty_super_blocks(|user_data| unsafe {
+                self.free_super_block(&user_data)
+            });
         }
     }
 
     pub fn allocator_drop(&mut self) {
-        for memory_type in self.allocator.memory_types.iter_mut() {
-            memory_type.tlsf.get_mut().clear(|user_data| unsafe {
-                self.device_fn
-                    .free_memory(self.device, user_data.memory, None)
-            });
-            memory_type
-                .tlsf_non_linear
-                .get_mut()
-                .clear(|user_data| unsafe {
+        let memory_type_count = self
+            .physical_device_memory_properties
+            .memory_type_count
+            .widen();
+
+        if self.allocator.use_segregated_non_linear_allocator
+            || VULKAN_CONSTANTS.tlsf_force_segregated_non_linear_allocator
+        {
+            for tlsf in &mut self.allocator.tlsf_non_linear[..memory_type_count] {
+                tlsf.get_mut().clear(|user_data| unsafe {
                     self.device_fn
                         .free_memory(self.device, user_data.memory, None)
                 });
+            }
+        }
+
+        for tlsf in &mut self.allocator.tlsf[..memory_type_count] {
+            tlsf.get_mut().clear(|user_data| unsafe {
+                self.device_fn
+                    .free_memory(self.device, user_data.memory, None)
+            });
         }
 
         for &memory in self.allocator.dedicated.get_mut().iter() {
             unsafe { self.device_fn.free_memory(self.device, memory, None) }
+        }
+    }
+
+    /// When allocation is about to fail, this function is called to flush any empty
+    /// Tlsf super-blocks in an attempt to free memory before completely failing to
+    /// allocate.
+    #[cold]
+    fn emergency_gc(&self) {
+        let memory_type_count = self
+            .physical_device_memory_properties
+            .memory_type_count
+            .widen();
+
+        if self.allocator.use_segregated_non_linear_allocator
+            || VULKAN_CONSTANTS.tlsf_force_segregated_non_linear_allocator
+        {
+            for tlsf in &self.allocator.tlsf_non_linear[..memory_type_count] {
+                tlsf.lock().remove_empty_super_blocks(|user_data| unsafe {
+                    self.free_super_block(&user_data)
+                });
+            }
+        }
+
+        for tlsf in &self.allocator.tlsf[..memory_type_count] {
+            tlsf.lock().remove_empty_super_blocks(|user_data| unsafe {
+                self.free_super_block(&user_data)
+            });
         }
     }
 }
