@@ -83,6 +83,39 @@ impl Pcg64 {
         }
     }
 
+    /// Randomly select an an element from `slice` with uniform probability.
+    ///
+    /// Always draws two 64 bit words from the PRNG.
+    pub fn select_mut<'a, T>(&mut self, slice: &'a mut [T]) -> Option<&'a mut T> {
+        if slice.is_empty() {
+            None
+        } else {
+            slice.get_mut(self.next_bound_usize(slice.len()))
+        }
+    }
+
+    /// Randomly select an an element from `array` with uniform probability.
+    ///
+    /// Always draws two 64 bit words from the PRNG.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `N` is 0
+    pub fn array_select<'a, T, const N: usize>(&mut self, array: &'a [T; N]) -> &'a T {
+        &array[self.next_bound_usize(N)]
+    }
+
+    /// Randomly select an an element from `array` with uniform probability.
+    ///
+    /// Always draws two 64 bit words from the PRNG.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `N` is 0
+    pub fn array_select_mut<'a, T, const N: usize>(&mut self, array: &'a mut [T; N]) -> &'a mut T {
+        &mut array[self.next_bound_usize(N)]
+    }
+
     /// Shuffle the elements in `slice` in-place.
     ///
     /// Note that as `Pcg64` is initialized with a 128 bit seed, it's only possible
