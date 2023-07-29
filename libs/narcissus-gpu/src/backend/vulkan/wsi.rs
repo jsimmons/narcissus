@@ -235,7 +235,7 @@ impl VulkanDevice {
         let format = vulkan_format(format);
 
         let mut swapchains = self.wsi.swapchains.lock();
-        let mut vulkan_swapchain = swapchains.entry(surface).or_insert_with(|| {
+        let vulkan_swapchain = swapchains.entry(surface).or_insert_with(|| {
             let mut supported = vk::Bool32::False;
             vk_check!(self.wsi.surface_fn.get_physical_device_surface_support(
                 self.physical_device,
