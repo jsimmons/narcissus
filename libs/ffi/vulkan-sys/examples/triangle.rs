@@ -227,7 +227,7 @@ pub fn main() {
     };
 
     let create_shader_module = |code: &[u8]| {
-        debug_assert!((code.as_ptr() as usize) & ((1 << 3) - 1) == 0);
+        debug_assert!(code.as_ptr().align_offset(4) == 0);
         let create_info = vk::ShaderModuleCreateInfo {
             code: code.into(),
             ..default()
