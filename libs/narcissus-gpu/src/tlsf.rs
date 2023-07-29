@@ -942,4 +942,124 @@ mod tests {
         tlsf.free(alloc.clone());
         tlsf.free(alloc);
     }
+
+    #[test]
+    fn randomized_alloc_free() {
+        fn mark_bits(memory: &mut [u64], offset: u64, size: u64) {
+            let start_index = offset >> 6;
+            let end_index = (offset + size + 63) >> 6;
+
+            if start_index + 1 == end_index {
+                let word = &mut memory[start_index.widen()];
+                for i in offset..offset + size {
+                    let mask = 1 << (i & 63);
+                    assert!(*word & mask == 0);
+                    *word |= mask
+                }
+                return;
+            }
+
+            let first_mask = !0 << (offset & 63);
+            let last_mask = !(!0 << ((offset + size) & 63));
+
+            let slice = &mut memory[start_index.widen()..end_index.widen()];
+            let (first, remainder) = slice.split_first_mut().unwrap();
+            let (last, remainder) = remainder.split_last_mut().unwrap();
+
+            assert!(*first & first_mask == 0);
+            assert!(*last & last_mask == 0);
+            assert!(remainder.iter().all(|&word| word == 0));
+
+            *first |= first_mask;
+            remainder.fill(!0);
+            *last |= last_mask;
+        }
+
+        fn clear_bits(memory: &mut [u64], offset: u64, size: u64) {
+            let start_index = offset >> 6;
+            let end_index = (offset + size + 63) >> 6;
+
+            if start_index + 1 == end_index {
+                let word = &mut memory[start_index.widen()];
+                for i in offset..offset + size {
+                    let mask = 1 << (i & 63);
+                    assert!(*word & mask == mask);
+                    *word &= !mask
+                }
+                return;
+            }
+
+            let first_mask = !0 << (offset & 63);
+            let last_mask = !(!0 << ((offset + size) & 63));
+
+            let slice = &mut memory[start_index.widen()..end_index.widen()];
+            let (first, remainder) = slice.split_first_mut().unwrap();
+            let (last, remainder) = remainder.split_last_mut().unwrap();
+
+            assert!(*first & first_mask == first_mask);
+            assert!(*last & last_mask == last_mask);
+            assert!(remainder.iter().all(|&word| word == !0));
+
+            *first &= !first_mask;
+            remainder.fill(0);
+            *last &= !last_mask;
+        }
+
+        #[derive(Clone, Copy)]
+        enum Op {
+            Alloc,
+            Free,
+        }
+
+        let ops = [Op::Alloc, Op::Alloc, Op::Free];
+
+        let max_allocation_size = 1 << 16;
+        let min_allocation_size = 1;
+
+        let mut tlsf = Tlsf::new();
+
+        let superblock_size = 1 << 30;
+        let num_super_blocks = 8_usize;
+
+        let mut super_block_memory = (0..num_super_blocks)
+            .map(|_| vec![0u64; superblock_size / 64].into_boxed_slice())
+            .collect::<Box<[_]>>();
+
+        for super_block_index in 0..num_super_blocks {
+            tlsf.insert_super_block(superblock_size as u64, super_block_index);
+        }
+
+        let mut allocations = vec![];
+        let mut rng = Pcg64::new();
+
+        for _ in 0..100_000 {
+            match *rng.array_select(&ops) {
+                Op::Alloc => {
+                    let size = rng.next_bound_u64(max_allocation_size - min_allocation_size)
+                        + min_allocation_size;
+                    if let Some(allocation) = tlsf.allocate(size, 1) {
+                        let memory = super_block_memory[*allocation.user_data()].as_mut();
+                        mark_bits(memory, allocation.offset(), size);
+                        allocations.push((allocation, size))
+                    }
+                }
+                Op::Free => {
+                    if allocations.is_empty() {
+                        continue;
+                    }
+                    let (allocation, size) =
+                        allocations.remove(rng.next_bound_usize(allocations.len()));
+                    let memory = super_block_memory[*allocation.user_data()].as_mut();
+                    clear_bits(memory, allocation.offset(), size);
+                    tlsf.free(allocation)
+                }
+            }
+        }
+
+        for (allocation, size) in allocations.drain(..) {
+            let memory = super_block_memory[*allocation.user_data()].as_mut();
+            clear_bits(memory, allocation.offset(), size);
+            tlsf.free(allocation)
+        }
+    }
 }
