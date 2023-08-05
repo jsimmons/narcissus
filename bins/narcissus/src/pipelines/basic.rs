@@ -8,7 +8,7 @@ use narcissus_gpu::{
 };
 use narcissus_maths::Mat4;
 
-use crate::Blittable;
+use crate::{AsBytes, Blit};
 
 const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.vert.spv");
 const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
@@ -27,8 +27,8 @@ pub struct Vertex {
     pub texcoord: [f32; 4],
 }
 
-unsafe impl Blittable for BasicUniforms {}
-unsafe impl Blittable for Vertex {}
+unsafe impl Blit for BasicUniforms {}
+unsafe impl Blit for Vertex {}
 
 pub struct BasicPipeline {
     pub uniforms_bind_group_layout: BindGroupLayout,
@@ -102,6 +102,7 @@ impl BasicPipeline {
                 stencil_attachment_format: None,
             },
             topology: Topology::Triangles,
+            primitive_restart: false,
             polygon_mode: PolygonMode::Fill,
             culling_mode: CullingMode::Back,
             front_face: FrontFace::CounterClockwise,

@@ -1,7 +1,7 @@
 #version 460
 
-layout(set = 0, binding = 3) uniform sampler texSampler;
-layout(set = 0, binding = 4) uniform texture2D tex;
+layout(set = 0, binding = 4) uniform sampler texSampler;
+layout(set = 0, binding = 5) uniform texture2D tex;
 
 layout(location = 0) in vec2 texcoord;
 layout(location = 1) in vec4 color;

@@ -5,7 +5,7 @@ use narcissus_gpu::{Buffer, BufferDesc, BufferUsageFlags, Device, MemoryLocation
 use narcissus_image as image;
 use narcissus_maths::{vec2, vec3, vec4, Vec2, Vec3};
 
-use crate::{pipelines::Vertex, Blittable};
+use crate::{pipelines::Vertex, Blit};
 
 pub fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
     #[derive(Default)]
@@ -95,7 +95,7 @@ pub fn create_host_buffer_with_data<T>(
     data: &[T],
 ) -> Buffer
 where
-    T: Blittable,
+    T: Blit,
 {
     // SAFETY: T: Blittable which implies it's freely convertable to a byte slice.
     unsafe {

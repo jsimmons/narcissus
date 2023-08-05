@@ -8,7 +8,7 @@ use narcissus_gpu::{
     ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
 
-use crate::Blittable;
+use crate::{AsBytes, Blit};
 
 const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.vert.spv");
 const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
@@ -22,6 +22,23 @@ pub struct TextUniforms {
     pub atlas_height: u32,
 }
 
+#[repr(u32)]
+pub enum PrimitiveKind {
+    Glyph,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PrimitiveVertex(u32);
+
+impl PrimitiveVertex {
+    #[inline(always)]
+    pub fn glyph(corner: u32, index: u32) -> Self {
+        let kind = PrimitiveKind::Glyph as u32;
+        Self(kind << 26 | corner << 24 | index)
+    }
+}
+
 #[allow(unused)]
 #[repr(C)]
 pub struct GlyphInstance {
@@ -31,8 +48,9 @@ pub struct GlyphInstance {
     pub color: u32,
 }
 
-unsafe impl Blittable for TextUniforms {}
-unsafe impl Blittable for GlyphInstance {}
+unsafe impl Blit for TextUniforms {}
+unsafe impl Blit for PrimitiveVertex {}
+unsafe impl Blit for GlyphInstance {}
 
 pub struct TextPipeline {
     bind_group_layout: BindGroupLayout,
@@ -65,11 +83,17 @@ impl TextPipeline {
                 BindGroupLayoutEntryDesc {
                     slot: 3,
                     stages: ShaderStageFlags::ALL,
-                    binding_type: BindingType::Sampler,
+                    binding_type: BindingType::StorageBuffer,
                     count: 1,
                 },
                 BindGroupLayoutEntryDesc {
                     slot: 4,
+                    stages: ShaderStageFlags::ALL,
+                    binding_type: BindingType::Sampler,
+                    count: 1,
+                },
+                BindGroupLayoutEntryDesc {
+                    slot: 5,
                     stages: ShaderStageFlags::ALL,
                     binding_type: BindingType::Image,
                     count: 1,
@@ -101,7 +125,8 @@ impl TextPipeline {
                 depth_attachment_format: Some(ImageFormat::DEPTH_F32),
                 stencil_attachment_format: None,
             },
-            topology: Topology::TriangleStrip,
+            topology: Topology::Triangles,
+            primitive_restart: false,
             polygon_mode: PolygonMode::Fill,
             culling_mode: CullingMode::None,
             front_face: FrontFace::CounterClockwise,
@@ -129,18 +154,24 @@ impl TextPipeline {
         thread_token: &ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         text_uniforms: &TextUniforms,
+        primitive_vertices: &[PrimitiveVertex],
         cached_glyphs: Buffer,
         glyph_instances: Buffer,
         atlas: Image,
     ) {
-        let mut uniforms = device.request_transient_buffer(
+        let uniforms_buffer = device.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::UNIFORM,
-            std::mem::size_of::<TextUniforms>(),
+            text_uniforms.as_bytes(),
         );
 
-        uniforms.copy_from_slice(text_uniforms.as_bytes());
+        let primitive_vertex_buffer = device.request_transient_buffer_with_data(
+            frame,
+            thread_token,
+            BufferUsageFlags::STORAGE,
+            primitive_vertices.as_bytes(),
+        );
 
         device.cmd_set_pipeline(cmd_buffer, self.pipeline);
         device.cmd_set_bind_group(
@@ -152,25 +183,30 @@ impl TextPipeline {
                 Bind {
                     binding: 0,
                     array_element: 0,
-                    typed: TypedBind::UniformBuffer(&[uniforms.into()]),
+                    typed: TypedBind::UniformBuffer(&[uniforms_buffer.into()]),
                 },
                 Bind {
                     binding: 1,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[cached_glyphs.into()]),
+                    typed: TypedBind::StorageBuffer(&[primitive_vertex_buffer.into()]),
                 },
                 Bind {
                     binding: 2,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[glyph_instances.into()]),
+                    typed: TypedBind::StorageBuffer(&[cached_glyphs.into()]),
                 },
                 Bind {
                     binding: 3,
                     array_element: 0,
-                    typed: TypedBind::Sampler(&[self.sampler]),
+                    typed: TypedBind::StorageBuffer(&[glyph_instances.into()]),
                 },
                 Bind {
                     binding: 4,
+                    array_element: 0,
+                    typed: TypedBind::Sampler(&[self.sampler]),
+                },
+                Bind {
+                    binding: 5,
                     array_element: 0,
                     typed: TypedBind::Image(&[(ImageLayout::Optimal, atlas)]),
                 },

@@ -16,7 +16,7 @@ use narcissus_gpu::{
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
 use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, HalfTurn, Mat3, Mat4, Point3, Vec3};
-use pipelines::{BasicUniforms, GlyphInstance, TextUniforms};
+use pipelines::{BasicUniforms, GlyphInstance, PrimitiveVertex, TextUniforms};
 
 mod fonts;
 mod helpers;
@@ -36,19 +36,40 @@ const MAX_GLYPHS: usize = 8192;
 /// # Safety
 ///
 /// Must not be applied to any types with padding
-pub unsafe trait Blittable: Sized {
+pub unsafe trait Blit {}
+
+unsafe impl Blit for u8 {}
+unsafe impl Blit for u16 {}
+unsafe impl Blit for Affine3 {}
+unsafe impl Blit for TouchedGlyph {}
+
+trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl<T> AsBytes for T
+where
+    T: Blit,
+{
     fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Safe whilst trait is correctly applied.
+        // SAFETY: Safe while `Blit` trait is correctly applied.
         unsafe {
-            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of::<Self>())
+            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of_val(self))
         }
     }
 }
 
-unsafe impl Blittable for u8 {}
-unsafe impl Blittable for u16 {}
-unsafe impl Blittable for Affine3 {}
-unsafe impl Blittable for TouchedGlyph {}
+impl<T> AsBytes for [T]
+where
+    T: Blit,
+{
+    fn as_bytes(&self) -> &[u8] {
+        // SAFETY: Safe while `Blit` trait is correctly applied.
+        unsafe {
+            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of_val(self))
+        }
+    }
+}
 
 pub fn main() {
     let app = create_app();
@@ -238,7 +259,8 @@ pub fn main() {
     }
 
     let mut font_size_str = String::new();
-    let mut glyph_instances = Vec::new();
+    let mut primitive_instances = Vec::new();
+    let mut primitive_vertices = Vec::new();
     let mut line_glyph_indices = Vec::new();
     let mut line_kern_advances = Vec::new();
 
@@ -368,7 +390,8 @@ pub fn main() {
 
         let mut rng = Pcg64::new();
 
-        glyph_instances.clear();
+        primitive_instances.clear();
+        primitive_vertices.clear();
 
         for line in 0.. {
             let (font_family, font_size_px, text) = if line & 1 == 0 {
@@ -428,16 +451,25 @@ pub fn main() {
                         x += advance * scale;
                     }
 
-                    let color = *rng
-                        .select(&[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63])
-                        .unwrap();
+                    let color =
+                        *rng.array_select(&[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63]);
 
-                    glyph_instances.push(GlyphInstance {
+                    let instance_index = primitive_instances.len() as u32;
+                    primitive_instances.push(GlyphInstance {
                         x,
                         y,
                         touched_glyph_index,
                         color,
                     });
+                    let glyph_vertices = &[
+                        PrimitiveVertex::glyph(0, instance_index),
+                        PrimitiveVertex::glyph(1, instance_index),
+                        PrimitiveVertex::glyph(2, instance_index),
+                        PrimitiveVertex::glyph(2, instance_index),
+                        PrimitiveVertex::glyph(1, instance_index),
+                        PrimitiveVertex::glyph(3, instance_index),
+                    ];
+                    primitive_vertices.extend_from_slice(glyph_vertices);
 
                     x += advance_width * scale;
                 }
@@ -447,7 +479,7 @@ pub fn main() {
         let atlas_width = glyph_cache.width() as u32;
         let atlas_height = glyph_cache.height() as u32;
 
-        glyph_instance_buffer.write_slice(&glyph_instances);
+        glyph_instance_buffer.write_slice(&primitive_instances);
 
         let (touched_glyphs, texture) = glyph_cache.update_atlas();
 
@@ -587,12 +619,13 @@ pub fn main() {
                 atlas_width,
                 atlas_height,
             },
+            primitive_vertices.as_slice(),
             glyph_buffer.buffer(),
             glyph_instance_buffer.buffer(),
             glyph_atlas,
         );
 
-        device.cmd_draw(&mut cmd_buffer, 4, glyph_instances.len() as u32, 0, 0);
+        device.cmd_draw(&mut cmd_buffer, primitive_vertices.len() as u32, 1, 0, 0);
 
         device.cmd_end_rendering(&mut cmd_buffer);
 

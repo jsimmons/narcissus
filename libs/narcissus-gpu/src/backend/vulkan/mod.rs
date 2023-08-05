@@ -1214,6 +1214,7 @@ impl Device for VulkanDevice {
         ];
 
         let topology = vulkan_primitive_topology(desc.topology);
+        let primitive_restart_enable = vulkan_bool32(desc.primitive_restart);
         let polygon_mode = vulkan_polygon_mode(desc.polygon_mode);
         let cull_mode = vulkan_cull_mode(desc.culling_mode);
         let front_face = vulkan_front_face(desc.front_face);
@@ -1242,6 +1243,7 @@ impl Device for VulkanDevice {
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default();
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
             topology,
+            primitive_restart_enable,
             ..default()
         };
         let viewport_state = vk::PipelineViewportStateCreateInfo::default();

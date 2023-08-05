@@ -391,6 +391,7 @@ pub struct GraphicsPipelineDesc<'a> {
     pub bind_group_layouts: &'a [BindGroupLayout],
     pub layout: GraphicsPipelineLayout<'a>,
     pub topology: Topology,
+    pub primitive_restart: bool,
     pub polygon_mode: PolygonMode,
     pub culling_mode: CullingMode,
     pub front_face: FrontFace,

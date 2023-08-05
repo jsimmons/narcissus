@@ -3,4 +3,4 @@ mod text;
 
 pub use basic::{BasicPipeline, BasicUniforms, Vertex};
 
-pub use text::{GlyphInstance, TextPipeline, TextUniforms};
+pub use text::{GlyphInstance, PrimitiveVertex, TextPipeline, TextUniforms};

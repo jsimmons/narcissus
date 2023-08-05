@@ -1,6 +1,6 @@
 use narcissus_gpu::{Buffer, BufferDesc, BufferUsageFlags, Device, MemoryLocation};
 
-use crate::Blittable;
+use crate::Blit;
 
 pub struct MappedBuffer<'a> {
     device: &'a dyn Device,
@@ -33,7 +33,7 @@ impl<'a> MappedBuffer<'a> {
 
     pub fn write_slice<T>(&mut self, values: &[T])
     where
-        T: Blittable,
+        T: Blit,
     {
         unsafe {
             let len = std::mem::size_of_val(values);
