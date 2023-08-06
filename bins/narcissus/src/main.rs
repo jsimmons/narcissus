@@ -4,72 +4,25 @@ use crate::{
     fonts::{FontFamily, Fonts},
     pipelines::{BasicPipeline, TextPipeline},
 };
-use helpers::{create_host_buffer_with_data, load_image, load_obj};
-use mapped_buffer::MappedBuffer;
+use helpers::{load_image, load_obj};
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{default, rand::Pcg64, slice::array_windows};
-use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics, TouchedGlyph};
+use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, Extent2d,
-    Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
-    ImageTiling, ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
-    RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
+    create_device, Access, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, DeviceExt,
+    Extent2d, Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat,
+    ImageLayout, ImageTiling, ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d,
+    RenderingAttachment, RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
 use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, HalfTurn, Mat3, Mat4, Point3, Vec3};
-use pipelines::{BasicUniforms, GlyphInstance, PrimitiveVertex, TextUniforms};
+use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
 
 mod fonts;
 mod helpers;
-mod mapped_buffer;
 mod pipelines;
 
-const MAX_SHARKS: usize = 262_144;
 const NUM_SHARKS: usize = 50;
-
 const GLYPH_CACHE_SIZE: usize = 1024;
-const MAX_GLYPH_INSTANCES: usize = 262_144;
-const MAX_GLYPHS: usize = 8192;
-
-/// Marker trait indicates it's safe to convert a given type directly to an
-/// array of bytes.
-///
-/// # Safety
-///
-/// Must not be applied to any types with padding
-pub unsafe trait Blit {}
-
-unsafe impl Blit for u8 {}
-unsafe impl Blit for u16 {}
-unsafe impl Blit for Affine3 {}
-unsafe impl Blit for TouchedGlyph {}
-
-trait AsBytes {
-    fn as_bytes(&self) -> &[u8];
-}
-
-impl<T> AsBytes for T
-where
-    T: Blit,
-{
-    fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Safe while `Blit` trait is correctly applied.
-        unsafe {
-            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of_val(self))
-        }
-    }
-}
-
-impl<T> AsBytes for [T]
-where
-    T: Blit,
-{
-    fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Safe while `Blit` trait is correctly applied.
-        unsafe {
-            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of_val(self))
-        }
-    }
-}
 
 pub fn main() {
     let app = create_app();
@@ -91,14 +44,14 @@ pub fn main() {
     let blåhaj_image_data = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
 
-    let blåhaj_vertex_buffer = create_host_buffer_with_data(
-        device.as_ref(),
+    let blåhaj_vertex_buffer = device.create_mapped_buffer_with_data(
+        MemoryLocation::Device,
         BufferUsageFlags::STORAGE,
         blåhaj_vertices.as_slice(),
     );
 
-    let blåhaj_index_buffer = create_host_buffer_with_data(
-        device.as_ref(),
+    let blåhaj_index_buffer = device.create_mapped_buffer_with_data(
+        MemoryLocation::Device,
         BufferUsageFlags::INDEX,
         blåhaj_indices.as_slice(),
     );
@@ -116,24 +69,6 @@ pub fn main() {
         layer_count: 1,
         mip_levels: 1,
     });
-
-    let mut basic_transform_buffer = MappedBuffer::new(
-        device.as_ref(),
-        BufferUsageFlags::STORAGE,
-        std::mem::size_of::<Affine3>() * MAX_SHARKS,
-    );
-
-    let mut glyph_instance_buffer = MappedBuffer::new(
-        device.as_ref(),
-        BufferUsageFlags::STORAGE,
-        std::mem::size_of::<GlyphInstance>() * MAX_GLYPH_INSTANCES,
-    );
-
-    let mut glyph_buffer = MappedBuffer::new(
-        device.as_ref(),
-        BufferUsageFlags::STORAGE,
-        std::mem::size_of::<TouchedGlyph>() * MAX_GLYPHS,
-    );
 
     let glyph_atlas = device.create_image(&ImageDesc {
         memory_location: MemoryLocation::Device,
@@ -206,7 +141,7 @@ pub fn main() {
 
         device.cmd_copy_buffer_to_image(
             &mut cmd_buffer,
-            blåhaj_buffer.into(),
+            blåhaj_buffer.to_arg(),
             blåhaj_image,
             ImageLayout::Optimal,
             &[BufferImageCopy {
@@ -349,13 +284,6 @@ pub fn main() {
             depth_height = height;
         }
 
-        let _buffer = device.request_transient_buffer(
-            &frame,
-            &thread_token,
-            BufferUsageFlags::UNIFORM,
-            16 * 1024 * 1024,
-        );
-
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.125;
 
@@ -365,8 +293,6 @@ pub fn main() {
             transform.translate.y = s;
             transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.002 * direction))
         }
-
-        basic_transform_buffer.write_slice(&shark_transforms);
 
         let (s, c) = sin_cos_pi_f32(frame_start * 0.2);
         let camera_height = c * 8.0;
@@ -455,7 +381,7 @@ pub fn main() {
                         *rng.array_select(&[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63]);
 
                     let instance_index = primitive_instances.len() as u32;
-                    primitive_instances.push(GlyphInstance {
+                    primitive_instances.push(PrimitiveInstance {
                         x,
                         y,
                         touched_glyph_index,
@@ -479,12 +405,7 @@ pub fn main() {
         let atlas_width = glyph_cache.width() as u32;
         let atlas_height = glyph_cache.height() as u32;
 
-        glyph_instance_buffer.write_slice(&primitive_instances);
-
         let (touched_glyphs, texture) = glyph_cache.update_atlas();
-
-        // Update information for the glyphs we need this frame.
-        glyph_buffer.write_slice(touched_glyphs);
 
         // If the atlas has been updated, we need to upload it to the GPU.
         if let Some(texture) = texture {
@@ -512,7 +433,26 @@ pub fn main() {
 
             device.cmd_copy_buffer_to_image(
                 &mut cmd_buffer,
-                buffer.into(),
+                buffer.to_arg(),
+                image,
+                ImageLayout::Optimal,
+                &[BufferImageCopy {
+                    buffer_offset: 0,
+                    buffer_row_length: 0,
+                    buffer_image_height: 0,
+                    image_subresource: default(),
+                    image_offset: Offset3d { x: 0, y: 0, z: 0 },
+                    image_extent: Extent3d {
+                        width,
+                        height,
+                        depth: 1,
+                    },
+                }],
+            );
+
+            device.cmd_copy_buffer_to_image(
+                &mut cmd_buffer,
+                buffer.to_arg(),
                 image,
                 ImageLayout::Optimal,
                 &[BufferImageCopy {
@@ -592,9 +532,9 @@ pub fn main() {
             &thread_token,
             &mut cmd_buffer,
             &BasicUniforms { clip_from_model },
-            blåhaj_vertex_buffer,
-            blåhaj_index_buffer,
-            basic_transform_buffer.buffer(),
+            &blåhaj_vertex_buffer,
+            &blåhaj_index_buffer,
+            shark_transforms.as_slice(),
             blåhaj_image,
         );
 
@@ -620,8 +560,8 @@ pub fn main() {
                 atlas_height,
             },
             primitive_vertices.as_slice(),
-            glyph_buffer.buffer(),
-            glyph_instance_buffer.buffer(),
+            touched_glyphs,
+            primitive_instances.as_slice(),
             glyph_atlas,
         );
 

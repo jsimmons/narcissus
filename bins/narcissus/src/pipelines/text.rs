@@ -1,14 +1,12 @@
 use narcissus_core::{cstr, default, include_bytes_align};
-use narcissus_font::TouchedGlyphIndex;
+use narcissus_font::{TouchedGlyph, TouchedGlyphIndex};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    Buffer, BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace,
+    BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
     GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline,
     PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
     ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
-
-use crate::{AsBytes, Blit};
 
 const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.vert.spv");
 const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
@@ -41,16 +39,12 @@ impl PrimitiveVertex {
 
 #[allow(unused)]
 #[repr(C)]
-pub struct GlyphInstance {
+pub struct PrimitiveInstance {
     pub x: f32,
     pub y: f32,
     pub touched_glyph_index: TouchedGlyphIndex,
     pub color: u32,
 }
-
-unsafe impl Blit for TextUniforms {}
-unsafe impl Blit for PrimitiveVertex {}
-unsafe impl Blit for GlyphInstance {}
 
 pub struct TextPipeline {
     bind_group_layout: BindGroupLayout,
@@ -149,28 +143,41 @@ impl TextPipeline {
 
     pub fn bind(
         &self,
-        device: &dyn Device,
+        device: &(dyn Device + 'static),
         frame: &Frame,
         thread_token: &ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         text_uniforms: &TextUniforms,
         primitive_vertices: &[PrimitiveVertex],
-        cached_glyphs: Buffer,
-        glyph_instances: Buffer,
+        touched_glyphs: &[TouchedGlyph],
+        primitive_instances: &[PrimitiveInstance],
         atlas: Image,
     ) {
         let uniforms_buffer = device.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::UNIFORM,
-            text_uniforms.as_bytes(),
+            text_uniforms,
         );
 
         let primitive_vertex_buffer = device.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::STORAGE,
-            primitive_vertices.as_bytes(),
+            primitive_vertices,
+        );
+
+        let cached_glyphs_buffer = device.request_transient_buffer_with_data(
+            frame,
+            thread_token,
+            BufferUsageFlags::STORAGE,
+            touched_glyphs,
+        );
+        let glyph_instance_buffer = device.request_transient_buffer_with_data(
+            frame,
+            thread_token,
+            BufferUsageFlags::STORAGE,
+            primitive_instances,
         );
 
         device.cmd_set_pipeline(cmd_buffer, self.pipeline);
@@ -183,22 +190,22 @@ impl TextPipeline {
                 Bind {
                     binding: 0,
                     array_element: 0,
-                    typed: TypedBind::UniformBuffer(&[uniforms_buffer.into()]),
+                    typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
                 },
                 Bind {
                     binding: 1,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[primitive_vertex_buffer.into()]),
+                    typed: TypedBind::StorageBuffer(&[primitive_vertex_buffer.to_arg()]),
                 },
                 Bind {
                     binding: 2,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[cached_glyphs.into()]),
+                    typed: TypedBind::StorageBuffer(&[cached_glyphs_buffer.to_arg()]),
                 },
                 Bind {
                     binding: 3,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[glyph_instances.into()]),
+                    typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
                 },
                 Bind {
                     binding: 4,

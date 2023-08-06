@@ -19,7 +19,7 @@ use crate::{
     BindGroupLayoutDesc, Buffer, BufferArg, BufferDesc, BufferImageCopy, BufferUsageFlags,
     CmdBuffer, ComputePipelineDesc, Device, Extent2d, Extent3d, Frame, GlobalBarrier,
     GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit, ImageDesc, ImageDimension,
-    ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, ImageViewDesc, IndexType,
+    ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, ImageViewDesc, IndexType, MappedBuffer,
     MemoryLocation, Offset2d, Offset3d, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp,
     SamplerDesc, SamplerFilter, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
 };
@@ -800,60 +800,6 @@ impl VulkanDevice {
         semaphore
     }
 
-    fn create_buffer(&self, desc: &BufferDesc, data: Option<&[u8]>) -> Buffer {
-        let queue_family_indices = &[self.universal_queue_family_index];
-
-        let create_info = vk::BufferCreateInfo {
-            size: desc.size as u64,
-            usage: vulkan_buffer_usage_flags(desc.usage),
-            queue_family_indices: queue_family_indices.into(),
-            sharing_mode: vk::SharingMode::Exclusive,
-            ..default()
-        };
-        let mut buffer = vk::Buffer::null();
-        vk_check!(self
-            .device_fn
-            .create_buffer(self.device, &create_info, None, &mut buffer));
-
-        let memory = self.allocate_memory(
-            desc.memory_location,
-            false,
-            desc.host_mapped,
-            allocator::VulkanAllocationResource::Buffer(buffer),
-        );
-
-        if let Some(data) = data {
-            assert!(!memory.mapped_ptr().is_null());
-            // SAFETY: The memory has just been allocated, so as long as the pointer is
-            // non-null, then we can create a slice for it.
-            unsafe {
-                let dst =
-                    std::slice::from_raw_parts_mut(memory.mapped_ptr(), memory.size().widen());
-                dst[..desc.size].copy_from_slice(data);
-            }
-        }
-
-        unsafe {
-            self.device_fn.bind_buffer_memory2(
-                self.device,
-                &[vk::BindBufferMemoryInfo {
-                    buffer,
-                    memory: memory.device_memory(),
-                    offset: memory.offset(),
-                    ..default()
-                }],
-            )
-        };
-
-        let handle = self.buffer_pool.lock().insert(VulkanBuffer {
-            memory,
-            buffer,
-            map_count: 0,
-        });
-
-        Buffer(handle)
-    }
-
     fn destroy_deferred(
         device_fn: &vk::DeviceFunctions,
         device: vk::Device,
@@ -888,11 +834,46 @@ impl VulkanDevice {
 
 impl Device for VulkanDevice {
     fn create_buffer(&self, desc: &BufferDesc) -> Buffer {
-        self.create_buffer(desc, None)
-    }
+        let queue_family_indices = &[self.universal_queue_family_index];
 
-    fn create_buffer_with_data(&self, desc: &BufferDesc, initial_data: &[u8]) -> Buffer {
-        self.create_buffer(desc, Some(initial_data))
+        let create_info = vk::BufferCreateInfo {
+            size: desc.size as u64,
+            usage: vulkan_buffer_usage_flags(desc.usage),
+            queue_family_indices: queue_family_indices.into(),
+            sharing_mode: vk::SharingMode::Exclusive,
+            ..default()
+        };
+        let mut buffer = vk::Buffer::null();
+        vk_check!(self
+            .device_fn
+            .create_buffer(self.device, &create_info, None, &mut buffer));
+
+        let memory = self.allocate_memory(
+            desc.memory_location,
+            false,
+            desc.host_mapped,
+            allocator::VulkanAllocationResource::Buffer(buffer),
+        );
+
+        unsafe {
+            self.device_fn.bind_buffer_memory2(
+                self.device,
+                &[vk::BindBufferMemoryInfo {
+                    buffer,
+                    memory: memory.device_memory(),
+                    offset: memory.offset(),
+                    ..default()
+                }],
+            )
+        };
+
+        let handle = self.buffer_pool.lock().insert(VulkanBuffer {
+            memory,
+            buffer,
+            map_count: 0,
+        });
+
+        Buffer(handle)
     }
 
     fn create_image(&self, desc: &ImageDesc) -> Image {
@@ -1601,12 +1582,7 @@ impl Device for VulkanDevice {
     ) {
         let arena = HybridArena::<4096>::new();
 
-        let (src_buffer, base_offset) = match src_buffer {
-            BufferArg::Unmanaged(buffer) => {
-                (self.buffer_pool.lock().get(buffer.0).unwrap().buffer, 0)
-            }
-            BufferArg::Transient(buffer) => (vk::Buffer::from_raw(buffer.buffer), buffer.offset),
-        };
+        let (src_buffer, base_offset, _range) = self.unwrap_buffer_arg(&src_buffer);
 
         let regions = arena.alloc_slice_fill_iter(copies.iter().map(|copy| vk::BufferImageCopy {
             buffer_offset: copy.buffer_offset + base_offset,
@@ -1791,21 +1767,13 @@ impl Device for VulkanDevice {
                 }
             }
             TypedBind::UniformBuffer(buffers) => {
-                let buffer_pool = self.buffer_pool.lock();
-                let buffer_infos_iter = buffers.iter().map(|buffer| match buffer {
-                    BufferArg::Unmanaged(buffer) => {
-                        let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
-                        vk::DescriptorBufferInfo {
-                            buffer,
-                            offset: 0,
-                            range: vk::WHOLE_SIZE,
-                        }
+                let buffer_infos_iter = buffers.iter().map(|buffer_arg| {
+                    let (buffer, offset, range) = self.unwrap_buffer_arg(buffer_arg);
+                    vk::DescriptorBufferInfo {
+                        buffer,
+                        offset,
+                        range,
                     }
-                    BufferArg::Transient(transient) => vk::DescriptorBufferInfo {
-                        buffer: vk::Buffer::from_raw(transient.buffer),
-                        offset: transient.offset,
-                        range: transient.len as u64,
-                    },
                 });
                 let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
                 vk::WriteDescriptorSet {
@@ -1819,21 +1787,13 @@ impl Device for VulkanDevice {
                 }
             }
             TypedBind::StorageBuffer(buffers) => {
-                let buffer_pool = self.buffer_pool.lock();
-                let buffer_infos_iter = buffers.iter().map(|buffer| match buffer {
-                    BufferArg::Unmanaged(buffer) => {
-                        let buffer = buffer_pool.get(buffer.0).unwrap().buffer;
-                        vk::DescriptorBufferInfo {
-                            buffer,
-                            offset: 0,
-                            range: vk::WHOLE_SIZE,
-                        }
+                let buffer_infos_iter = buffers.iter().map(|buffer_arg| {
+                    let (buffer, offset, range) = self.unwrap_buffer_arg(buffer_arg);
+                    vk::DescriptorBufferInfo {
+                        buffer,
+                        offset,
+                        range,
                     }
-                    BufferArg::Transient(transient) => vk::DescriptorBufferInfo {
-                        buffer: vk::Buffer::from_raw(transient.buffer),
-                        offset: transient.offset,
-                        range: transient.len as u64,
-                    },
                 });
                 let buffer_infos = arena.alloc_slice_fill_iter(buffer_infos_iter);
                 vk::WriteDescriptorSet {
@@ -1885,12 +1845,7 @@ impl Device for VulkanDevice {
         offset: u64,
         index_type: IndexType,
     ) {
-        let (buffer, base_offset) = match buffer {
-            BufferArg::Unmanaged(buffer) => {
-                (self.buffer_pool.lock().get(buffer.0).unwrap().buffer, 0)
-            }
-            BufferArg::Transient(buffer) => (vk::Buffer::from_raw(buffer.buffer), buffer.offset),
-        };
+        let (buffer, base_offset, _range) = self.unwrap_buffer_arg(&buffer);
 
         let command_buffer = self.cmd_buffer_mut(cmd_buffer).command_buffer;
         let index_type = vulkan_index_type(index_type);
@@ -2305,6 +2260,28 @@ impl Device for VulkanDevice {
     fn destroy_swapchain(&self, window: &dyn AsRawWindow) {
         self.destroy_swapchain(window)
     }
+
+    fn create_mapped_buffer<'device>(&'device self, desc: &BufferDesc) -> MappedBuffer<'device> {
+        assert!(desc.host_mapped);
+
+        let buffer = self.create_buffer(desc);
+        unsafe {
+            let ptr = std::ptr::NonNull::new(self.map_buffer(buffer))
+                .expect("failed to map buffer memory");
+
+            MappedBuffer {
+                ptr,
+                len: desc.size,
+                buffer,
+                phantom: PhantomData,
+            }
+        }
+    }
+
+    fn destroy_mapped_buffer(&self, frame: &Frame, buffer: MappedBuffer) {
+        unsafe { self.unmap_buffer(buffer.buffer) }
+        self.destroy_buffer(frame, buffer.buffer)
+    }
 }
 
 impl VulkanDevice {
@@ -2486,6 +2463,26 @@ impl VulkanDevice {
         };
 
         VulkanTransientBuffer { buffer, memory }
+    }
+
+    fn unwrap_buffer_arg(&self, buffer_arg: &BufferArg) -> (vk::Buffer, u64, u64) {
+        match buffer_arg {
+            BufferArg::Unmanaged(buffer) => (
+                self.buffer_pool.lock().get(buffer.0).unwrap().buffer,
+                0,
+                vk::WHOLE_SIZE,
+            ),
+            BufferArg::Transient(transient) => (
+                vk::Buffer::from_raw(transient.buffer),
+                transient.offset,
+                transient.len as u64,
+            ),
+            BufferArg::Mapped(buffer) => (
+                self.buffer_pool.lock().get(buffer.buffer.0).unwrap().buffer,
+                0,
+                vk::WHOLE_SIZE,
+            ),
+        }
     }
 }
 

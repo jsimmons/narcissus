@@ -1,11 +1,10 @@
 use std::path::Path;
 
 use narcissus_core::{obj, Widen};
-use narcissus_gpu::{Buffer, BufferDesc, BufferUsageFlags, Device, MemoryLocation};
 use narcissus_image as image;
 use narcissus_maths::{vec2, vec3, vec4, Vec2, Vec3};
 
-use crate::{pipelines::Vertex, Blit};
+use crate::pipelines::Vertex;
 
 pub fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
     #[derive(Default)]
@@ -87,28 +86,4 @@ pub fn load_image<P: AsRef<Path>>(path: P) -> image::Image {
         std::time::Instant::now() - start
     );
     texture
-}
-
-pub fn create_host_buffer_with_data<T>(
-    device: &dyn Device,
-    usage: BufferUsageFlags,
-    data: &[T],
-) -> Buffer
-where
-    T: Blit,
-{
-    // SAFETY: T: Blittable which implies it's freely convertable to a byte slice.
-    unsafe {
-        let len = std::mem::size_of_val(data);
-        let initial_data = std::slice::from_raw_parts(data.as_ptr() as *const u8, len);
-        device.create_buffer_with_data(
-            &BufferDesc {
-                memory_location: MemoryLocation::Host,
-                host_mapped: true,
-                usage,
-                size: len,
-            },
-            initial_data,
-        )
-    }
 }

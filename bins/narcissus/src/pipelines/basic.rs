@@ -1,14 +1,12 @@
 use narcissus_core::{cstr, default, include_bytes_align};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    Buffer, BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, Frame, FrontFace,
+    BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
     GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType,
-    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
-    ShaderStageFlags, ThreadToken, Topology, TypedBind,
+    MappedBuffer, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter,
+    ShaderDesc, ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
-use narcissus_maths::Mat4;
-
-use crate::{AsBytes, Blit};
+use narcissus_maths::{Affine3, Mat4};
 
 const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.vert.spv");
 const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
@@ -26,9 +24,6 @@ pub struct Vertex {
     pub normal: [f32; 4],
     pub texcoord: [f32; 4],
 }
-
-unsafe impl Blit for BasicUniforms {}
-unsafe impl Blit for Vertex {}
 
 pub struct BasicPipeline {
     pub uniforms_bind_group_layout: BindGroupLayout,
@@ -126,24 +121,29 @@ impl BasicPipeline {
 
     pub fn bind(
         &self,
-        device: &dyn Device,
+        device: &(dyn Device + 'static),
         frame: &Frame,
         thread_token: &ThreadToken,
         cmd_buffer: &mut CmdBuffer,
         basic_uniforms: &BasicUniforms,
-        vertex_buffer: Buffer,
-        index_buffer: Buffer,
-        transform_buffer: Buffer,
+        vertex_buffer: &MappedBuffer,
+        index_buffer: &MappedBuffer,
+        transforms: &[Affine3],
         texture: Image,
     ) {
-        let mut uniform_buffer = device.request_transient_buffer(
+        let uniform_buffer = device.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::UNIFORM,
-            std::mem::size_of::<BasicUniforms>(),
+            basic_uniforms,
         );
 
-        uniform_buffer.copy_from_slice(basic_uniforms.as_bytes());
+        let transform_buffer = device.request_transient_buffer_with_data(
+            frame,
+            thread_token,
+            BufferUsageFlags::STORAGE,
+            transforms,
+        );
 
         device.cmd_set_pipeline(cmd_buffer, self.pipeline);
 
@@ -155,7 +155,7 @@ impl BasicPipeline {
             &[Bind {
                 binding: 0,
                 array_element: 0,
-                typed: TypedBind::UniformBuffer(&[uniform_buffer.into()]),
+                typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
             }],
         );
 
@@ -168,12 +168,12 @@ impl BasicPipeline {
                 Bind {
                     binding: 0,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[vertex_buffer.into()]),
+                    typed: TypedBind::StorageBuffer(&[vertex_buffer.to_arg()]),
                 },
                 Bind {
                     binding: 1,
                     array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[transform_buffer.into()]),
+                    typed: TypedBind::StorageBuffer(&[transform_buffer.to_arg()]),
                 },
                 Bind {
                     binding: 2,
@@ -188,6 +188,6 @@ impl BasicPipeline {
             ],
         );
 
-        device.cmd_set_index_buffer(cmd_buffer, index_buffer.into(), 0, IndexType::U16);
+        device.cmd_set_index_buffer(cmd_buffer, index_buffer.to_arg(), 0, IndexType::U16);
     }
 }

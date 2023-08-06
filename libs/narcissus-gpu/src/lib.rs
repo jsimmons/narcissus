@@ -1,4 +1,4 @@
-use std::{ffi::CStr, marker::PhantomData, ptr::NonNull};
+use std::{ffi::CStr, marker::PhantomData};
 
 use backend::vulkan;
 use narcissus_core::{
@@ -8,7 +8,10 @@ use narcissus_core::{
 mod backend;
 mod delay_queue;
 mod frame_counter;
+mod mapped_memory;
 pub mod tlsf;
+
+pub use mapped_memory::{MappedBuffer, TransientBuffer};
 
 pub enum DeviceBackend {
     Vulkan,
@@ -52,6 +55,12 @@ pub struct Image(Handle);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Buffer(Handle);
 
+impl Buffer {
+    pub fn to_arg(self) -> BufferArg<'static> {
+        BufferArg::Unmanaged(self)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Sampler(Handle);
 
@@ -60,21 +69,6 @@ pub struct BindGroupLayout(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pipeline(Handle);
-
-pub struct TransientBuffer<'a> {
-    ptr: NonNull<u8>,
-    len: usize,
-    buffer: u64,
-    offset: u64,
-    phantom: PhantomData<&'a u8>,
-}
-
-impl<'a> TransientBuffer<'a> {
-    pub fn copy_from_slice(&mut self, bytes: &[u8]) {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
-            .copy_from_slice(bytes)
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryLocation {
@@ -482,19 +476,8 @@ pub struct Bind<'a> {
 
 pub enum BufferArg<'a> {
     Unmanaged(Buffer),
-    Transient(TransientBuffer<'a>),
-}
-
-impl<'a> From<Buffer> for BufferArg<'a> {
-    fn from(value: Buffer) -> Self {
-        BufferArg::Unmanaged(value)
-    }
-}
-
-impl<'a> From<TransientBuffer<'a>> for BufferArg<'a> {
-    fn from(value: TransientBuffer<'a>) -> Self {
-        BufferArg::Transient(value)
-    }
+    Mapped(&'a MappedBuffer<'a>),
+    Transient(&'a TransientBuffer<'a>),
 }
 
 pub enum TypedBind<'a> {
@@ -711,7 +694,7 @@ impl std::error::Error for SwapchainOutOfDateError {}
 
 pub trait Device {
     fn create_buffer(&self, desc: &BufferDesc) -> Buffer;
-    fn create_buffer_with_data(&self, desc: &BufferDesc, inital_data: &[u8]) -> Buffer;
+    fn create_mapped_buffer<'device>(&'device self, desc: &BufferDesc) -> MappedBuffer<'device>;
     fn create_image(&self, desc: &ImageDesc) -> Image;
     fn create_image_view(&self, desc: &ImageViewDesc) -> Image;
     fn create_sampler(&self, desc: &SamplerDesc) -> Sampler;
@@ -720,6 +703,7 @@ pub trait Device {
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline;
 
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
+    fn destroy_mapped_buffer(&self, frame: &Frame, buffer: MappedBuffer);
     fn destroy_image(&self, frame: &Frame, image: Image);
     fn destroy_sampler(&self, frame: &Frame, sampler: Sampler);
     fn destroy_bind_group_layout(&self, frame: &Frame, bind_group_layout: BindGroupLayout);
@@ -759,20 +743,6 @@ pub trait Device {
         usage: BufferUsageFlags,
         size: usize,
     ) -> TransientBuffer<'a>;
-
-    #[must_use]
-    fn request_transient_buffer_with_data<'a>(
-        &self,
-        frame: &'a Frame<'a>,
-        thread_token: &'a ThreadToken,
-        usage: BufferUsageFlags,
-        data: &[u8],
-    ) -> TransientBuffer<'a> {
-        let mut transient_buffer =
-            self.request_transient_buffer(frame, thread_token, usage, data.len());
-        transient_buffer.copy_from_slice(data);
-        transient_buffer
-    }
 
     #[must_use]
     fn create_cmd_buffer<'a, 'thread>(
@@ -866,4 +836,53 @@ pub trait Device {
     fn begin_frame(&self) -> Frame;
 
     fn end_frame<'device>(&'device self, frame: Frame<'device>);
+}
+
+pub trait DeviceExt: Device {
+    fn create_mapped_buffer_with_data<'a, T: ?Sized>(
+        &'a self,
+        memory_location: MemoryLocation,
+        usage: BufferUsageFlags,
+        data: &T,
+    ) -> MappedBuffer<'a>;
+
+    fn request_transient_buffer_with_data<'a, T: ?Sized>(
+        &'a self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        usage: BufferUsageFlags,
+        data: &T,
+    ) -> TransientBuffer<'a>;
+}
+
+impl DeviceExt for dyn Device {
+    fn create_mapped_buffer_with_data<'a, T: ?Sized>(
+        &'a self,
+        memory_location: MemoryLocation,
+        usage: BufferUsageFlags,
+        data: &T,
+    ) -> MappedBuffer<'a> {
+        let size = std::mem::size_of_val(data);
+        let mut mapped_buffer = self.create_mapped_buffer(&BufferDesc {
+            memory_location,
+            host_mapped: true,
+            usage,
+            size,
+        });
+        mapped_buffer.copy_with_offset(0, data);
+        mapped_buffer
+    }
+
+    fn request_transient_buffer_with_data<'a, T: ?Sized>(
+        &'a self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        usage: BufferUsageFlags,
+        data: &T,
+    ) -> TransientBuffer<'a> {
+        let mut transient_buffer =
+            self.request_transient_buffer(frame, thread_token, usage, std::mem::size_of_val(data));
+        transient_buffer.copy_with_offset(0, data);
+        transient_buffer
+    }
 }
