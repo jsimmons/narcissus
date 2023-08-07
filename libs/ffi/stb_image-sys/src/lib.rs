@@ -11,6 +11,7 @@ mod libc {
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct stbi_io_callbacks {
     /// fill 'data' with 'size' bytes.  return number of bytes actually read
     pub read: extern "C" fn(user: *mut c_void, data: *mut c_char, size: c_int) -> i32,
