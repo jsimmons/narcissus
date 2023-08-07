@@ -52,21 +52,20 @@ unsafe fn copy_from_with_offset<T: ?Sized>(ptr: NonNull<u8>, len: usize, offset:
     std::ptr::copy_nonoverlapping(src, dst, count)
 }
 
-/// A mapped buffer is a GPU memory buffer that is persistently mapped into CPU
-/// address space and can be written to at any time.
+/// Persistent mapped buffer.
 ///
 /// Making sure the buffer is not updated while it is concurrently in use by the
 /// GPU is the responsibility of the caller.
-pub struct MappedBuffer<'a> {
+pub struct PersistentBuffer<'a> {
     pub(crate) ptr: NonNull<u8>,
     pub(crate) len: usize,
     pub(crate) buffer: Buffer,
     pub(crate) phantom: PhantomData<&'a u8>,
 }
 
-impl<'a> MappedBuffer<'a> {
+impl<'a> PersistentBuffer<'a> {
     pub fn to_arg(&self) -> BufferArg {
-        BufferArg::Mapped(self)
+        BufferArg::Persistent(self)
     }
 
     pub fn copy_from<T: ?Sized>(&mut self, src: &T) {
@@ -78,6 +77,9 @@ impl<'a> MappedBuffer<'a> {
     }
 }
 
+/// Transient mapped buffer that is tied to the lifetime of the current frame.
+///
+/// This buffer will be invalidated and recycled at the end of the frame.
 pub struct TransientBuffer<'a> {
     pub(crate) ptr: NonNull<u8>,
     pub(crate) offset: u64,

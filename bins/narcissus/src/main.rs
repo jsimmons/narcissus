@@ -44,13 +44,13 @@ pub fn main() {
     let blåhaj_image_data = load_image("bins/narcissus/data/blåhaj.png");
     let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
 
-    let blåhaj_vertex_buffer = device.create_mapped_buffer_with_data(
+    let blåhaj_vertex_buffer = device.create_persistent_buffer_with_data(
         MemoryLocation::Device,
         BufferUsageFlags::STORAGE,
         blåhaj_vertices.as_slice(),
     );
 
-    let blåhaj_index_buffer = device.create_mapped_buffer_with_data(
+    let blåhaj_index_buffer = device.create_persistent_buffer_with_data(
         MemoryLocation::Device,
         BufferUsageFlags::INDEX,
         blåhaj_indices.as_slice(),
@@ -119,9 +119,10 @@ pub fn main() {
             blåhaj_image_data.as_slice(),
         );
 
-        let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
+        let mut cmd_encoder = device.request_cmd_encoder(&frame, &thread_token);
+
         device.cmd_barrier(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             None,
             &[
                 ImageBarrier::layout_optimal(
@@ -140,7 +141,7 @@ pub fn main() {
         );
 
         device.cmd_copy_buffer_to_image(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             blåhaj_buffer.to_arg(),
             blåhaj_image,
             ImageLayout::Optimal,
@@ -159,7 +160,7 @@ pub fn main() {
         );
 
         device.cmd_barrier(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             None,
             &[ImageBarrier::layout_optimal(
                 &[Access::TransferWrite],
@@ -169,7 +170,7 @@ pub fn main() {
             )],
         );
 
-        device.submit(&frame, cmd_buffer);
+        device.submit(&frame, cmd_encoder);
         device.end_frame(frame);
     }
 
@@ -251,7 +252,7 @@ pub fn main() {
             }
         };
 
-        let mut cmd_buffer = device.create_cmd_buffer(&frame, &thread_token);
+        let mut cmd_buffer = device.request_cmd_encoder(&frame, &thread_token);
 
         if width != depth_width || height != depth_height {
             device.destroy_image(&frame, depth_image);

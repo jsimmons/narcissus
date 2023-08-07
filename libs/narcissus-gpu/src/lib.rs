@@ -8,10 +8,10 @@ use narcissus_core::{
 mod backend;
 mod delay_queue;
 mod frame_counter;
-mod mapped_memory;
-pub mod tlsf;
+mod mapped_buffer;
+mod tlsf;
 
-pub use mapped_memory::{MappedBuffer, TransientBuffer};
+pub use mapped_buffer::{PersistentBuffer, TransientBuffer};
 
 pub enum DeviceBackend {
     Vulkan,
@@ -476,7 +476,7 @@ pub struct Bind<'a> {
 
 pub enum BufferArg<'a> {
     Unmanaged(Buffer),
-    Mapped(&'a MappedBuffer<'a>),
+    Persistent(&'a PersistentBuffer<'a>),
     Transient(&'a TransientBuffer<'a>),
 }
 
@@ -674,10 +674,9 @@ impl<'a> Frame<'a> {
     }
 }
 
-pub struct CmdBuffer<'a, 'thread> {
+pub struct CmdEncoder<'a> {
     cmd_buffer_addr: usize,
-    thread_token: &'thread ThreadToken,
-    _phantom: &'a PhantomData<()>,
+    thread_token: &'a ThreadToken,
     phantom_unsend: PhantomUnsend,
 }
 
@@ -694,7 +693,10 @@ impl std::error::Error for SwapchainOutOfDateError {}
 
 pub trait Device {
     fn create_buffer(&self, desc: &BufferDesc) -> Buffer;
-    fn create_mapped_buffer<'device>(&'device self, desc: &BufferDesc) -> MappedBuffer<'device>;
+    fn create_persistent_buffer<'device>(
+        &'device self,
+        desc: &BufferDesc,
+    ) -> PersistentBuffer<'device>;
     fn create_image(&self, desc: &ImageDesc) -> Image;
     fn create_image_view(&self, desc: &ImageViewDesc) -> Image;
     fn create_sampler(&self, desc: &SamplerDesc) -> Sampler;
@@ -703,7 +705,7 @@ pub trait Device {
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline;
 
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
-    fn destroy_mapped_buffer(&self, frame: &Frame, buffer: MappedBuffer);
+    fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer);
     fn destroy_image(&self, frame: &Frame, image: Image);
     fn destroy_sampler(&self, frame: &Frame, sampler: Sampler);
     fn destroy_bind_group_layout(&self, frame: &Frame, bind_group_layout: BindGroupLayout);
@@ -745,16 +747,16 @@ pub trait Device {
     ) -> TransientBuffer<'a>;
 
     #[must_use]
-    fn create_cmd_buffer<'a, 'thread>(
+    fn request_cmd_encoder<'a>(
         &'a self,
-        frame: &'a Frame,
-        thread_token: &'thread ThreadToken,
-    ) -> CmdBuffer<'a, 'thread>;
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+    ) -> CmdEncoder<'a>;
 
     fn cmd_set_bind_group(
         &self,
         frame: &Frame,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         layout: BindGroupLayout,
         bind_group_index: u32,
         bindings: &[Bind],
@@ -762,28 +764,28 @@ pub trait Device {
 
     fn cmd_set_index_buffer(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         buffer: BufferArg,
         offset: u64,
         index_type: IndexType,
     );
 
-    fn cmd_set_pipeline(&self, cmd_buffer: &mut CmdBuffer, pipeline: Pipeline);
+    fn cmd_set_pipeline(&self, cmd_encoder: &mut CmdEncoder, pipeline: Pipeline);
 
-    fn cmd_set_viewports(&self, cmd_buffer: &mut CmdBuffer, viewports: &[Viewport]);
+    fn cmd_set_viewports(&self, cmd_encoder: &mut CmdEncoder, viewports: &[Viewport]);
 
-    fn cmd_set_scissors(&self, cmd_buffer: &mut CmdBuffer, scissors: &[Scissor]);
+    fn cmd_set_scissors(&self, cmd_encoder: &mut CmdEncoder, scissors: &[Scissor]);
 
     fn cmd_barrier(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         global_barrier: Option<&GlobalBarrier>,
         image_barriers: &[ImageBarrier],
     );
 
     fn cmd_copy_buffer_to_image(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         src_buffer: BufferArg,
         dst_image: Image,
         dst_image_layout: ImageLayout,
@@ -792,7 +794,7 @@ pub trait Device {
 
     fn cmd_blit_image(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         src_image: Image,
         src_image_layout: ImageLayout,
         dst_image: Image,
@@ -800,13 +802,13 @@ pub trait Device {
         regions: &[ImageBlit],
     );
 
-    fn cmd_begin_rendering(&self, cmd_buffer: &mut CmdBuffer, desc: &RenderingDesc);
+    fn cmd_begin_rendering(&self, cmd_encoder: &mut CmdEncoder, desc: &RenderingDesc);
 
-    fn cmd_end_rendering(&self, cmd_buffer: &mut CmdBuffer);
+    fn cmd_end_rendering(&self, cmd_encoder: &mut CmdEncoder);
 
     fn cmd_draw(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
@@ -815,7 +817,7 @@ pub trait Device {
 
     fn cmd_draw_indexed(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         index_count: u32,
         instance_count: u32,
         first_index: u32,
@@ -825,13 +827,13 @@ pub trait Device {
 
     fn cmd_dispatch(
         &self,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_encoder: &mut CmdEncoder,
         group_count_x: u32,
         group_count_y: u32,
         group_count_z: u32,
     );
 
-    fn submit(&self, frame: &Frame, cmd_buffer: CmdBuffer);
+    fn submit(&self, frame: &Frame, cmd_encoder: CmdEncoder);
 
     fn begin_frame(&self) -> Frame;
 
@@ -839,31 +841,14 @@ pub trait Device {
 }
 
 pub trait DeviceExt: Device {
-    fn create_mapped_buffer_with_data<'a, T: ?Sized>(
+    fn create_persistent_buffer_with_data<'a, T: ?Sized>(
         &'a self,
         memory_location: MemoryLocation,
         usage: BufferUsageFlags,
         data: &T,
-    ) -> MappedBuffer<'a>;
-
-    fn request_transient_buffer_with_data<'a, T: ?Sized>(
-        &'a self,
-        frame: &'a Frame<'a>,
-        thread_token: &'a ThreadToken,
-        usage: BufferUsageFlags,
-        data: &T,
-    ) -> TransientBuffer<'a>;
-}
-
-impl DeviceExt for dyn Device {
-    fn create_mapped_buffer_with_data<'a, T: ?Sized>(
-        &'a self,
-        memory_location: MemoryLocation,
-        usage: BufferUsageFlags,
-        data: &T,
-    ) -> MappedBuffer<'a> {
+    ) -> PersistentBuffer<'a> {
         let size = std::mem::size_of_val(data);
-        let mut mapped_buffer = self.create_mapped_buffer(&BufferDesc {
+        let mut mapped_buffer = self.create_persistent_buffer(&BufferDesc {
             memory_location,
             host_mapped: true,
             usage,
@@ -886,3 +871,5 @@ impl DeviceExt for dyn Device {
         transient_buffer
     }
 }
+
+impl DeviceExt for dyn Device {}

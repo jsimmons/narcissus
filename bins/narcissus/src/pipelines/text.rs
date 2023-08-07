@@ -2,7 +2,7 @@ use narcissus_core::{cstr, default, include_bytes_align};
 use narcissus_font::{TouchedGlyph, TouchedGlyphIndex};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
+    BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
     GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline,
     PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
     ShaderStageFlags, ThreadToken, Topology, TypedBind,
@@ -146,7 +146,7 @@ impl TextPipeline {
         device: &(dyn Device + 'static),
         frame: &Frame,
         thread_token: &ThreadToken,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_buffer: &mut CmdEncoder,
         text_uniforms: &TextUniforms,
         primitive_vertices: &[PrimitiveVertex],
         touched_glyphs: &[TouchedGlyph],

@@ -1,10 +1,10 @@
 use narcissus_core::{cstr, default, include_bytes_align};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    BufferUsageFlags, CmdBuffer, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
+    BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
     GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType,
-    MappedBuffer, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter,
-    ShaderDesc, ShaderStageFlags, ThreadToken, Topology, TypedBind,
+    PersistentBuffer, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc,
+    SamplerFilter, ShaderDesc, ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
 use narcissus_maths::{Affine3, Mat4};
 
@@ -124,10 +124,10 @@ impl BasicPipeline {
         device: &(dyn Device + 'static),
         frame: &Frame,
         thread_token: &ThreadToken,
-        cmd_buffer: &mut CmdBuffer,
+        cmd_buffer: &mut CmdEncoder,
         basic_uniforms: &BasicUniforms,
-        vertex_buffer: &MappedBuffer,
-        index_buffer: &MappedBuffer,
+        vertex_buffer: &PersistentBuffer,
+        index_buffer: &PersistentBuffer,
         transforms: &[Affine3],
         texture: Image,
     ) {

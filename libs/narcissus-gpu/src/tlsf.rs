@@ -730,6 +730,7 @@ where
     }
 
     #[cfg(debug_assertions)]
+    #[allow(unused)]
     pub fn debug_bitmap_svg(&self, w: &mut dyn std::io::Write) -> Result<(), std::io::Error> {
         use narcissus_core::svg::{self, svg_begin, svg_end};
 
