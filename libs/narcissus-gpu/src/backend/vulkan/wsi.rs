@@ -4,7 +4,7 @@ use std::{
 };
 
 use narcissus_core::{
-    cstr, cstr_from_bytes_until_nul, default,
+    cstr, default,
     raw_window::{AsRawWindow, RawWindow},
     HybridArena, Mutex, Pool, Widen,
 };
@@ -77,7 +77,7 @@ impl VulkanWsi {
         let mut wsi_support: VulkanWsiSupport = default();
 
         for extension in extension_properties {
-            let extension_name = cstr_from_bytes_until_nul(&extension.extension_name).unwrap();
+            let extension_name = CStr::from_bytes_until_nul(&extension.extension_name).unwrap();
 
             match extension_name.to_str().unwrap() {
                 "VK_KHR_wayland_surface" => {
@@ -114,7 +114,7 @@ impl VulkanWsi {
         enabled_extensions: &mut Vec<&'a CStr>,
     ) {
         for extension in extension_properties {
-            let extension_name = cstr_from_bytes_until_nul(&extension.extension_name).unwrap();
+            let extension_name = CStr::from_bytes_until_nul(&extension.extension_name).unwrap();
             if extension_name.to_str().unwrap() == "VK_KHR_swapchain" {
                 enabled_extensions.push(extension_name);
                 return;
