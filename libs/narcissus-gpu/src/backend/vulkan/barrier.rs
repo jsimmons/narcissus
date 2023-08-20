@@ -1,5 +1,5 @@
 //! An alternative vulkan syncronization approach based on
-//! https://github.com/Tobski/simple_vulkan_synchronization
+//! <https://github.com/Tobski/simple_vulkan_synchronization>
 
 use narcissus_core::default;
 use vulkan_sys as vk;
