@@ -1,5 +1,6 @@
 mod arena;
 mod bitset;
+mod directory;
 mod finite;
 mod fixed_vec;
 mod libc;
@@ -21,6 +22,8 @@ mod widen;
 
 pub use arena::{Arena, HybridArena};
 pub use bitset::BitIter;
+pub use directory::{cache_dir, config_dir, data_dir, runtime_dir};
+pub use finite::{FiniteF32, FiniteF64, NotFiniteError};
 pub use fixed_vec::FixedVec;
 pub use mutex::Mutex;
 pub use pool::{Handle, Pool};
@@ -28,9 +31,6 @@ pub use ref_count::{Arc, Rc};
 pub use uuid::Uuid;
 pub use virtual_mem::{virtual_commit, virtual_free, virtual_reserve};
 pub use virtual_vec::{VirtualDeque, VirtualVec};
-
-pub use finite::{FiniteF32, FiniteF64, NotFiniteError};
-
 pub use widen::Widen;
 
 use std::{ffi::CStr, mem::MaybeUninit};
