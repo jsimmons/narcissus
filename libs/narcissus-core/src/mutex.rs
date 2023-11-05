@@ -263,23 +263,17 @@ mod tests {
         let mutex = Mutex::new(1);
         let mut lock1;
         loop {
-            match mutex.try_lock() {
-                Some(lock) => {
-                    lock1 = lock;
-                    break;
-                }
-                None => {}
+            if let Some(lock) = mutex.try_lock() {
+                lock1 = lock;
+                break;
             }
         }
 
         let mut lock2;
         loop {
-            match mutex.try_lock() {
-                Some(lock) => {
-                    lock2 = lock;
-                    break;
-                }
-                None => {}
+            if let Some(lock) = mutex.try_lock() {
+                lock2 = lock;
+                break;
             }
         }
 

@@ -46,7 +46,7 @@ impl Eq for FiniteF32 {}
 impl PartialOrd for FiniteF32 {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 
@@ -103,7 +103,7 @@ impl Eq for FiniteF64 {}
 impl PartialOrd for FiniteF64 {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 

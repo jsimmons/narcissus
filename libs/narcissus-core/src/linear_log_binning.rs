@@ -217,16 +217,16 @@ mod tests {
         // Check all bin thresholds.
         for i in 0..32 - LINEAR_REGION_LOG2 - 1 {
             let bin = i + 1;
-            let base = 1 << i + LINEAR_REGION_LOG2;
+            let base = 1 << (i + LINEAR_REGION_LOG2);
             let step = base >> SUB_BIN_COUNT_LOG2;
-            for sub_bin in 0..SUB_BIN_COUNT as u32 {
+            for sub_bin in 0..SUB_BIN_COUNT {
                 let size = base + sub_bin * step;
                 assert_eq!(Bin::from_size_round_up(size), make_bin(size, bin, sub_bin));
                 assert_eq!(make_bin(size, bin, sub_bin), (size, Bin::new(bin, sub_bin)));
 
                 let next_size = base + (sub_bin + 1) * step;
-                let next_bin = bin + (sub_bin == SUB_BIN_COUNT as u32 - 1) as u32;
-                let next_sub_bin = (sub_bin + 1) % SUB_BIN_COUNT as u32;
+                let next_bin = bin + (sub_bin == SUB_BIN_COUNT - 1) as u32;
+                let next_sub_bin = (sub_bin + 1) % SUB_BIN_COUNT;
                 assert_eq!(
                     Bin::from_size_round_up(size + 1),
                     make_bin(next_size, next_bin, next_sub_bin)
