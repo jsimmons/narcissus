@@ -2,6 +2,7 @@
 
 members = [
     "title/shark",
+    "ext/blake3-smol",
     "ext/renderdoc-sys",
     "ext/sdl2-sys",
     "ext/sqlite-sys",
