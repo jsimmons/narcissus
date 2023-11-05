@@ -150,7 +150,7 @@ macro_rules! flags_def {
 
         impl Clone for $name {
             fn clone(&self) -> Self {
-                Self(self.0)
+                *self
             }
         }
 
