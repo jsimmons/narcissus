@@ -27,7 +27,7 @@ const GLYPH_CACHE_SIZE: usize = 1024;
 pub fn main() {
     let app = create_app();
     let main_window = app.create_window(&WindowDesc {
-        title: "narcissus",
+        title: "shark",
         width: 800,
         height: 600,
     });
@@ -41,8 +41,8 @@ pub fn main() {
     let fonts = Fonts::new();
     let mut glyph_cache = GlyphCache::new(&fonts, GLYPH_CACHE_SIZE, GLYPH_CACHE_SIZE, 1);
 
-    let blåhaj_image_data = load_image("bins/narcissus/data/blåhaj.png");
-    let (blåhaj_vertices, blåhaj_indices) = load_obj("bins/narcissus/data/blåhaj.obj");
+    let blåhaj_image_data = load_image("title/shark/data/blåhaj.png");
+    let (blåhaj_vertices, blåhaj_indices) = load_obj("title/shark/data/blåhaj.obj");
 
     let blåhaj_vertex_buffer = device.create_persistent_buffer_with_data(
         MemoryLocation::Device,

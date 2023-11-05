@@ -1,0 +1,14 @@
+[package]
+name = "shark"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+narcissus-app = { path = "../../engine/narcissus-app" }
+narcissus-core = { path = "../../engine/narcissus-core" }
+narcissus-font = { path = "../../engine/narcissus-font" }
+narcissus-maths = { path = "../../engine/narcissus-maths" }
+narcissus-image = { path = "../../engine/narcissus-image" }
+narcissus-gpu = { path = "../../engine/narcissus-gpu" }

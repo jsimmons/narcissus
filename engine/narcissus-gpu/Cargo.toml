@@ -1,5 +1,5 @@
 [package]
-name = "narcissus-app"
+name = "narcissus-gpu"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 narcissus-core = { path = "../narcissus-core" }
-sdl2-sys = { path = "../ffi/sdl2-sys" }
+vulkan-sys = { path = "../../ext/vulkan-sys" }

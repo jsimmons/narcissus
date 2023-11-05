@@ -1,19 +1,19 @@
 [workspace]
 
 members = [
-    "bins/narcissus",
-    "libs/ffi/renderdoc-sys",
-    "libs/ffi/sdl2-sys",
-    "libs/ffi/stb_image-sys",
-    "libs/ffi/stb_truetype-sys",
-    "libs/ffi/vulkan-sys",
-    "libs/narcissus-app",
-    "libs/narcissus-core",
-    "libs/narcissus-font",
-    "libs/narcissus-gpu",
-    "libs/narcissus-image",
-    "libs/narcissus-maths",
-    "libs/narcissus-world",
+    "title/shark",
+    "ext/renderdoc-sys",
+    "ext/sdl2-sys",
+    "ext/stb_image-sys",
+    "ext/stb_truetype-sys",
+    "ext/vulkan-sys",
+    "engine/narcissus-app",
+    "engine/narcissus-core",
+    "engine/narcissus-font",
+    "engine/narcissus-gpu",
+    "engine/narcissus-image",
+    "engine/narcissus-maths",
+    "engine/narcissus-world",
 ]
 
 resolver = "2"
