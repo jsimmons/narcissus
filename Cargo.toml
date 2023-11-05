@@ -4,6 +4,7 @@ members = [
     "title/shark",
     "ext/renderdoc-sys",
     "ext/sdl2-sys",
+    "ext/sqlite-sys",
     "ext/stb_image-sys",
     "ext/stb_truetype-sys",
     "ext/vulkan-sys",
@@ -13,6 +14,7 @@ members = [
     "engine/narcissus-gpu",
     "engine/narcissus-image",
     "engine/narcissus-maths",
+    "engine/narcissus-sqlite",
     "engine/narcissus-world",
 ]
 

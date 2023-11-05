@@ -78,6 +78,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "narcissus-sqlite"
+version = "0.1.0"
+dependencies = [
+ "sqlite-sys",
+]
+
+[[package]]
 name = "narcissus-world"
 version = "0.1.0"
 dependencies = [
@@ -109,6 +116,10 @@ dependencies = [
  "narcissus-image",
  "narcissus-maths",
 ]
+
+[[package]]
+name = "sqlite-sys"
+version = "0.1.0"
 
 [[package]]
 name = "stb_image-sys"
