@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::CString, mem::MaybeUninit, sync::Arc};
+use std::{collections::HashMap, ffi::CString, mem::MaybeUninit, rc::Rc};
 
 use crate::{App, Button, Event, Key, ModifierFlags, PressedState, Window, WindowId};
 
@@ -65,7 +65,7 @@ impl Upcast<dyn AsRawWindow> for SdlWindow {
 }
 
 pub struct SdlApp {
-    windows: Mutex<HashMap<WindowId, Arc<SdlWindow>>>,
+    windows: Mutex<HashMap<WindowId, Rc<SdlWindow>>>,
 }
 
 impl SdlApp {
@@ -87,7 +87,7 @@ impl Drop for SdlApp {
 }
 
 impl App for SdlApp {
-    fn create_window(&self, desc: &crate::WindowDesc) -> Arc<dyn Window> {
+    fn create_window(&self, desc: &crate::WindowDesc) -> Rc<dyn Window> {
         let title = CString::new(desc.title).unwrap();
         let window = unsafe {
             sdl::SDL_CreateWindow(
@@ -101,16 +101,16 @@ impl App for SdlApp {
         };
         assert!(!window.is_null());
         let window_id = WindowId(unsafe { sdl::SDL_GetWindowID(window) } as u64);
-        let window = Arc::new(SdlWindow { window });
+        let window = Rc::new(SdlWindow { window });
         self.windows.lock().insert(window_id, window.clone());
         window
     }
 
-    fn destroy_window(&self, window: Arc<dyn Window>) {
+    fn destroy_window(&self, window: Rc<dyn Window>) {
         let window_id = window.id();
         drop(window);
         if let Some(mut window) = self.windows.lock().remove(&window_id) {
-            let window = Arc::get_mut(&mut window)
+            let window = Rc::get_mut(&mut window)
                 .expect("tried to destroy a window while there are outstanding references");
             unsafe { sdl::SDL_DestroyWindow(window.window) };
         }
@@ -200,7 +200,7 @@ impl App for SdlApp {
         Some(e)
     }
 
-    fn window(&self, window_id: WindowId) -> Arc<dyn Window> {
+    fn window(&self, window_id: WindowId) -> Rc<dyn Window> {
         self.windows.lock().get(&window_id).unwrap().clone()
     }
 }

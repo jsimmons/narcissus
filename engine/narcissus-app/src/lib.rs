@@ -2,7 +2,7 @@ mod button;
 mod key;
 mod sdl;
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 use narcissus_core::{flags_def, raw_window::AsRawWindow, Upcast};
 
@@ -106,10 +106,10 @@ pub enum Event {
 }
 
 pub trait App {
-    fn create_window(&self, desc: &WindowDesc) -> Arc<dyn Window>;
-    fn destroy_window(&self, window: Arc<dyn Window>);
+    fn create_window(&self, desc: &WindowDesc) -> Rc<dyn Window>;
+    fn destroy_window(&self, window: Rc<dyn Window>);
 
-    fn window(&self, window_id: WindowId) -> Arc<dyn Window>;
+    fn window(&self, window_id: WindowId) -> Rc<dyn Window>;
 
     fn poll_event(&self) -> Option<Event>;
 }
