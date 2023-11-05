@@ -230,7 +230,7 @@ impl Connection {
         Self::open(cstr!(":memory:"))
     }
 
-    pub fn prepare<'conn, 'a>(&'conn self, sql: &'a str) -> Result<Statement<'conn>> {
+    pub fn prepare<'conn>(&'conn self, sql: &str) -> Result<Statement<'conn>> {
         let (statement, trailing) = self.prepare_partial(sql)?;
         if !trailing.is_empty() {
             return Err(Error::trailing_sql());
@@ -412,7 +412,7 @@ impl<'stmt> Row<'stmt> {
         unsafe { ffi::sqlite3_column_double(self.statement.statement, column) }
     }
 
-    pub fn column_str<'a>(&'a mut self, column: i32) -> &'a str {
+    pub fn column_str(&mut self, column: i32) -> &str {
         // Safety: Text is utf-8 and the pointer given by sqlite3_column_text is valid
         // until the statement is invalidated, or the column is cast to a different type
         // by another column accessor.
@@ -428,7 +428,7 @@ impl<'stmt> Row<'stmt> {
         }
     }
 
-    pub fn column_blob<'a>(&'a mut self, column: i32) -> &'a [u8] {
+    pub fn column_blob(&mut self, column: i32) -> &[u8] {
         // Safety: The pointer given by sqlite3_column_blob is valid until the statement
         // is invalidated, or the column is cast to a different type by another column
         // accessor.
