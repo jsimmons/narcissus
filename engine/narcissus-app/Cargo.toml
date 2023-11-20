@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 narcissus-core = { path = "../narcissus-core" }
-sdl2-sys = { path = "../../ext/sdl2-sys" }
+sdl2-sys = { path = "../../external/sdl2-sys" }

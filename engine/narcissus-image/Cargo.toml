@@ -6,4 +6,4 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-stb_image-sys = { path = "../../ext/stb_image-sys" }
+stb_image-sys = { path = "../../external/stb_image-sys" }
