@@ -188,7 +188,7 @@ pub fn main() {
             let x = x as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
             let z = z as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
             shark_transforms.push(Affine3 {
-                matrix: Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(rng.next_f32())),
+                matrix: Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(rng.next_f32() * 2.0)),
                 translate: vec3(x, 0.0, z),
             })
         }

@@ -62,14 +62,24 @@ impl Pcg64 {
         (result + carry as u64).widen()
     }
 
-    /// Generates a uniformly distributed random float in the range `-1.0..1.0`
+    /// Generates a uniformly distributed random f32 in the range `0.0..1.0`
     ///
-    /// Always draws two 64 bit words from the PRNG.
+    /// Always draws one 64 bit word from the PRNG.
     #[inline]
     #[must_use]
     pub fn next_f32(&mut self) -> f32 {
-        let value = (self.next_u64() >> (64 - 25)) as i64 as f32;
+        let value = (self.next_u64() >> (64 - 24)) as i64 as f32;
         value * 5.960_464_5e-8 // 0x1p-24f
+    }
+
+    /// Generates a uniformly distributed random f64 in the range `0.0..1.0`
+    ///
+    /// Always draws one 64 bit word from the PRNG.
+    #[inline]
+    #[must_use]
+    pub fn next_f64(&mut self) -> f64 {
+        let value = (self.next_u64() >> (64 - 53)) as i64 as f64;
+        value * 1.110_223_024_625_156_5e-16 // 0x1p-53
     }
 
     /// Randomly select an an element from `slice` with uniform probability.
@@ -218,5 +228,23 @@ mod tests {
         let slice: &mut [u8] = &mut [];
         let mut rng = Pcg64::new();
         assert_eq!(rng.select(slice), None);
+    }
+
+    #[test]
+    fn uniform_f32() {
+        let mut rng = Pcg64::new();
+        for _ in 0..100_000 {
+            let x = rng.next_f32();
+            assert!(x >= 0.0 && x < 1.0);
+        }
+    }
+
+    #[test]
+    fn uniform_f64() {
+        let mut rng = Pcg64::new();
+        for _ in 0..100_000 {
+            let x = rng.next_f64();
+            assert!(x >= 0.0 && x < 1.0);
+        }
     }
 }
