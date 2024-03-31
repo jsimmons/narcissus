@@ -113,7 +113,7 @@ impl<T: ?Sized> Rc<T> {
 
     #[inline]
     pub fn ptr_eq(&self, other: &Self) -> bool {
-        self.ptr.as_ptr() == other.ptr.as_ptr()
+        std::ptr::eq(self.ptr.as_ptr(), other.ptr.as_ptr())
     }
 
     #[inline]
@@ -219,7 +219,7 @@ impl<T: ?Sized> Arc<T> {
 
     #[inline]
     pub fn ptr_eq(&self, other: &Self) -> bool {
-        self.ptr.as_ptr() == other.ptr.as_ptr()
+        std::ptr::eq(self.ptr.as_ptr(), other.ptr.as_ptr())
     }
 
     #[inline]
