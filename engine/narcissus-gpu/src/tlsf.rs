@@ -637,10 +637,7 @@ where
             size
         } as u32;
 
-        let Some((rounded_size, bin)) = self.search_non_empty_bin(size) else {
-            return None;
-        };
-
+        let (rounded_size, bin) = self.search_non_empty_bin(size)?;
         let block_index = self.empty_block_heads[bin.index()].unwrap();
 
         debug_assert!(
