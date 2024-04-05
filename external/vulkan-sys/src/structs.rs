@@ -2667,6 +2667,57 @@ impl Default for PhysicalDeviceVulkan13Properties {
     }
 }
 
+#[repr(C)]
+pub struct PhysicalDeviceSurfaceInfo2KHR {
+    pub _type: StructureType,
+    pub _next: *mut c_void,
+    pub surface: SurfaceKHR,
+}
+
+impl Default for PhysicalDeviceSurfaceInfo2KHR {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::PhysicalDeviceSurfaceInfo2Khr,
+            _next: core::ptr::null_mut(),
+            surface: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct SurfaceCapabilities2KHR {
+    pub _type: StructureType,
+    pub _next: *mut c_void,
+    pub surface_capabilities: SurfaceCapabilitiesKHR,
+}
+
+impl Default for SurfaceCapabilities2KHR {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::SurfaceCapabilities2Khr,
+            _next: core::ptr::null_mut(),
+            surface_capabilities: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct SurfaceFormat2KHR {
+    pub _type: StructureType,
+    pub _next: *mut c_void,
+    pub surface_format: SurfaceFormatKHR,
+}
+
+impl Default for SurfaceFormat2KHR {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::SurfaceFormat2Khr,
+            _next: core::ptr::null_mut(),
+            surface_format: Default::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

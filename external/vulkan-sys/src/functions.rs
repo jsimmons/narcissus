@@ -926,3 +926,16 @@ pub type FnAcquireNextImage2KHR = extern "system" fn(
     acquire_info: &AcquireNextImageInfoKHR,
     image_index: &mut u32,
 ) -> Result;
+
+pub type FnGetPhysicalDeviceSurfaceCapabilities2KHR = extern "system" fn(
+    physical_device: PhysicalDevice,
+    surface_info: &PhysicalDeviceSurfaceInfo2KHR,
+    surface_capabilities: &mut SurfaceCapabilities2KHR,
+) -> Result;
+
+pub type FnGetPhysicalDeviceSurfaceFormats2KHR = extern "system" fn(
+    physical_device: PhysicalDevice,
+    surface_info: PhysicalDeviceSurfaceInfo2KHR,
+    surface_format_count: &mut u32,
+    surface_formats: *mut SurfaceFormat2KHR,
+) -> Result;

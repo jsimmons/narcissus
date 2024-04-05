@@ -2678,3 +2678,59 @@ impl SwapchainKHRFunctions {
         (self.queue_present)(queue, present_info)
     }
 }
+
+pub struct SurfaceCapabilities2KhrFunctions {
+    get_physical_device_surface_capabilities2_khr: FnGetPhysicalDeviceSurfaceCapabilities2KHR,
+    get_physical_device_surface_formats2_khr: FnGetPhysicalDeviceSurfaceFormats2KHR,
+}
+
+impl SurfaceCapabilities2KhrFunctions {
+    pub fn new(global_functions: &GlobalFunctions, instance: Instance) -> Self {
+        unsafe {
+            let load = |name: &CStr| {
+                global_functions
+                    .get_instance_proc_addr(instance, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || panic!("failed to load device function {}", name.to_string_lossy()),
+                    )
+            };
+            Self {
+                get_physical_device_surface_formats2_khr: transmute::<_, _>(load(
+                    c"vkGetPhysicalDeviceSurfaceFormats2KHR",
+                )),
+                get_physical_device_surface_capabilities2_khr: transmute::<_, _>(load(
+                    c"vkGetPhysicalDeviceSurfaceCapabilities2KHR",
+                )),
+            }
+        }
+    }
+
+    pub unsafe fn get_physical_device_surface_capabilities2_khr(
+        &self,
+        physical_device: PhysicalDevice,
+        surface_info: &PhysicalDeviceSurfaceInfo2KHR,
+        surface_capabilities: &mut SurfaceCapabilities2KHR,
+    ) -> Result {
+        (self.get_physical_device_surface_capabilities2_khr)(
+            physical_device,
+            surface_info,
+            surface_capabilities,
+        )
+    }
+
+    pub unsafe fn get_physical_device_surface_formats2_khr(
+        &self,
+        physical_device: PhysicalDevice,
+        surface_info: PhysicalDeviceSurfaceInfo2KHR,
+        surface_format_count: &mut u32,
+        surface_formats: *mut SurfaceFormat2KHR,
+    ) -> Result {
+        (self.get_physical_device_surface_formats2_khr)(
+            physical_device,
+            surface_info,
+            surface_format_count,
+            surface_formats,
+        )
+    }
+}
