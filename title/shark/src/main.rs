@@ -25,6 +25,11 @@ const NUM_SHARKS: usize = 50;
 const GLYPH_CACHE_SIZE: usize = 1024;
 
 pub fn main() {
+    #[cfg(debug_assertions)]
+    if std::env::var("RUST_BACKTRACE").is_err() {
+        std::env::set_var("RUST_BACKTRACE", "1")
+    }
+
     let app = create_app();
     let main_window = app.create_window(&WindowDesc {
         title: "shark",
