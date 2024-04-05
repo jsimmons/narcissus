@@ -1394,6 +1394,11 @@ impl DeviceFunctions {
     }
 
     #[inline]
+    pub unsafe fn get_fence_status(&self, device: Device, fence: Fence) -> Result {
+        (self.get_fence_status)(device, fence)
+    }
+
+    #[inline]
     pub unsafe fn wait_for_fences(
         &self,
         device: Device,
