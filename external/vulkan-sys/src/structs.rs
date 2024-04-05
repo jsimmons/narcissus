@@ -544,6 +544,124 @@ impl Default for SurfaceFormatKHR {
 }
 
 #[repr(C)]
+pub struct SurfacePresentModeEXT {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub present_mode: PresentModeKHR,
+}
+
+impl Default for SurfacePresentModeEXT {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::SurfacePresentModeExt,
+            _next: core::ptr::null(),
+            present_mode: PresentModeKHR::Fifo,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct SwapchainPresentModesCreateInfoEXT<'a> {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub present_modes: VulkanSlice1<'a, u32, PresentModeKHR, 4>,
+}
+
+impl<'a> Default for SwapchainPresentModesCreateInfoEXT<'a> {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::SwapchainPresentModesCreateInfoExt,
+            _next: core::ptr::null(),
+            present_modes: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct SurfacePresentModeCompatibilityEXT<'a> {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub present_modes: VulkanSlice1<'a, u32, PresentModeKHR, 4>,
+}
+
+impl<'a> Default for SurfacePresentModeCompatibilityEXT<'a> {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::SurfacePresentModeCompatibilityExt,
+            _next: core::ptr::null(),
+            present_modes: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct SurfacePresentScalingCapabilitiesEXT {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub supported_present_scaling: PresentScalingFlagsEXT,
+    pub supported_present_gravity_x: PresentGravityFlagsEXT,
+    pub supported_present_gravity_y: PresentGravityFlagsEXT,
+    pub min_scaled_image_extent: Extent2d,
+    pub max_scaled_image_extent: Extent2d,
+}
+
+impl Default for SurfacePresentScalingCapabilitiesEXT {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::SurfacePresentScalingCapabilitiesExt;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct SwapchainPresentScalingCreateInfoEXT {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub scaling_behavior: PresentScalingFlagsEXT,
+    pub present_gravity_x: PresentGravityFlagsEXT,
+    pub present_gravity_y: PresentGravityFlagsEXT,
+}
+
+impl Default for SwapchainPresentScalingCreateInfoEXT {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::SwapchainPresentScalingCreateInfoExt;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct SwapchainPresentFenceInfoEXT<'a> {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub fences: VulkanSlice1<'a, u32, Fence, 4>,
+}
+
+impl<'a> Default for SwapchainPresentFenceInfoEXT<'a> {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::SwapchainPresentFenceInfoExt;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct ReleaseSwapchainImagesInfoEXT<'a> {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub swapchain: SwapchainKHR,
+    pub image_indices: VulkanSlice1<'a, u32, u32, 4>,
+}
+
+impl<'a> Default for ReleaseSwapchainImagesInfoEXT<'a> {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::ReleaseSwapchainImagesInfoExt;
+        x
+    }
+}
+
+#[repr(C)]
 pub struct SwapchainCreateInfoKHR<'a> {
     pub _type: StructureType,
     pub _next: *const c_void,
@@ -2478,6 +2596,20 @@ impl Default for PhysicalDeviceVulkan13Features {
     }
 }
 
+pub struct PhysicalDeviceSwapchainMaintenance1FeaturesEXT {
+    pub _type: StructureType,
+    pub _next: *mut c_void,
+    pub swapchain_maintenance1: Bool32,
+}
+
+impl Default for PhysicalDeviceSwapchainMaintenance1FeaturesEXT {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::PhysicalDeviceSwapchainMaintenance1FeaturesExt;
+        x
+    }
+}
+
 #[repr(C)]
 pub struct PhysicalDeviceProperties {
     pub api_version: u32,
@@ -2993,6 +3125,28 @@ mod test {
             let semaphore_wait_info = SemaphoreWaitInfo::default();
             assert!(is_aligned(addr_of!(semaphore_wait_info.semaphores.ptr0)));
             assert!(is_aligned(addr_of!(semaphore_wait_info.semaphores.ptr1)));
+        }
+
+        {
+            let swapchain_present_modes_create_info = SwapchainPresentModesCreateInfoEXT::default();
+            assert!(is_aligned(addr_of!(
+                swapchain_present_modes_create_info.present_modes.ptr
+            )));
+
+            let surface_present_mode_capability = SurfacePresentModeCompatibilityEXT::default();
+            assert!(is_aligned(addr_of!(
+                surface_present_mode_capability.present_modes.ptr
+            )));
+
+            let swapchain_present_fence_info = SwapchainPresentFenceInfoEXT::default();
+            assert!(is_aligned(addr_of!(
+                swapchain_present_fence_info.fences.ptr
+            )));
+
+            let release_swapchain_images_info = ReleaseSwapchainImagesInfoEXT::default();
+            assert!(is_aligned(addr_of!(
+                release_swapchain_images_info.image_indices.ptr
+            )));
         }
     }
 }

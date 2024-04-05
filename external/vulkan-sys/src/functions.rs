@@ -927,6 +927,9 @@ pub type FnAcquireNextImage2KHR = extern "system" fn(
     image_index: &mut u32,
 ) -> Result;
 
+pub type FnReleaseSwapchainImagesEXT =
+    extern "system" fn(device: Device, release_info: &ReleaseSwapchainImagesInfoEXT) -> Result;
+
 pub type FnGetPhysicalDeviceSurfaceCapabilities2KHR = extern "system" fn(
     physical_device: PhysicalDevice,
     surface_info: &PhysicalDeviceSurfaceInfo2KHR,

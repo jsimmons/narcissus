@@ -1366,6 +1366,15 @@ pub enum StructureType {
     PipelineRenderingCreateInfo = 1000044002,
     PhysicalDeviceDynamicRenderingFeatures = 1000044003,
     CommandBufferInheritanceRenderingInfo = 1000044004,
+    SurfacePresentModeExt = 1000274000,
+    SurfacePresentScalingCapabilitiesExt = 1000274001,
+    SurfacePresentModeCompatibilityExt = 1000274002,
+    PhysicalDeviceSwapchainMaintenance1FeaturesExt = 1000275000,
+    SwapchainPresentFenceInfoExt = 1000275001,
+    SwapchainPresentModesCreateInfoExt = 1000275002,
+    SwapchainPresentModeInfoExt = 1000275003,
+    SwapchainPresentScalingCreateInfoExt = 1000275004,
+    ReleaseSwapchainImagesInfoExt = 1000275005,
 }
 
 #[repr(i32)]

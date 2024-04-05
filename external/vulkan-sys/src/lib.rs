@@ -2734,3 +2734,35 @@ impl SurfaceCapabilities2KhrFunctions {
         )
     }
 }
+
+pub struct SwapchainMaintenance1ExtFunctions {
+    release_swapchain_images_ext: FnReleaseSwapchainImagesEXT,
+}
+
+impl SwapchainMaintenance1ExtFunctions {
+    pub fn new(instance_functions: &InstanceFunctions, device: Device) -> Self {
+        unsafe {
+            let load = |name: &CStr| {
+                instance_functions
+                    .get_device_proc_addr(device, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || panic!("failed to load device function {}", name.to_string_lossy()),
+                    )
+            };
+            Self {
+                release_swapchain_images_ext: transmute::<_, _>(load(
+                    c"vkReleaseSwapchainImagesEXT",
+                )),
+            }
+        }
+    }
+
+    pub unsafe fn release_swapchain_images_ext(
+        &self,
+        device: Device,
+        release_info: &ReleaseSwapchainImagesInfoEXT,
+    ) -> Result {
+        (self.release_swapchain_images_ext)(device, release_info)
+    }
+}

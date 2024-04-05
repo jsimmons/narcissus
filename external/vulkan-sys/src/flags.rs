@@ -870,6 +870,24 @@ impl PipelineStageFlags2 {
     pub const INVOCATION_MASK_HUAWEI: Self = Self(0x10000000000);
 }
 
+#[repr(C)]
+pub struct PresentScalingFlagsEXT(u32);
+
+impl PresentScalingFlagsEXT {
+    pub const ONE_TO_ONE_EXT: Self = Self(0x00000001);
+    pub const ASPECT_RATIO_STRETCH_EXT: Self = Self(0x00000002);
+    pub const STRETCH_EXT: Self = Self(0x00000004);
+}
+
+#[repr(C)]
+pub struct PresentGravityFlagsEXT(u32);
+
+impl PresentGravityFlagsEXT {
+    pub const MIN_EXT: Self = Self(0x00000001);
+    pub const MAX_EXT: Self = Self(0x00000002);
+    pub const CENTERED_EXT: Self = Self(0x00000004);
+}
+
 macro_rules! impl_flags_u32 {
     ($($t:ty),+) => {
         $(
@@ -1123,7 +1141,9 @@ impl_flags_u32!(
     ResolveModeFlags,
     RenderingFlags,
     SubgroupFeatureFlags,
-    SubmitFlags
+    SubmitFlags,
+    PresentScalingFlagsEXT,
+    PresentGravityFlagsEXT
 );
 
 impl_flags_u64!(AccessFlags2, PipelineStageFlags2);
