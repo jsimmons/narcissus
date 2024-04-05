@@ -558,9 +558,9 @@ impl InstanceFunctions {
     pub unsafe fn get_device_proc_addr(
         &self,
         device: Device,
-        name: *const c_char,
+        name: &CStr,
     ) -> Option<FnVoidFunction> {
-        (self.get_device_proc_addr)(device, name)
+        (self.get_device_proc_addr)(device, name.as_ptr())
     }
 }
 
@@ -691,7 +691,7 @@ impl DeviceFunctions {
             let load = |name: &CStr, function_version| {
                 if api_version >= function_version {
                     instance_functons
-                        .get_device_proc_addr(device, name.as_ptr())
+                        .get_device_proc_addr(device, name)
                         .unwrap_or_else(
                             #[cold]
                             || panic!("failed to load device function {}", name.to_string_lossy()),
