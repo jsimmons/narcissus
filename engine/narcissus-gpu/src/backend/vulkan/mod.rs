@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell, UnsafeCell},
     collections::{HashMap, VecDeque},
+    ffi::CStr,
     marker::PhantomData,
     os::raw::c_char,
     ptr::NonNull,
@@ -15,14 +16,13 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    delay_queue::DelayQueue, frame_counter::FrameCounter, Bind, BindGroupLayout,
-    BindGroupLayoutDesc, Buffer, BufferArg, BufferDesc, BufferImageCopy, BufferUsageFlags,
-    CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d, Frame, GlobalBarrier,
-    GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit, ImageDesc, ImageDimension,
-    ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, ImageViewDesc, IndexType,
-    MemoryLocation, Offset2d, Offset3d, PersistentBuffer, Pipeline, Sampler, SamplerAddressMode,
-    SamplerCompareOp, SamplerDesc, SamplerFilter, SwapchainOutOfDateError, ThreadToken,
-    TransientBuffer, TypedBind,
+    frame_counter::FrameCounter, Bind, BindGroupLayout, BindGroupLayoutDesc, Buffer, BufferArg,
+    BufferDesc, BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device,
+    Extent2d, Extent3d, Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image,
+    ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageTiling,
+    ImageUsageFlags, ImageViewDesc, IndexType, MemoryLocation, Offset2d, Offset3d,
+    PersistentBuffer, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
+    SamplerFilter, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
 };
 
 mod allocator;
@@ -46,9 +46,12 @@ pub struct VulkanConstants {
     /// recycling of resources.
     num_frames: usize,
 
-    /// How many frames to delay swapchain destruction. There's no correct answer
-    /// here (spec bug) we're just picking a big number and hoping for the best.
-    swapchain_destroy_delay: usize,
+    /// How many frames to delay swapchain semaphore release and swapchain
+    /// destruction. There's no correct answer here (spec bug) we're just picking a
+    /// big number and hoping for the best.
+    ///
+    /// This will not be used if VK_EXT_swapchain_maintenance1 is available.
+    swapchain_semaphore_destroy_delay: u64,
 
     /// How large should transient buffers be, this will limit the maximum size of
     /// transient allocations.
@@ -79,7 +82,7 @@ pub struct VulkanConstants {
 
 const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
     num_frames: 2,
-    swapchain_destroy_delay: 8,
+    swapchain_semaphore_destroy_delay: 8,
     transient_buffer_size: 4 * 1024 * 1024,
     tlsf_default_super_block_size: 128 * 1024 * 1024,
     tlsf_small_super_block_divisor: 16,
@@ -326,8 +329,6 @@ impl VulkanFrame {
     }
 }
 
-type SwapchainDestroyQueue = DelayQueue<(vk::SwapchainKHR, vk::SurfaceKHR, Box<[vk::ImageView]>)>;
-
 pub(crate) struct VulkanDevice {
     instance: vk::Instance,
     physical_device: vk::PhysicalDevice,
@@ -349,9 +350,9 @@ pub(crate) struct VulkanDevice {
     bind_group_layout_pool: Mutex<Pool<VulkanBindGroupLayout>>,
     pipeline_pool: Mutex<Pool<VulkanPipeline>>,
 
+    recycled_fences: Mutex<VecDeque<vk::Fence>>,
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
     recycled_descriptor_pools: Mutex<VecDeque<vk::DescriptorPool>>,
-
     recycled_transient_buffers: Mutex<VecDeque<VulkanTransientBuffer>>,
 
     allocator: VulkanAllocator,
@@ -378,7 +379,7 @@ impl VulkanDevice {
                 cstr!("libvulkan.so.1").as_ptr(),
                 libc::RTLD_NOW | libc::RTLD_LOCAL,
             );
-            libc::dlsym(module, cstr!("vkGetInstanceProcAddr").as_ptr())
+            libc::dlsym(module, (c"vkGetInstanceProcAddr").as_ptr())
         };
 
         let global_fn = unsafe { vk::GlobalFunctions::new(get_proc_addr) };
@@ -394,7 +395,7 @@ impl VulkanDevice {
         }
 
         #[cfg(debug_assertions)]
-        let enabled_layers = &[cstr!("VK_LAYER_KHRONOS_validation").as_ptr()];
+        let enabled_layers = &[(c"VK_LAYER_KHRONOS_validation").as_ptr()];
         #[cfg(not(debug_assertions))]
         let enabled_layers = &[];
 
@@ -404,8 +405,24 @@ impl VulkanDevice {
 
         let mut enabled_extensions = vec![];
 
-        let wsi_support =
-            VulkanWsi::check_instance_extensions(&extension_properties, &mut enabled_extensions);
+        let mut has_get_surface_capabilities2 = false;
+        for extension in &extension_properties {
+            let extension_name = CStr::from_bytes_until_nul(&extension.extension_name).unwrap();
+            if extension_name.to_str().unwrap() == "VK_KHR_get_surface_capabilities2" {
+                has_get_surface_capabilities2 = true;
+                enabled_extensions.push(extension_name);
+                break;
+            }
+        }
+
+        assert!(has_get_surface_capabilities2);
+
+        let mut wsi_support = default();
+        VulkanWsi::check_instance_extensions(
+            &extension_properties,
+            &mut enabled_extensions,
+            &mut wsi_support,
+        );
 
         let enabled_extensions = enabled_extensions
             .iter()
@@ -433,8 +450,6 @@ impl VulkanDevice {
         };
 
         let instance_fn = vk::InstanceFunctions::new(&global_fn, instance, vk::VERSION_1_2);
-
-        let wsi = Box::new(VulkanWsi::new(&global_fn, instance, &wsi_support));
 
         let physical_devices = vk_vec(|count, ptr| unsafe {
             instance_fn.enumerate_physical_devices(instance, count, ptr)
@@ -555,7 +570,11 @@ impl VulkanDevice {
 
             let mut enabled_extensions = vec![];
 
-            VulkanWsi::check_device_extensions(&extension_properties, &mut enabled_extensions);
+            VulkanWsi::check_device_extensions(
+                &extension_properties,
+                &mut enabled_extensions,
+                &mut wsi_support,
+            );
 
             let enabled_extensions = enabled_extensions
                 .iter()
@@ -595,6 +614,8 @@ impl VulkanDevice {
         };
 
         let device_fn = vk::DeviceFunctions::new(&instance_fn, device, vk::VERSION_1_3);
+
+        let wsi = Box::new(VulkanWsi::new(&global_fn, instance, wsi_support));
 
         let universal_queue = unsafe {
             let mut queue = vk::Queue::default();
@@ -701,6 +722,7 @@ impl VulkanDevice {
             bind_group_layout_pool: default(),
             pipeline_pool: default(),
 
+            recycled_fences: default(),
             recycled_semaphores: default(),
             recycled_descriptor_pools: default(),
             recycled_transient_buffers: default(),
@@ -776,6 +798,21 @@ impl VulkanDevice {
                 &mut descriptor_pool
             ));
             descriptor_pool
+        }
+    }
+
+    fn request_fence(&self) -> vk::Fence {
+        if let Some(fence) = self.recycled_fences.lock().pop_front() {
+            let fences = &[fence];
+            vk_check!(self.device_fn.reset_fences(self.device, fences));
+            fence
+        } else {
+            let mut fence = vk::Fence::null();
+            let create_info = vk::FenceCreateInfo::default();
+            vk_check!(self
+                .device_fn
+                .create_fence(self.device, &create_info, None, &mut fence));
+            fence
         }
     }
 
@@ -2597,6 +2634,10 @@ impl Drop for VulkanDevice {
                 self.device_fn
                     .destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
             }
+        }
+
+        for fence in self.recycled_fences.get_mut() {
+            unsafe { self.device_fn.destroy_fence(device, *fence, None) }
         }
 
         for semaphore in self

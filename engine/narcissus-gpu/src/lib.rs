@@ -6,7 +6,6 @@ use narcissus_core::{
 };
 
 mod backend;
-mod delay_queue;
 mod frame_counter;
 mod mapped_buffer;
 mod tlsf;
