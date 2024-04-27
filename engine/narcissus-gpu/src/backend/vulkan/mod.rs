@@ -394,9 +394,9 @@ impl VulkanDevice {
             panic!("instance does not support vulkan 1.2")
         }
 
-        #[cfg(debug_assertions)]
-        let enabled_layers = &[(c"VK_LAYER_KHRONOS_validation").as_ptr()];
-        #[cfg(not(debug_assertions))]
+        // #[cfg(debug_assertions)]
+        // let enabled_layers = &[(c"VK_LAYER_KHRONOS_validation").as_ptr()];
+        // #[cfg(not(debug_assertions))]
         let enabled_layers = &[];
 
         let extension_properties = vk_vec(|count, ptr| unsafe {
@@ -1601,6 +1601,7 @@ impl Device for VulkanDevice {
                 command_buffer,
                 &vk::DependencyInfo {
                     memory_barriers: memory_barriers.into(),
+
                     image_memory_barriers: image_memory_barriers.into(),
                     ..default()
                 },
@@ -1939,9 +1940,9 @@ impl Device for VulkanDevice {
                             ),
                         );
 
-                        // transition swapchain image to optimal
+                        // transition swapchain image to attachment optimal
                         let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
-                            src_stage_mask: vk::PipelineStageFlags2::TOP_OF_PIPE,
+                            src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                             src_access_mask: vk::AccessFlags2::NONE,
                             dst_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                             dst_access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
@@ -2126,7 +2127,7 @@ impl Device for VulkanDevice {
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
                 src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                 src_access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
-                dst_stage_mask: vk::PipelineStageFlags2::BOTTOM_OF_PIPE,
+                dst_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                 dst_access_mask: vk::AccessFlags2::NONE,
                 src_queue_family_index: self.universal_queue_family_index,
                 dst_queue_family_index: self.universal_queue_family_index,
@@ -2172,7 +2173,7 @@ impl Device for VulkanDevice {
         signal_semaphores.push(vk::SemaphoreSubmitInfo {
             semaphore: self.universal_queue_semaphore,
             semaphore_value: fence,
-            stage_mask: vk::PipelineStageFlags2::ALL_GRAPHICS,
+            stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
             ..default()
         });
 
@@ -2254,6 +2255,8 @@ impl Device for VulkanDevice {
                 .extend(frame.recycled_descriptor_pools.get_mut().drain(..));
 
             Self::destroy_deferred(device_fn, device, frame);
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
 
             self.wsi_begin_frame();
 
