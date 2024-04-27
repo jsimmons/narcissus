@@ -456,25 +456,6 @@ pub fn main() {
                 }],
             );
 
-            device.cmd_copy_buffer_to_image(
-                &mut cmd_buffer,
-                buffer.to_arg(),
-                image,
-                ImageLayout::Optimal,
-                &[BufferImageCopy {
-                    buffer_offset: 0,
-                    buffer_row_length: 0,
-                    buffer_image_height: 0,
-                    image_subresource: default(),
-                    image_offset: Offset3d { x: 0, y: 0, z: 0 },
-                    image_extent: Extent3d {
-                        width,
-                        height,
-                        depth: 1,
-                    },
-                }],
-            );
-
             device.cmd_barrier(
                 &mut cmd_buffer,
                 None,
