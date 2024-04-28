@@ -1,4 +1,4 @@
-use narcissus_core::{cstr, default, include_bytes_align};
+use narcissus_core::{default, include_bytes_align};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
     BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
@@ -83,11 +83,11 @@ impl BasicPipeline {
 
         let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
-                entry: cstr!("main"),
+                entry: c"main",
                 code: VERT_SPV,
             },
             fragment_shader: ShaderDesc {
-                entry: cstr!("main"),
+                entry: c"main",
                 code: FRAG_SPV,
             },
             bind_group_layouts: &[uniforms_bind_group_layout, storage_bind_group_layout],

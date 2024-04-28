@@ -7,7 +7,6 @@ mod enums;
 mod flags;
 mod functions;
 mod handles;
-pub mod helpers;
 mod structs;
 
 pub use enums::*;
@@ -314,14 +313,14 @@ impl GlobalFunctions {
             get_instance_proc_addr,
             enumerate_instance_version: transmute::<_, _>(get_instance_proc_addr(
                 Instance::null(),
-                cstr!("vkEnumerateInstanceVersion").as_ptr(),
+                c"vkEnumerateInstanceVersion".as_ptr(),
             )),
             enumerate_instance_extension_properties: transmute::<_, _>(get_instance_proc_addr(
                 Instance::null(),
-                cstr!("vkEnumerateInstanceExtensionProperties").as_ptr(),
+                c"vkEnumerateInstanceExtensionProperties".as_ptr(),
             )),
             create_instance: transmute::<_, _>(
-                get_instance_proc_addr(Instance::null(), cstr!("vkCreateInstance").as_ptr())
+                get_instance_proc_addr(Instance::null(), c"vkCreateInstance".as_ptr())
                     .expect("failed to load vkCreateInstance"),
             ),
         }
@@ -405,44 +404,41 @@ impl InstanceFunctions {
             };
 
             Self {
-                destroy_instance: transmute::<_, _>(load(cstr!("vkDestroyInstance"), VERSION_1_0)),
+                destroy_instance: transmute::<_, _>(load(c"vkDestroyInstance", VERSION_1_0)),
                 enumerate_physical_devices: transmute::<_, _>(load(
-                    cstr!("vkEnumeratePhysicalDevices"),
+                    c"vkEnumeratePhysicalDevices",
                     VERSION_1_0,
                 )),
                 enumerate_device_extension_properties: transmute::<_, _>(load(
-                    cstr!("vkEnumerateDeviceExtensionProperties"),
+                    c"vkEnumerateDeviceExtensionProperties",
                     VERSION_1_0,
                 )),
                 get_physical_device_features: transmute::<_, _>(load(
-                    cstr!("vkGetPhysicalDeviceFeatures"),
+                    c"vkGetPhysicalDeviceFeatures",
                     VERSION_1_0,
                 )),
                 get_physical_device_properties: transmute::<_, _>(load(
-                    cstr!("vkGetPhysicalDeviceProperties"),
+                    c"vkGetPhysicalDeviceProperties",
                     VERSION_1_0,
                 )),
                 get_physical_device_queue_family_properties: transmute::<_, _>(load(
-                    cstr!("vkGetPhysicalDeviceQueueFamilyProperties"),
+                    c"vkGetPhysicalDeviceQueueFamilyProperties",
                     VERSION_1_0,
                 )),
                 get_physical_device_memory_properties: transmute::<_, _>(load(
-                    cstr!("vkGetPhysicalDeviceMemoryProperties"),
+                    c"vkGetPhysicalDeviceMemoryProperties",
                     VERSION_1_0,
                 )),
-                create_device: transmute::<_, _>(load(cstr!("vkCreateDevice"), VERSION_1_0)),
-                get_device_proc_addr: transmute::<_, _>(load(
-                    cstr!("vkGetDeviceProcAddr"),
-                    VERSION_1_0,
-                )),
+                create_device: transmute::<_, _>(load(c"vkCreateDevice", VERSION_1_0)),
+                get_device_proc_addr: transmute::<_, _>(load(c"vkGetDeviceProcAddr", VERSION_1_0)),
 
                 // VERSION_1_1
                 get_physical_device_features2: transmute::<_, _>(load(
-                    cstr!("vkGetPhysicalDeviceFeatures2"),
+                    c"vkGetPhysicalDeviceFeatures2",
                     VERSION_1_1,
                 )),
                 get_physical_device_properties2: transmute::<_, _>(load(
-                    cstr!("vkGetPhysicalDeviceProperties2"),
+                    c"vkGetPhysicalDeviceProperties2",
                     VERSION_1_1,
                 )),
             }
@@ -702,326 +698,239 @@ impl DeviceFunctions {
             };
 
             Self {
-                destroy_device: transmute::<_, _>(load(cstr!("vkDestroyDevice"), VERSION_1_0)),
-                get_device_queue: transmute::<_, _>(load(cstr!("vkGetDeviceQueue"), VERSION_1_0)),
-                queue_submit: transmute::<_, _>(load(cstr!("vkQueueSubmit"), VERSION_1_0)),
-                queue_wait_idle: transmute::<_, _>(load(cstr!("vkQueueWaitIdle"), VERSION_1_0)),
-                device_wait_idle: transmute::<_, _>(load(cstr!("vkDeviceWaitIdle"), VERSION_1_0)),
-                allocate_memory: transmute::<_, _>(load(cstr!("vkAllocateMemory"), VERSION_1_0)),
-                free_memory: transmute::<_, _>(load(cstr!("vkFreeMemory"), VERSION_1_0)),
-                map_memory: transmute::<_, _>(load(cstr!("vkMapMemory"), VERSION_1_0)),
-                unmap_memory: transmute::<_, _>(load(cstr!("vkUnmapMemory"), VERSION_1_0)),
-                create_buffer: transmute::<_, _>(load(cstr!("vkCreateBuffer"), VERSION_1_0)),
-                destroy_buffer: transmute::<_, _>(load(cstr!("vkDestroyBuffer"), VERSION_1_0)),
-                create_buffer_view: transmute::<_, _>(load(
-                    cstr!("vkCreateBufferView"),
-                    VERSION_1_0,
-                )),
-                destroy_buffer_view: transmute::<_, _>(load(
-                    cstr!("vkDestroyBufferView"),
-                    VERSION_1_0,
-                )),
-                create_image: transmute::<_, _>(load(cstr!("vkCreateImage"), VERSION_1_0)),
-                destroy_image: transmute::<_, _>(load(cstr!("vkDestroyImage"), VERSION_1_0)),
+                destroy_device: transmute::<_, _>(load(c"vkDestroyDevice", VERSION_1_0)),
+                get_device_queue: transmute::<_, _>(load(c"vkGetDeviceQueue", VERSION_1_0)),
+                queue_submit: transmute::<_, _>(load(c"vkQueueSubmit", VERSION_1_0)),
+                queue_wait_idle: transmute::<_, _>(load(c"vkQueueWaitIdle", VERSION_1_0)),
+                device_wait_idle: transmute::<_, _>(load(c"vkDeviceWaitIdle", VERSION_1_0)),
+                allocate_memory: transmute::<_, _>(load(c"vkAllocateMemory", VERSION_1_0)),
+                free_memory: transmute::<_, _>(load(c"vkFreeMemory", VERSION_1_0)),
+                map_memory: transmute::<_, _>(load(c"vkMapMemory", VERSION_1_0)),
+                unmap_memory: transmute::<_, _>(load(c"vkUnmapMemory", VERSION_1_0)),
+                create_buffer: transmute::<_, _>(load(c"vkCreateBuffer", VERSION_1_0)),
+                destroy_buffer: transmute::<_, _>(load(c"vkDestroyBuffer", VERSION_1_0)),
+                create_buffer_view: transmute::<_, _>(load(c"vkCreateBufferView", VERSION_1_0)),
+                destroy_buffer_view: transmute::<_, _>(load(c"vkDestroyBufferView", VERSION_1_0)),
+                create_image: transmute::<_, _>(load(c"vkCreateImage", VERSION_1_0)),
+                destroy_image: transmute::<_, _>(load(c"vkDestroyImage", VERSION_1_0)),
                 get_image_subresource_layout: transmute::<_, _>(load(
-                    cstr!("vkGetImageSubresourceLayout"),
+                    c"vkGetImageSubresourceLayout",
                     VERSION_1_0,
                 )),
-                create_image_view: transmute::<_, _>(load(cstr!("vkCreateImageView"), VERSION_1_0)),
-                destroy_image_view: transmute::<_, _>(load(
-                    cstr!("vkDestroyImageView"),
-                    VERSION_1_0,
-                )),
-                create_command_pool: transmute::<_, _>(load(
-                    cstr!("vkCreateCommandPool"),
-                    VERSION_1_0,
-                )),
-                destroy_command_pool: transmute::<_, _>(load(
-                    cstr!("vkDestroyCommandPool"),
-                    VERSION_1_0,
-                )),
-                reset_command_pool: transmute::<_, _>(load(
-                    cstr!("vkResetCommandPool"),
-                    VERSION_1_0,
-                )),
+                create_image_view: transmute::<_, _>(load(c"vkCreateImageView", VERSION_1_0)),
+                destroy_image_view: transmute::<_, _>(load(c"vkDestroyImageView", VERSION_1_0)),
+                create_command_pool: transmute::<_, _>(load(c"vkCreateCommandPool", VERSION_1_0)),
+                destroy_command_pool: transmute::<_, _>(load(c"vkDestroyCommandPool", VERSION_1_0)),
+                reset_command_pool: transmute::<_, _>(load(c"vkResetCommandPool", VERSION_1_0)),
                 allocate_command_buffers: transmute::<_, _>(load(
-                    cstr!("vkAllocateCommandBuffers"),
+                    c"vkAllocateCommandBuffers",
                     VERSION_1_0,
                 )),
-                free_command_buffers: transmute::<_, _>(load(
-                    cstr!("vkFreeCommandBuffers"),
-                    VERSION_1_0,
-                )),
-                begin_command_buffer: transmute::<_, _>(load(
-                    cstr!("vkBeginCommandBuffer"),
-                    VERSION_1_0,
-                )),
-                end_command_buffer: transmute::<_, _>(load(
-                    cstr!("vkEndCommandBuffer"),
-                    VERSION_1_0,
-                )),
-                reset_command_buffer: transmute::<_, _>(load(
-                    cstr!("vkResetCommandBuffer"),
-                    VERSION_1_0,
-                )),
-                create_framebuffer: transmute::<_, _>(load(
-                    cstr!("vkCreateFramebuffer"),
-                    VERSION_1_0,
-                )),
-                destroy_framebuffer: transmute::<_, _>(load(
-                    cstr!("vkDestroyFramebuffer"),
-                    VERSION_1_0,
-                )),
-                create_render_pass: transmute::<_, _>(load(
-                    cstr!("vkCreateRenderPass"),
-                    VERSION_1_0,
-                )),
-                destroy_render_pass: transmute::<_, _>(load(
-                    cstr!("vkDestroyRenderPass"),
-                    VERSION_1_0,
-                )),
-                create_semaphore: transmute::<_, _>(load(cstr!("vkCreateSemaphore"), VERSION_1_0)),
-                destroy_semaphore: transmute::<_, _>(load(
-                    cstr!("vkDestroySemaphore"),
-                    VERSION_1_0,
-                )),
+                free_command_buffers: transmute::<_, _>(load(c"vkFreeCommandBuffers", VERSION_1_0)),
+                begin_command_buffer: transmute::<_, _>(load(c"vkBeginCommandBuffer", VERSION_1_0)),
+                end_command_buffer: transmute::<_, _>(load(c"vkEndCommandBuffer", VERSION_1_0)),
+                reset_command_buffer: transmute::<_, _>(load(c"vkResetCommandBuffer", VERSION_1_0)),
+                create_framebuffer: transmute::<_, _>(load(c"vkCreateFramebuffer", VERSION_1_0)),
+                destroy_framebuffer: transmute::<_, _>(load(c"vkDestroyFramebuffer", VERSION_1_0)),
+                create_render_pass: transmute::<_, _>(load(c"vkCreateRenderPass", VERSION_1_0)),
+                destroy_render_pass: transmute::<_, _>(load(c"vkDestroyRenderPass", VERSION_1_0)),
+                create_semaphore: transmute::<_, _>(load(c"vkCreateSemaphore", VERSION_1_0)),
+                destroy_semaphore: transmute::<_, _>(load(c"vkDestroySemaphore", VERSION_1_0)),
 
-                wait_semaphores: transmute::<_, _>(load(cstr!("vkWaitSemaphores"), VERSION_1_0)),
-                signal_semaphore: transmute::<_, _>(load(cstr!("vkSignalSemaphore"), VERSION_1_0)),
-                create_fence: transmute::<_, _>(load(cstr!("vkCreateFence"), VERSION_1_0)),
-                destroy_fence: transmute::<_, _>(load(cstr!("vkDestroyFence"), VERSION_1_0)),
-                reset_fences: transmute::<_, _>(load(cstr!("vkResetFences"), VERSION_1_0)),
-                get_fence_status: transmute::<_, _>(load(cstr!("vkGetFenceStatus"), VERSION_1_0)),
-                wait_for_fences: transmute::<_, _>(load(cstr!("vkWaitForFences"), VERSION_1_0)),
+                wait_semaphores: transmute::<_, _>(load(c"vkWaitSemaphores", VERSION_1_0)),
+                signal_semaphore: transmute::<_, _>(load(c"vkSignalSemaphore", VERSION_1_0)),
+                create_fence: transmute::<_, _>(load(c"vkCreateFence", VERSION_1_0)),
+                destroy_fence: transmute::<_, _>(load(c"vkDestroyFence", VERSION_1_0)),
+                reset_fences: transmute::<_, _>(load(c"vkResetFences", VERSION_1_0)),
+                get_fence_status: transmute::<_, _>(load(c"vkGetFenceStatus", VERSION_1_0)),
+                wait_for_fences: transmute::<_, _>(load(c"vkWaitForFences", VERSION_1_0)),
                 invalidate_mapped_memory_ranges: transmute::<_, _>(load(
-                    cstr!("vkInvalidateMappedMemoryRanges"),
+                    c"vkInvalidateMappedMemoryRanges",
                     VERSION_1_0,
                 )),
-                create_shader_module: transmute::<_, _>(load(
-                    cstr!("vkCreateShaderModule"),
-                    VERSION_1_0,
-                )),
+                create_shader_module: transmute::<_, _>(load(c"vkCreateShaderModule", VERSION_1_0)),
                 destroy_shader_module: transmute::<_, _>(load(
-                    cstr!("vkDestroyShaderModule"),
+                    c"vkDestroyShaderModule",
                     VERSION_1_0,
                 )),
-                create_sampler: transmute::<_, _>(load(cstr!("vkCreateSampler"), VERSION_1_0)),
-                destroy_sampler: transmute::<_, _>(load(cstr!("vkDestroySampler"), VERSION_1_0)),
+                create_sampler: transmute::<_, _>(load(c"vkCreateSampler", VERSION_1_0)),
+                destroy_sampler: transmute::<_, _>(load(c"vkDestroySampler", VERSION_1_0)),
                 create_descriptor_set_layout: transmute::<_, _>(load(
-                    cstr!("vkCreateDescriptorSetLayout"),
+                    c"vkCreateDescriptorSetLayout",
                     VERSION_1_0,
                 )),
                 destroy_descriptor_set_layout: transmute::<_, _>(load(
-                    cstr!("vkDestroyDescriptorSetLayout"),
+                    c"vkDestroyDescriptorSetLayout",
                     VERSION_1_0,
                 )),
                 create_descriptor_pool: transmute::<_, _>(load(
-                    cstr!("vkCreateDescriptorPool"),
+                    c"vkCreateDescriptorPool",
                     VERSION_1_0,
                 )),
                 destroy_descriptor_pool: transmute::<_, _>(load(
-                    cstr!("vkDestroyDescriptorPool"),
+                    c"vkDestroyDescriptorPool",
                     VERSION_1_0,
                 )),
                 reset_descriptor_pool: transmute::<_, _>(load(
-                    cstr!("vkResetDescriptorPool"),
+                    c"vkResetDescriptorPool",
                     VERSION_1_0,
                 )),
                 allocate_descriptor_sets: transmute::<_, _>(load(
-                    cstr!("vkAllocateDescriptorSets"),
+                    c"vkAllocateDescriptorSets",
                     VERSION_1_0,
                 )),
-                free_descriptor_sets: transmute::<_, _>(load(
-                    cstr!("vkFreeDescriptorSets"),
-                    VERSION_1_0,
-                )),
+                free_descriptor_sets: transmute::<_, _>(load(c"vkFreeDescriptorSets", VERSION_1_0)),
                 update_descriptor_sets: transmute::<_, _>(load(
-                    cstr!("vkUpdateDescriptorSets"),
+                    c"vkUpdateDescriptorSets",
                     VERSION_1_0,
                 )),
                 create_pipeline_layout: transmute::<_, _>(load(
-                    cstr!("vkCreatePipelineLayout"),
+                    c"vkCreatePipelineLayout",
                     VERSION_1_0,
                 )),
                 destroy_pipeline_layout: transmute::<_, _>(load(
-                    cstr!("vkDestroyPipelineLayout"),
+                    c"vkDestroyPipelineLayout",
                     VERSION_1_0,
                 )),
                 create_graphics_pipelines: transmute::<_, _>(load(
-                    cstr!("vkCreateGraphicsPipelines"),
+                    c"vkCreateGraphicsPipelines",
                     VERSION_1_0,
                 )),
                 create_compute_pipelines: transmute::<_, _>(load(
-                    cstr!("vkCreateComputePipelines"),
+                    c"vkCreateComputePipelines",
                     VERSION_1_0,
                 )),
-                destroy_pipeline: transmute::<_, _>(load(cstr!("vkDestroyPipeline"), VERSION_1_0)),
-                cmd_bind_pipeline: transmute::<_, _>(load(cstr!("vkCmdBindPipeline"), VERSION_1_0)),
-                cmd_set_viewport: transmute::<_, _>(load(cstr!("vkCmdSetViewport"), VERSION_1_0)),
-                cmd_set_scissor: transmute::<_, _>(load(cstr!("vkCmdSetScissor"), VERSION_1_0)),
-                cmd_set_line_width: transmute::<_, _>(load(
-                    cstr!("vkCmdSetLineWidth"),
-                    VERSION_1_0,
-                )),
-                cmd_set_depth_bias: transmute::<_, _>(load(
-                    cstr!("vkCmdSetDepthBias"),
-                    VERSION_1_0,
-                )),
+                destroy_pipeline: transmute::<_, _>(load(c"vkDestroyPipeline", VERSION_1_0)),
+                cmd_bind_pipeline: transmute::<_, _>(load(c"vkCmdBindPipeline", VERSION_1_0)),
+                cmd_set_viewport: transmute::<_, _>(load(c"vkCmdSetViewport", VERSION_1_0)),
+                cmd_set_scissor: transmute::<_, _>(load(c"vkCmdSetScissor", VERSION_1_0)),
+                cmd_set_line_width: transmute::<_, _>(load(c"vkCmdSetLineWidth", VERSION_1_0)),
+                cmd_set_depth_bias: transmute::<_, _>(load(c"vkCmdSetDepthBias", VERSION_1_0)),
                 cmd_set_blend_constants: transmute::<_, _>(load(
-                    cstr!("vkCmdSetBlendConstants"),
+                    c"vkCmdSetBlendConstants",
                     VERSION_1_0,
                 )),
-                cmd_set_depth_bounds: transmute::<_, _>(load(
-                    cstr!("vkCmdSetDepthBounds"),
-                    VERSION_1_0,
-                )),
+                cmd_set_depth_bounds: transmute::<_, _>(load(c"vkCmdSetDepthBounds", VERSION_1_0)),
                 cmd_set_stencil_compare_mask: transmute::<_, _>(load(
-                    cstr!("vkCmdSetStencilCompareMask"),
+                    c"vkCmdSetStencilCompareMask",
                     VERSION_1_0,
                 )),
                 cmd_set_stencil_write_mask: transmute::<_, _>(load(
-                    cstr!("vkCmdSetStencilWriteMask"),
+                    c"vkCmdSetStencilWriteMask",
                     VERSION_1_0,
                 )),
                 cmd_set_stencil_reference: transmute::<_, _>(load(
-                    cstr!("vkCmdSetStencilReference"),
+                    c"vkCmdSetStencilReference",
                     VERSION_1_0,
                 )),
                 cmd_bind_descriptor_sets: transmute::<_, _>(load(
-                    cstr!("vkCmdBindDescriptorSets"),
+                    c"vkCmdBindDescriptorSets",
                     VERSION_1_0,
                 )),
                 cmd_bind_index_buffer: transmute::<_, _>(load(
-                    cstr!("vkCmdBindIndexBuffer"),
+                    c"vkCmdBindIndexBuffer",
                     VERSION_1_0,
                 )),
                 cmd_bind_vertex_buffers: transmute::<_, _>(load(
-                    cstr!("vkCmdBindVertexBuffers"),
+                    c"vkCmdBindVertexBuffers",
                     VERSION_1_0,
                 )),
-                cmd_draw: transmute::<_, _>(load(cstr!("vkCmdDraw"), VERSION_1_0)),
-                cmd_draw_indexed: transmute::<_, _>(load(cstr!("vkCmdDrawIndexed"), VERSION_1_0)),
-                cmd_draw_indirect: transmute::<_, _>(load(cstr!("vkCmdDrawIndirect"), VERSION_1_0)),
+                cmd_draw: transmute::<_, _>(load(c"vkCmdDraw", VERSION_1_0)),
+                cmd_draw_indexed: transmute::<_, _>(load(c"vkCmdDrawIndexed", VERSION_1_0)),
+                cmd_draw_indirect: transmute::<_, _>(load(c"vkCmdDrawIndirect", VERSION_1_0)),
                 cmd_draw_indexed_indirect: transmute::<_, _>(load(
-                    cstr!("vkCmdDrawIndexedIndirect"),
+                    c"vkCmdDrawIndexedIndirect",
                     VERSION_1_0,
                 )),
-                cmd_dispatch: transmute::<_, _>(load(cstr!("vkCmdDispatch"), VERSION_1_0)),
+                cmd_dispatch: transmute::<_, _>(load(c"vkCmdDispatch", VERSION_1_0)),
                 cmd_dispatch_indirect: transmute::<_, _>(load(
-                    cstr!("vkCmdDispatchIndirect"),
+                    c"vkCmdDispatchIndirect",
                     VERSION_1_0,
                 )),
-                cmd_copy_buffer: transmute::<_, _>(load(cstr!("vkCmdCopyBuffer"), VERSION_1_0)),
-                cmd_copy_image: transmute::<_, _>(load(cstr!("vkCmdCopyImage"), VERSION_1_0)),
-                cmd_blit_image: transmute::<_, _>(load(cstr!("vkCmdBlitImage"), VERSION_1_0)),
+                cmd_copy_buffer: transmute::<_, _>(load(c"vkCmdCopyBuffer", VERSION_1_0)),
+                cmd_copy_image: transmute::<_, _>(load(c"vkCmdCopyImage", VERSION_1_0)),
+                cmd_blit_image: transmute::<_, _>(load(c"vkCmdBlitImage", VERSION_1_0)),
                 cmd_copy_buffer_to_image: transmute::<_, _>(load(
-                    cstr!("vkCmdCopyBufferToImage"),
+                    c"vkCmdCopyBufferToImage",
                     VERSION_1_0,
                 )),
                 cmd_copy_image_to_buffer: transmute::<_, _>(load(
-                    cstr!("vkCmdCopyImageToBuffer"),
+                    c"vkCmdCopyImageToBuffer",
                     VERSION_1_0,
                 )),
-                cmd_update_buffer: transmute::<_, _>(load(cstr!("vkCmdUpdateBuffer"), VERSION_1_0)),
-                cmd_fill_buffer: transmute::<_, _>(load(cstr!("vkCmdFillBuffer"), VERSION_1_0)),
+                cmd_update_buffer: transmute::<_, _>(load(c"vkCmdUpdateBuffer", VERSION_1_0)),
+                cmd_fill_buffer: transmute::<_, _>(load(c"vkCmdFillBuffer", VERSION_1_0)),
                 cmd_clear_color_image: transmute::<_, _>(load(
-                    cstr!("vkCmdClearColorImage"),
+                    c"vkCmdClearColorImage",
                     VERSION_1_0,
                 )),
                 cmd_clear_depth_stencil_image: transmute::<_, _>(load(
-                    cstr!("vkCmdClearDepthStencilImage"),
+                    c"vkCmdClearDepthStencilImage",
                     VERSION_1_0,
                 )),
                 cmd_clear_attachments: transmute::<_, _>(load(
-                    cstr!("vkCmdClearAttachments"),
+                    c"vkCmdClearAttachments",
                     VERSION_1_0,
                 )),
-                cmd_resolve_image: transmute::<_, _>(load(cstr!("vkCmdResolveImage"), VERSION_1_0)),
-                cmd_set_event: transmute::<_, _>(load(cstr!("vkCmdSetEvent"), VERSION_1_0)),
-                cmd_reset_event: transmute::<_, _>(load(cstr!("vkCmdResetEvent"), VERSION_1_0)),
-                cmd_wait_events: transmute::<_, _>(load(cstr!("vkCmdWaitEvents"), VERSION_1_0)),
-                cmd_pipeline_barrier: transmute::<_, _>(load(
-                    cstr!("vkCmdPipelineBarrier"),
-                    VERSION_1_0,
-                )),
-                cmd_begin_query: transmute::<_, _>(load(cstr!("vkCmdBeginQuery"), VERSION_1_0)),
-                cmd_end_query: transmute::<_, _>(load(cstr!("vkCmdEndQuery"), VERSION_1_0)),
-                cmd_reset_query_pool: transmute::<_, _>(load(
-                    cstr!("vkCmdResetQueryPool"),
-                    VERSION_1_0,
-                )),
-                cmd_write_timestamp: transmute::<_, _>(load(
-                    cstr!("vkCmdWriteTimestamp"),
-                    VERSION_1_0,
-                )),
+                cmd_resolve_image: transmute::<_, _>(load(c"vkCmdResolveImage", VERSION_1_0)),
+                cmd_set_event: transmute::<_, _>(load(c"vkCmdSetEvent", VERSION_1_0)),
+                cmd_reset_event: transmute::<_, _>(load(c"vkCmdResetEvent", VERSION_1_0)),
+                cmd_wait_events: transmute::<_, _>(load(c"vkCmdWaitEvents", VERSION_1_0)),
+                cmd_pipeline_barrier: transmute::<_, _>(load(c"vkCmdPipelineBarrier", VERSION_1_0)),
+                cmd_begin_query: transmute::<_, _>(load(c"vkCmdBeginQuery", VERSION_1_0)),
+                cmd_end_query: transmute::<_, _>(load(c"vkCmdEndQuery", VERSION_1_0)),
+                cmd_reset_query_pool: transmute::<_, _>(load(c"vkCmdResetQueryPool", VERSION_1_0)),
+                cmd_write_timestamp: transmute::<_, _>(load(c"vkCmdWriteTimestamp", VERSION_1_0)),
                 cmd_copy_query_pool_results: transmute::<_, _>(load(
-                    cstr!("vkCmdCopyQueryPoolResults"),
+                    c"vkCmdCopyQueryPoolResults",
                     VERSION_1_0,
                 )),
-                cmd_push_constants: transmute::<_, _>(load(
-                    cstr!("vkCmdPushConstants"),
-                    VERSION_1_0,
-                )),
+                cmd_push_constants: transmute::<_, _>(load(c"vkCmdPushConstants", VERSION_1_0)),
                 cmd_begin_render_pass: transmute::<_, _>(load(
-                    cstr!("vkCmdBeginRenderPass"),
+                    c"vkCmdBeginRenderPass",
                     VERSION_1_0,
                 )),
-                cmd_next_subpass: transmute::<_, _>(load(cstr!("vkCmdNextSubpass"), VERSION_1_0)),
-                cmd_end_render_pass: transmute::<_, _>(load(
-                    cstr!("vkCmdEndRenderPass"),
-                    VERSION_1_0,
-                )),
-                cmd_execute_commands: transmute::<_, _>(load(
-                    cstr!("vkCmdExecuteCommands"),
-                    VERSION_1_0,
-                )),
+                cmd_next_subpass: transmute::<_, _>(load(c"vkCmdNextSubpass", VERSION_1_0)),
+                cmd_end_render_pass: transmute::<_, _>(load(c"vkCmdEndRenderPass", VERSION_1_0)),
+                cmd_execute_commands: transmute::<_, _>(load(c"vkCmdExecuteCommands", VERSION_1_0)),
 
                 // VERSION_1_1
                 get_image_memory_requirements2: transmute::<_, _>(load(
-                    cstr!("vkGetImageMemoryRequirements2"),
+                    c"vkGetImageMemoryRequirements2",
                     VERSION_1_1,
                 )),
-                bind_image_memory2: transmute::<_, _>(load(
-                    cstr!("vkBindImageMemory2"),
-                    VERSION_1_1,
-                )),
+                bind_image_memory2: transmute::<_, _>(load(c"vkBindImageMemory2", VERSION_1_1)),
                 get_buffer_memory_requirements2: transmute::<_, _>(load(
-                    cstr!("vkGetBufferMemoryRequirements2"),
+                    c"vkGetBufferMemoryRequirements2",
                     VERSION_1_1,
                 )),
-                bind_buffer_memory2: transmute::<_, _>(load(
-                    cstr!("vkBindBufferMemory2"),
-                    VERSION_1_1,
-                )),
+                bind_buffer_memory2: transmute::<_, _>(load(c"vkBindBufferMemory2", VERSION_1_1)),
 
                 // VERSION_1_2
                 get_semaphore_counter_value: transmute::<_, _>(load(
-                    cstr!("vkGetSemaphoreCounterValue"),
+                    c"vkGetSemaphoreCounterValue",
                     VERSION_1_2,
                 )),
 
                 // VERSION_1_3
                 cmd_pipeline_barrier2: transmute::<_, _>(load(
-                    cstr!("vkCmdPipelineBarrier2"),
+                    c"vkCmdPipelineBarrier2",
                     VERSION_1_3,
                 )),
-                cmd_wait_events2: transmute::<_, _>(load(cstr!("vkCmdWaitEvents2"), VERSION_1_3)),
-                cmd_set_event2: transmute::<_, _>(load(cstr!("vkCmdSetEvent2"), VERSION_1_3)),
+                cmd_wait_events2: transmute::<_, _>(load(c"vkCmdWaitEvents2", VERSION_1_3)),
+                cmd_set_event2: transmute::<_, _>(load(c"vkCmdSetEvent2", VERSION_1_3)),
 
-                cmd_begin_rendering: transmute::<_, _>(load(
-                    cstr!("vkCmdBeginRendering"),
-                    VERSION_1_3,
-                )),
-                cmd_end_rendering: transmute::<_, _>(load(cstr!("vkCmdEndRendering"), VERSION_1_3)),
+                cmd_begin_rendering: transmute::<_, _>(load(c"vkCmdBeginRendering", VERSION_1_3)),
+                cmd_end_rendering: transmute::<_, _>(load(c"vkCmdEndRendering", VERSION_1_3)),
                 cmd_set_viewport_with_count: transmute::<_, _>(load(
-                    cstr!("vkCmdSetViewportWithCount"),
+                    c"vkCmdSetViewportWithCount",
                     VERSION_1_3,
                 )),
                 cmd_set_scissor_with_count: transmute::<_, _>(load(
-                    cstr!("vkCmdSetScissorWithCount"),
+                    c"vkCmdSetScissorWithCount",
                     VERSION_1_3,
                 )),
-                queue_submit2: transmute::<_, _>(load(cstr!("vkQueueSubmit2"), VERSION_1_3)),
+                queue_submit2: transmute::<_, _>(load(c"vkQueueSubmit2", VERSION_1_3)),
             }
         }
     }
@@ -2391,19 +2300,19 @@ impl SurfaceKHRFunctions {
                     )
             };
             Self {
-                destroy_surface: transmute::<_, _>(load(cstr!("vkDestroySurfaceKHR"))),
-                get_physical_device_surface_support: transmute::<_, _>(load(cstr!(
-                    "vkGetPhysicalDeviceSurfaceSupportKHR"
-                ))),
-                get_physical_device_surface_capabilities: transmute::<_, _>(load(cstr!(
-                    "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
-                ))),
-                get_physical_device_surface_formats: transmute::<_, _>(load(cstr!(
-                    "vkGetPhysicalDeviceSurfaceFormatsKHR"
-                ))),
-                get_physical_device_surface_present_modes: transmute::<_, _>(load(cstr!(
-                    "vkGetPhysicalDeviceSurfacePresentModesKHR"
-                ))),
+                destroy_surface: transmute::<_, _>(load(c"vkDestroySurfaceKHR")),
+                get_physical_device_surface_support: transmute::<_, _>(load(
+                    c"vkGetPhysicalDeviceSurfaceSupportKHR",
+                )),
+                get_physical_device_surface_capabilities: transmute::<_, _>(load(
+                    c"vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
+                )),
+                get_physical_device_surface_formats: transmute::<_, _>(load(
+                    c"vkGetPhysicalDeviceSurfaceFormatsKHR",
+                )),
+                get_physical_device_surface_present_modes: transmute::<_, _>(load(
+                    c"vkGetPhysicalDeviceSurfacePresentModesKHR",
+                )),
             }
         }
     }
@@ -2492,7 +2401,7 @@ impl XcbSurfaceKHRFunctions {
                     )
             };
             Self {
-                create_xcb_surface: transmute::<_, _>(load(cstr!("vkCreateXcbSurfaceKHR"))),
+                create_xcb_surface: transmute::<_, _>(load(c"vkCreateXcbSurfaceKHR")),
             }
         }
     }
@@ -2524,7 +2433,7 @@ impl XlibSurfaceKHRFunctions {
                     )
             };
             Self {
-                create_xlib_surface: transmute::<_, _>(load(cstr!("vkCreateXlibSurfaceKHR"))),
+                create_xlib_surface: transmute::<_, _>(load(c"vkCreateXlibSurfaceKHR")),
             }
         }
     }
@@ -2556,7 +2465,7 @@ impl WaylandSurfaceKHRFunctions {
                     )
             };
             Self {
-                create_wayland_surface: transmute::<_, _>(load(cstr!("vkCreateWaylandSurfaceKHR"))),
+                create_wayland_surface: transmute::<_, _>(load(c"vkCreateWaylandSurfaceKHR")),
             }
         }
     }
@@ -2598,26 +2507,17 @@ impl SwapchainKHRFunctions {
                 }
             };
             Self {
-                create_swapchain: transmute::<_, _>(load(
-                    cstr!("vkCreateSwapchainKHR"),
-                    VERSION_1_0,
-                )),
-                destroy_swapchain: transmute::<_, _>(load(
-                    cstr!("vkDestroySwapchainKHR"),
-                    VERSION_1_0,
-                )),
+                create_swapchain: transmute::<_, _>(load(c"vkCreateSwapchainKHR", VERSION_1_0)),
+                destroy_swapchain: transmute::<_, _>(load(c"vkDestroySwapchainKHR", VERSION_1_0)),
                 get_swapchain_images: transmute::<_, _>(load(
-                    cstr!("vkGetSwapchainImagesKHR"),
+                    c"vkGetSwapchainImagesKHR",
                     VERSION_1_0,
                 )),
-                acquire_next_image: transmute::<_, _>(load(
-                    cstr!("vkAcquireNextImageKHR"),
-                    VERSION_1_0,
-                )),
-                queue_present: transmute::<_, _>(load(cstr!("vkQueuePresentKHR"), VERSION_1_0)),
+                acquire_next_image: transmute::<_, _>(load(c"vkAcquireNextImageKHR", VERSION_1_0)),
+                queue_present: transmute::<_, _>(load(c"vkQueuePresentKHR", VERSION_1_0)),
 
                 acquire_next_image2: transmute::<_, _>(load(
-                    cstr!("vkAcquireNextImage2KHR"),
+                    c"vkAcquireNextImage2KHR",
                     VERSION_1_1,
                 )),
             }

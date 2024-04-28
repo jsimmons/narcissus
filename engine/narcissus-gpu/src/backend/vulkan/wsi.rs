@@ -4,7 +4,7 @@ use std::{
 };
 
 use narcissus_core::{
-    cstr, default,
+    default,
     raw_window::{AsRawWindow, RawWindow},
     HybridArena, Mutex, Pool, Widen,
 };
@@ -118,7 +118,7 @@ impl VulkanWsi {
         // If we found any surface extensions, we need to additionally enable
         // `VK_KHR_surface`.
         if wsi_support.wayland || wsi_support.xlib || wsi_support.xcb {
-            enabled_extensions.push(cstr!("VK_KHR_surface"));
+            enabled_extensions.push(c"VK_KHR_surface");
         }
     }
 

@@ -11,28 +11,6 @@ use std::sync::OnceLock;
 
 use sqlite_sys as ffi;
 
-#[doc(hidden)]
-pub const fn validate_cstr_contents(bytes: &[u8]) {
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\0' {
-            panic!("illegal null byte in string");
-        }
-        i += 1;
-    }
-}
-
-#[macro_export]
-macro_rules! cstr {
-    ( $s:literal ) => {{
-        $crate::validate_cstr_contents($s.as_bytes());
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::ffi::CStr::from_bytes_with_nul_unchecked(concat!($s, "\0").as_bytes())
-        }
-    }};
-}
-
 static SQLITE_GLOBAL_INIT: OnceLock<()> = OnceLock::new();
 
 #[cold]
@@ -227,7 +205,7 @@ impl Connection {
     }
 
     pub fn open_memory() -> Result<Self> {
-        Self::open(cstr!(":memory:"))
+        Self::open(c":memory:")
     }
 
     pub fn prepare<'conn>(&'conn self, sql: &str) -> Result<Statement<'conn>> {

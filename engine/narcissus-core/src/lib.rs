@@ -226,28 +226,6 @@ pub fn oom() -> ! {
     panic!("out of memory")
 }
 
-#[doc(hidden)]
-pub const fn validate_cstr_contents(bytes: &[u8]) {
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\0' {
-            panic!("illegal null byte in string");
-        }
-        i += 1;
-    }
-}
-
-#[macro_export]
-macro_rules! cstr {
-    ( $s:literal ) => {{
-        $crate::validate_cstr_contents($s.as_bytes());
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::ffi::CStr::from_bytes_with_nul_unchecked(concat!($s, "\0").as_bytes())
-        }
-    }};
-}
-
 /// Constructs a new box with uninitialized contents.
 #[inline]
 pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
@@ -437,17 +415,7 @@ pub fn mul_full_width_u8(x: u8, y: u8) -> (u8, u8) {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
-
-    use super::{cstr, mod_inverse_u32, mod_inverse_u64};
-
-    #[test]
-    fn test_cstr() {
-        assert_eq!(
-            cstr!("hello"),
-            CStr::from_bytes_with_nul(b"hello\0").unwrap()
-        );
-    }
+    use super::{mod_inverse_u32, mod_inverse_u64};
 
     // Test is exhaustive and quite slow in debug mode. So ignore by default.
     #[test]

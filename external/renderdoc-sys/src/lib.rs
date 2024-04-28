@@ -4,8 +4,6 @@ use std::{
     os::raw::c_char,
 };
 
-mod helpers;
-
 #[repr(C)]
 pub enum Version {
     Version1_0_0 = 10000,
@@ -360,13 +358,13 @@ impl RenderdocApi1_5_0 {
     pub fn load() -> Option<Self> {
         unsafe {
             let module = libc::dlopen(
-                cstr!("librenderdoc.so").as_ptr(),
+                c"librenderdoc.so".as_ptr(),
                 libc::RTLD_NOW | libc::RTLD_NOLOAD,
             );
             if module.is_null() {
                 return None;
             }
-            let get_api_ptr = libc::dlsym(module, cstr!("RENDERDOC_GetAPI").as_ptr());
+            let get_api_ptr = libc::dlsym(module, c"RENDERDOC_GetAPI".as_ptr());
             if get_api_ptr.is_null() {
                 return None;
             }

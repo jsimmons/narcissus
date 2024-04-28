@@ -1,7 +1,6 @@
 use std::os::raw::c_void;
 
 use vulkan_sys as vk;
-use vulkan_sys::cstr;
 
 mod libc {
     use std::os::raw::{c_char, c_int, c_void};
@@ -50,10 +49,10 @@ fn default<T: Default>() -> T {
 pub fn main() {
     let get_proc_addr = unsafe {
         let module = libc::dlopen(
-            cstr!("libvulkan.so.1").as_ptr(),
+            c"libvulkan.so.1".as_ptr(),
             libc::RTLD_NOW | libc::RTLD_LOCAL,
         );
-        libc::dlsym(module, cstr!("vkGetInstanceProcAddr").as_ptr())
+        libc::dlsym(module, c"vkGetInstanceProcAddr".as_ptr())
     };
 
     let global_fn = unsafe { vk::GlobalFunctions::new(get_proc_addr) };
@@ -69,15 +68,15 @@ pub fn main() {
     }
 
     #[cfg(debug_assertions)]
-    let enabled_layers = &[cstr!("VK_LAYER_KHRONOS_validation").as_ptr()];
+    let enabled_layers = &[c"VK_LAYER_KHRONOS_validation".as_ptr()];
     #[cfg(not(debug_assertions))]
     let enabled_layers = &[];
 
     let instance = {
         let application_info = vk::ApplicationInfo {
-            application_name: cstr!("TRIANGLE").as_ptr(),
+            application_name: c"TRIANGLE".as_ptr(),
             application_version: 0,
-            engine_name: cstr!("TRIANGLE").as_ptr(),
+            engine_name: c"TRIANGLE".as_ptr(),
             engine_version: 0,
             api_version: vk::VERSION_1_3,
             ..default()
@@ -260,13 +259,13 @@ pub fn main() {
                 vk::PipelineShaderStageCreateInfo {
                     stage: vk::ShaderStageFlags::VERTEX,
                     module: vert_shader_module,
-                    name: cstr!("main").as_ptr(),
+                    name: c"main".as_ptr(),
                     ..default()
                 },
                 vk::PipelineShaderStageCreateInfo {
                     stage: vk::ShaderStageFlags::FRAGMENT,
                     module: frag_shader_module,
-                    name: cstr!("main").as_ptr(),
+                    name: c"main".as_ptr(),
                     ..default()
                 },
             ];

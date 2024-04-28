@@ -9,7 +9,7 @@ use std::{
 };
 
 use narcissus_core::{
-    box_assume_init, cstr, default, is_aligned_to, manual_arc, manual_arc::ManualArc,
+    box_assume_init, default, is_aligned_to, manual_arc, manual_arc::ManualArc,
     raw_window::AsRawWindow, zeroed_box, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
@@ -376,7 +376,7 @@ impl VulkanDevice {
     pub(crate) fn new() -> Self {
         let get_proc_addr = unsafe {
             let module = libc::dlopen(
-                cstr!("libvulkan.so.1").as_ptr(),
+                c"libvulkan.so.1".as_ptr(),
                 libc::RTLD_NOW | libc::RTLD_LOCAL,
             );
             libc::dlsym(module, (c"vkGetInstanceProcAddr").as_ptr())
@@ -431,9 +431,9 @@ impl VulkanDevice {
 
         let instance = {
             let application_info = vk::ApplicationInfo {
-                application_name: cstr!("TRIANGLE").as_ptr(),
+                application_name: c"TRIANGLE".as_ptr(),
                 application_version: 0,
-                engine_name: cstr!("NARCISSUS").as_ptr(),
+                engine_name: c"NARCISSUS".as_ptr(),
                 engine_version: 0,
                 api_version: vk::VERSION_1_3,
                 ..default()
