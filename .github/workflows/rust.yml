@@ -18,7 +18,7 @@ jobs:
     - name: install_dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install libsdl2-dev clang llvm glslang
+        sudo apt-get install libsdl2-dev clang llvm glslang-tools
     - name: install_rustup
       run: |
         : install rustup if needed
