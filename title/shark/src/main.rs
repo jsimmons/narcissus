@@ -9,10 +9,10 @@ use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{default, rand::Pcg64, slice::array_windows};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue, DeviceExt,
-    Extent2d, Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat,
-    ImageLayout, ImageTiling, ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d,
-    RenderingAttachment, RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
+    create_device, Access, BufferImageCopy, BufferUsageFlags, ClearValue, DeviceExt, Extent2d,
+    Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
+    ImageTiling, ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
+    RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
 use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, HalfTurn, Mat3, Mat4, Point3, Vec3};
 use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
@@ -89,33 +89,8 @@ pub fn main() {
         mip_levels: 1,
     });
 
-    let mut rng = Pcg64::new();
-    let mut buffers = (0..4096)
-        .map(|_| {
-            device.create_buffer(&BufferDesc {
-                memory_location: MemoryLocation::Host,
-                host_mapped: true,
-                usage: BufferUsageFlags::STORAGE,
-                size: 16 + rng.next_bound_usize(1024 - 16),
-            })
-        })
-        .collect::<Vec<_>>();
-
-    buffers.extend((0..512).map(|_| {
-        device.create_buffer(&BufferDesc {
-            memory_location: MemoryLocation::Host,
-            host_mapped: true,
-            usage: BufferUsageFlags::STORAGE,
-            size: 16 + rng.next_bound_usize(10 * 1024 * 1024 - 16),
-        })
-    }));
-
     {
         let frame = device.begin_frame();
-
-        for buffer in buffers.drain(..) {
-            device.destroy_buffer(&frame, buffer);
-        }
 
         let blåhaj_buffer = device.request_transient_buffer_with_data(
             &frame,
