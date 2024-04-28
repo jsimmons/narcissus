@@ -183,7 +183,12 @@ dependencies = [
  "narcissus-gpu",
  "narcissus-image",
  "narcissus-maths",
+ "shark-shaders",
 ]
+
+[[package]]
+name = "shark-shaders"
+version = "0.1.0"
 
 [[package]]
 name = "sqlite-sys"

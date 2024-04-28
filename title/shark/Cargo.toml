@@ -12,3 +12,5 @@ narcissus-font = { path = "../../engine/narcissus-font" }
 narcissus-maths = { path = "../../engine/narcissus-maths" }
 narcissus-image = { path = "../../engine/narcissus-image" }
 narcissus-gpu = { path = "../../engine/narcissus-gpu" }
+
+shark-shaders = { path = "../shark-shaders" }

@@ -1,4 +1,4 @@
-use narcissus_core::{default, include_bytes_align};
+use narcissus_core::default;
 use narcissus_font::{TouchedGlyph, TouchedGlyphIndex};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
@@ -7,9 +7,7 @@ use narcissus_gpu::{
     PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
     ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
-
-const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.vert.spv");
-const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/text.frag.spv");
+use shark_shaders;
 
 #[allow(unused)]
 #[repr(C)]
@@ -107,11 +105,11 @@ impl TextPipeline {
         let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
-                code: VERT_SPV,
+                code: shark_shaders::TEXT_VERT_SPV,
             },
             fragment_shader: ShaderDesc {
                 entry: c"main",
-                code: FRAG_SPV,
+                code: shark_shaders::TEXT_FRAG_SPV,
             },
             bind_group_layouts: &[bind_group_layout],
             layout: GraphicsPipelineLayout {

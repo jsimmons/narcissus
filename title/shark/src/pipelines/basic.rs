@@ -1,4 +1,4 @@
-use narcissus_core::{default, include_bytes_align};
+use narcissus_core::default;
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
     BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
@@ -7,9 +7,6 @@ use narcissus_gpu::{
     SamplerFilter, ShaderDesc, ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
 use narcissus_maths::{Affine3, Mat4};
-
-const VERT_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.vert.spv");
-const FRAG_SPV: &[u8] = include_bytes_align!(4, "../shaders/basic.frag.spv");
 
 #[allow(unused)]
 #[repr(C)]
@@ -84,11 +81,11 @@ impl BasicPipeline {
         let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
-                code: VERT_SPV,
+                code: shark_shaders::BASIC_VERT_SPV,
             },
             fragment_shader: ShaderDesc {
                 entry: c"main",
-                code: FRAG_SPV,
+                code: shark_shaders::BASIC_FRAG_SPV,
             },
             bind_group_layouts: &[uniforms_bind_group_layout, storage_bind_group_layout],
             layout: GraphicsPipelineLayout {

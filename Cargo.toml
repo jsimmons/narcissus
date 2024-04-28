@@ -2,6 +2,7 @@
 
 members = [
     "title/shark",
+    "title/shark-shaders",
     "external/blake3-smol",
     "external/renderdoc-sys",
     "external/sdl2-sys",
