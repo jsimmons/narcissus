@@ -51,7 +51,7 @@ fn main() {
     };
 
     let commands = SHADERS.map(|shader| {
-        Command::new("glslang")
+        Command::new("glslangValidator")
             .args(["--target-env", "vulkan1.3"])
             .arg(&format!("-g{debug}"))
             .args([
