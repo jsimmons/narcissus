@@ -7,7 +7,6 @@ use narcissus_gpu::{
     PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
     ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
-use shark_shaders;
 
 #[allow(unused)]
 #[repr(C)]
