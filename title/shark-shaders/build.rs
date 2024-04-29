@@ -79,7 +79,7 @@ fn main() {
     for shader in SHADERS {
         writeln!(
             file,
-            "pub const {}_{}_SPV: &'static [u8] = &SpirvBytes(*include_bytes!(\"{out_dir}/{}.{}.spv\")).0;",
+            "pub const {}_{}_SPV: &[u8] = &SpirvBytes(*include_bytes!(\"{out_dir}/{}.{}.spv\")).0;",
             shader.name.to_ascii_uppercase(),
             shader.stage.name().to_ascii_uppercase(),
             shader.name,
