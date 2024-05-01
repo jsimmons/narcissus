@@ -578,11 +578,11 @@ pub fn main() {
         primitive_instances.clear();
         primitive_vertices.clear();
 
-        for line in 0.. {
+        for line in 0..2 {
             let (font_family, font_size_px, text) = if line & 1 == 0 {
-                (FontFamily::RobotoRegular, 14.0, line0)
+                (FontFamily::RobotoRegular, 22.0, line0)
             } else {
-                (FontFamily::NotoSansJapanese, 14.0, line1)
+                (FontFamily::NotoSansJapanese, 22.0, line1)
             };
 
             let font = fonts.font(font_family);
@@ -590,10 +590,6 @@ pub fn main() {
 
             x = 0.0;
             y += (font.ascent() - font.descent() + font.line_gap()) * scale;
-
-            if y > height as f32 {
-                break;
-            }
 
             font_size_str.clear();
             write!(&mut font_size_str, "{font_size_px}: ").unwrap();
