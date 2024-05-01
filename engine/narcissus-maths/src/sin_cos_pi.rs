@@ -84,6 +84,16 @@ pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
     (s, c)
 }
 
+#[inline(always)]
+pub fn sin_pi_f32(a: f32) -> f32 {
+    sin_cos_pi_f32(a).0
+}
+
+#[inline(always)]
+pub fn cos_pi_f32(a: f32) -> f32 {
+    sin_cos_pi_f32(a).1
+}
+
 #[cfg(test)]
 mod tests {
     use crate::sin_cos_pi_f32;

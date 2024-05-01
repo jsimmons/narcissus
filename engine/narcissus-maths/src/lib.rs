@@ -22,7 +22,7 @@ pub use next_after_f32::next_after_f32;
 pub use point2::{point2, Point2};
 pub use point3::{point3, Point3};
 pub use quat::Quat;
-pub use sin_cos_pi::sin_cos_pi_f32;
+pub use sin_cos_pi::{cos_pi_f32, sin_cos_pi_f32, sin_pi_f32};
 pub use tan_pi::tan_pi_f32;
 pub use vec2::{vec2, Vec2};
 pub use vec3::{vec3, Vec3};
