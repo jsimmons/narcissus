@@ -2256,8 +2256,6 @@ impl Device for VulkanDevice {
 
             Self::destroy_deferred(device_fn, device, frame);
 
-            std::thread::sleep(std::time::Duration::from_millis(10));
-
             self.wsi_begin_frame();
 
             self.allocator_begin_frame(frame);
