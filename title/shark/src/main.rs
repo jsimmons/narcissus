@@ -33,6 +33,8 @@ struct GameVariables {
     player_speed: f32,
     camera_distance: f32,
     camera_angle: Deg,
+    camera_damping: f32,
+    camera_deadzone: f32,
 }
 
 const GAME_VARIABLES: GameVariables = GameVariables {
@@ -40,6 +42,8 @@ const GAME_VARIABLES: GameVariables = GameVariables {
     player_speed: 15.0,
     camera_distance: 55.0,
     camera_angle: Deg::new(60.0),
+    camera_damping: 35.0,
+    camera_deadzone: 0.1,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -107,6 +111,7 @@ impl PlayerState {
 
 struct CameraState {
     offset: Vec3,
+    velocity: Vec3,
     target: Point3,
 }
 
@@ -123,6 +128,7 @@ impl CameraState {
 
         Self {
             offset,
+            velocity: Vec3::ZERO,
             target: Point3::ZERO,
         }
     }
@@ -209,7 +215,44 @@ impl GameState {
 
         self.player.position += movement * GAME_VARIABLES.player_speed * dt;
 
-        self.camera.target = self.player.position;
+        // https://theorangeduck.com/page/spring-roll-call
+        fn simple_spring_damper_exact(
+            x: f32,
+            v: f32,
+            x_goal: f32,
+            damping: f32,
+            dt: f32,
+        ) -> (f32, f32) {
+            let y = damping / 2.0;
+            let j0 = x - x_goal;
+            let j1 = v + j0 * y;
+            let eydt = (-y * dt).exp();
+            (eydt * (j0 + j1 * dt) + x_goal, eydt * (v - j1 * y * dt))
+        }
+
+        if Point3::distance_sq(self.camera.target, self.player.position)
+            > (GAME_VARIABLES.camera_deadzone * GAME_VARIABLES.camera_deadzone)
+        {
+            let (pos_x, vel_x) = simple_spring_damper_exact(
+                self.camera.target.x,
+                self.camera.velocity.x,
+                self.player.position.x,
+                GAME_VARIABLES.camera_damping,
+                dt,
+            );
+            let (pos_z, vel_z) = simple_spring_damper_exact(
+                self.camera.target.z,
+                self.camera.velocity.z,
+                self.player.position.z,
+                GAME_VARIABLES.camera_damping,
+                dt,
+            );
+
+            self.camera.target.x = pos_x;
+            self.camera.target.z = pos_z;
+            self.camera.velocity.x = vel_x;
+            self.camera.velocity.z = vel_z;
+        }
     }
 }
 
