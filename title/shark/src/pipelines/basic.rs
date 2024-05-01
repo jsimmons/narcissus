@@ -121,7 +121,7 @@ impl BasicPipeline {
         device: &(dyn Device + 'static),
         frame: &Frame,
         thread_token: &ThreadToken,
-        cmd_buffer: &mut CmdEncoder,
+        cmd_encoder: &mut CmdEncoder,
         basic_uniforms: &BasicUniforms,
         vertex_buffer: &PersistentBuffer,
         index_buffer: &PersistentBuffer,
@@ -142,11 +142,11 @@ impl BasicPipeline {
             transforms,
         );
 
-        device.cmd_set_pipeline(cmd_buffer, self.pipeline);
+        device.cmd_set_pipeline(cmd_encoder, self.pipeline);
 
         device.cmd_set_bind_group(
             frame,
-            cmd_buffer,
+            cmd_encoder,
             self.uniforms_bind_group_layout,
             0,
             &[Bind {
@@ -158,7 +158,7 @@ impl BasicPipeline {
 
         device.cmd_set_bind_group(
             frame,
-            cmd_buffer,
+            cmd_encoder,
             self.storage_bind_group_layout,
             1,
             &[
@@ -185,6 +185,6 @@ impl BasicPipeline {
             ],
         );
 
-        device.cmd_set_index_buffer(cmd_buffer, index_buffer.to_arg(), 0, IndexType::U16);
+        device.cmd_set_index_buffer(cmd_encoder, index_buffer.to_arg(), 0, IndexType::U16);
     }
 }

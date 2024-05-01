@@ -14,15 +14,197 @@ use narcissus_gpu::{
     ImageTiling, ImageUsageFlags, LoadOp, MemoryLocation, Offset2d, Offset3d, RenderingAttachment,
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
-use narcissus_maths::{sin_cos_pi_f32, vec3, Affine3, HalfTurn, Mat3, Mat4, Point3, Vec3};
+use narcissus_maths::{
+    sin_cos_pi_f32, tan_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
+};
 use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
 
 mod fonts;
 mod helpers;
 mod pipelines;
 
+const SQRT_2: f32 = 0.70710677;
+
 const NUM_SHARKS: usize = 50;
 const GLYPH_CACHE_SIZE: usize = 1024;
+
+struct GameVariables {
+    game_speed: f32,
+    player_speed: f32,
+    camera_height: f32,
+    camera_angle: Deg,
+}
+
+const GAME_VARIABLES: GameVariables = GameVariables {
+    game_speed: 1.0,
+    player_speed: 15.0,
+    camera_height: 35.0,
+    camera_angle: Deg::new(60.0),
+};
+
+#[derive(Clone, Copy, Debug)]
+pub enum Action {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+pub struct ActionEvent {
+    action: Action,
+    value: f32,
+}
+
+pub struct Actions {
+    old_values: [f32; Self::MAX_ACTIONS],
+    new_values: [f32; Self::MAX_ACTIONS],
+}
+
+impl Actions {
+    const MAX_ACTIONS: usize = 256;
+
+    fn new() -> Self {
+        Self {
+            old_values: [0.0; Self::MAX_ACTIONS],
+            new_values: [0.0; Self::MAX_ACTIONS],
+        }
+    }
+
+    fn is_active(&self, action: Action) -> bool {
+        self.new_values[action as usize] != 0.0
+    }
+
+    pub fn became_active_this_frame(&self, action: Action) -> bool {
+        self.new_values[action as usize] != 0.0 && self.old_values[action as usize] == 0.0
+    }
+
+    pub fn became_inactive_this_frame(&self, action: Action) -> bool {
+        self.new_values[action as usize] == 0.0 && self.old_values[action as usize] != 0.0
+    }
+
+    pub fn tick(&mut self, action_queue: &[ActionEvent]) {
+        self.old_values = self.new_values;
+
+        for event in action_queue {
+            self.new_values[event.action as usize] = event.value;
+        }
+    }
+}
+
+struct PlayerState {
+    position: Point3,
+    heading: Vec3,
+}
+
+impl PlayerState {
+    fn new() -> Self {
+        Self {
+            position: Point3::ZERO,
+            heading: Vec3::new(SQRT_2, 0.0, -SQRT_2),
+        }
+    }
+}
+
+struct CameraState {
+    offset: Vec3,
+    target: Point3,
+}
+
+impl CameraState {
+    fn new() -> Self {
+        let offset = GAME_VARIABLES.camera_height
+            / tan_pi_f32(HalfTurn::from(GAME_VARIABLES.camera_angle).as_f32());
+        let offset = offset * (1.0 / 2.0_f32.sqrt());
+        Self {
+            offset: Vec3::new(-offset, GAME_VARIABLES.camera_height, -offset),
+            target: Point3::ZERO,
+        }
+    }
+
+    fn camera_from_model(&self) -> Mat4 {
+        let eye = self.target + self.offset;
+        Mat4::look_at(eye, self.target, Vec3::Y)
+    }
+}
+
+struct GameState {
+    actions: Actions,
+    camera: CameraState,
+    player: PlayerState,
+}
+
+impl GameState {
+    fn new() -> Self {
+        Self {
+            actions: Actions::new(),
+            camera: CameraState::new(),
+            player: PlayerState::new(),
+        }
+    }
+
+    fn tick(&mut self, dt: f32, action_queue: &[ActionEvent]) {
+        self.actions.tick(action_queue);
+
+        let dt = dt * GAME_VARIABLES.game_speed;
+
+        let movement_bitmap = self.actions.is_active(Action::Up) as usize
+            | (self.actions.is_active(Action::Down) as usize) << 1
+            | (self.actions.is_active(Action::Left) as usize) << 2
+            | (self.actions.is_active(Action::Right) as usize) << 3;
+
+        const UP: Vec3 = Vec3::new(SQRT_2, 0.0, SQRT_2);
+        const DOWN: Vec3 = Vec3::new(-SQRT_2, 0.0, -SQRT_2);
+        const LEFT: Vec3 = Vec3::new(SQRT_2, 0.0, -SQRT_2);
+        const RIGHT: Vec3 = Vec3::new(-SQRT_2, 0.0, SQRT_2);
+        const UP_LEFT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
+        const UP_RIGHT: Vec3 = Vec3::new(0.0, 0.0, 1.0);
+        const DOWN_LEFT: Vec3 = Vec3::new(0.0, 0.0, -1.0);
+        const DOWN_RIGHT: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
+
+        let movement = [
+            // 0 0 0 0
+            Vec3::ZERO,
+            // 0 0 0 1
+            UP,
+            // 0 0 1 0
+            DOWN,
+            // 0 0 1 1
+            Vec3::ZERO,
+            // 0 1 0 0
+            LEFT,
+            // 0 1 0 1
+            UP_LEFT,
+            // 0 1 1 0
+            DOWN_LEFT,
+            // 0 1 1 1
+            LEFT,
+            // 1 0 0 0
+            RIGHT,
+            // 1 0 0 1
+            UP_RIGHT,
+            // 1 0 1 0
+            DOWN_RIGHT,
+            // 1 0 1 1
+            RIGHT,
+            // 1 1 0 0
+            Vec3::ZERO,
+            // 1 1 0 1
+            UP,
+            // 1 1 1 0
+            DOWN,
+            // 1 1 1 1
+            Vec3::ZERO,
+        ][movement_bitmap];
+
+        if movement != Vec3::ZERO {
+            self.player.heading = movement;
+        }
+
+        self.player.position += movement * GAME_VARIABLES.player_speed * dt;
+
+        self.camera.target = self.player.position;
+    }
+}
 
 pub fn main() {
     #[cfg(debug_assertions)]
@@ -158,17 +340,24 @@ pub fn main() {
     let mut depth_height = 0;
     let mut depth_image = default();
 
+    let mut rng = Pcg64::new();
     let shark_distance = 4.0;
 
-    let mut rng = Pcg64::new();
-
     let mut shark_transforms = Vec::new();
+
+    // Shark 0 is the ultimate shark of player control!
+    shark_transforms.push(Affine3 {
+        matrix: Mat3::IDENTITY,
+        translate: Vec3::ZERO,
+    });
+
     for z in 0..NUM_SHARKS {
         for x in 0..NUM_SHARKS {
             let x = x as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
             let z = z as f32 * shark_distance - NUM_SHARKS as f32 / 2.0 * shark_distance;
             shark_transforms.push(Affine3 {
-                matrix: Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(rng.next_f32() * 2.0)),
+                matrix: Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(rng.next_f32() * 2.0))
+                    * Mat3::from_scale(Vec3::new(0.5, 0.5, 0.5)),
                 translate: vec3(x, 0.0, z),
             })
         }
@@ -180,45 +369,13 @@ pub fn main() {
     let mut line_glyph_indices = Vec::new();
     let mut line_kern_advances = Vec::new();
 
-    let mut align_v = false;
-    let mut kerning = true;
+    let mut action_queue = Vec::new();
+    let mut game_state = GameState::new();
 
     let start_time = Instant::now();
+
     'main: loop {
         let frame = device.begin_frame();
-
-        while let Some(event) = app.poll_event() {
-            use Event::*;
-            match event {
-                KeyPress {
-                    window_id: _,
-                    key,
-                    repeat: _,
-                    pressed,
-                    modifiers: _,
-                } => {
-                    if key == Key::Escape {
-                        break 'main;
-                    }
-                    if key == Key::Space && pressed == PressedState::Pressed {
-                        align_v = !align_v;
-                        println!("align: {align_v}");
-                    }
-                    if key == Key::K && pressed == PressedState::Pressed {
-                        kerning = !kerning;
-                        println!("kerning: {kerning}");
-                    }
-                }
-                Quit => {
-                    break 'main;
-                }
-                Close { window_id } => {
-                    let window = app.window(window_id);
-                    device.destroy_swapchain(window.upcast());
-                }
-                _ => {}
-            }
-        }
 
         let (width, height, swapchain_image) = loop {
             let (width, height) = main_window.extent();
@@ -233,7 +390,71 @@ pub fn main() {
             }
         };
 
-        let mut cmd_buffer = device.request_cmd_encoder(&frame, &thread_token);
+        'poll_events: while let Some(event) = app.poll_event() {
+            use Event::*;
+            match event {
+                KeyPress {
+                    window_id: _,
+                    key,
+                    repeat,
+                    pressed,
+                    modifiers: _,
+                } => {
+                    if repeat {
+                        continue 'poll_events;
+                    }
+
+                    if key == Key::Escape {
+                        break 'main;
+                    }
+
+                    {
+                        let value = match pressed {
+                            PressedState::Released => 0.0,
+                            PressedState::Pressed => 1.0,
+                        };
+
+                        if key == Key::Left || key == Key::A {
+                            action_queue.push(ActionEvent {
+                                action: Action::Left,
+                                value,
+                            })
+                        }
+                        if key == Key::Right || key == Key::D {
+                            action_queue.push(ActionEvent {
+                                action: Action::Right,
+                                value,
+                            })
+                        }
+                        if key == Key::Up || key == Key::W {
+                            action_queue.push(ActionEvent {
+                                action: Action::Up,
+                                value,
+                            })
+                        }
+                        if key == Key::Down || key == Key::S {
+                            action_queue.push(ActionEvent {
+                                action: Action::Down,
+                                value,
+                            })
+                        }
+                    }
+                }
+                Quit => {
+                    break 'main;
+                }
+                Close { window_id } => {
+                    let window = app.window(window_id);
+                    device.destroy_swapchain(window.upcast());
+                }
+                _ => {}
+            }
+        }
+
+        game_state.tick(1.0 / 120.0, &action_queue);
+        action_queue.clear();
+
+        let mut cmd_encoder = device.request_cmd_encoder(&frame, &thread_token);
 
         if width != depth_width || height != depth_height {
             device.destroy_image(&frame, depth_image);
@@ -252,7 +473,7 @@ pub fn main() {
             });
 
             device.cmd_barrier(
-                &mut cmd_buffer,
+                &mut cmd_encoder,
                 None,
                 &[ImageBarrier::layout_optimal(
                     &[Access::None],
@@ -269,19 +490,25 @@ pub fn main() {
         let frame_start = Instant::now() - start_time;
         let frame_start = frame_start.as_secs_f32() * 0.125;
 
-        for (i, transform) in shark_transforms.iter_mut().enumerate() {
+        let orientation = {
+            let f = game_state.player.heading.normalized();
+            let r = Vec3::cross(f, Vec3::Y).normalized();
+            let u = Vec3::cross(r, f);
+            Mat3::from_rows([[r.x, u.x, -f.x], [r.y, u.y, -f.y], [r.z, u.z, -f.z]])
+        };
+
+        shark_transforms[0].matrix =
+            orientation * Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
+        shark_transforms[0].translate = game_state.player.position.as_vec3();
+
+        for (i, transform) in shark_transforms.iter_mut().skip(1).enumerate() {
             let direction = if i & 1 == 0 { 1.0 } else { -1.0 };
             let (s, _) = sin_cos_pi_f32(frame_start + (i as f32) * 0.0125);
             transform.translate.y = s;
             transform.matrix *= Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.002 * direction))
         }
 
-        let (s, c) = sin_cos_pi_f32(frame_start * 0.2);
-        let camera_height = c * 8.0;
-        let camera_radius = 20.0;
-        let eye = Point3::new(s * camera_radius, camera_height, c * camera_radius);
-        let center = Point3::ZERO;
-        let camera_from_model = Mat4::look_at(eye, center, Vec3::Y);
+        let camera_from_model = game_state.camera.camera_from_model();
         let clip_from_camera = Mat4::perspective_rev_inf_zo(
             HalfTurn::new(1.0 / 3.0),
             width as f32 / height as f32,
@@ -313,9 +540,6 @@ pub fn main() {
 
             x = 0.0;
             y += (font.ascent() - font.descent() + font.line_gap()) * scale;
-            if align_v {
-                y = y.trunc();
-            }
 
             if y > height as f32 {
                 break;
@@ -355,9 +579,7 @@ pub fn main() {
                         left_side_bearing: _,
                     } = font.horizontal_metrics(glyph_index);
 
-                    if kerning {
-                        x += advance * scale;
-                    }
+                    x += advance * scale;
 
                     let color =
                         *rng.array_select(&[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63]);
@@ -403,7 +625,7 @@ pub fn main() {
             );
 
             device.cmd_barrier(
-                &mut cmd_buffer,
+                &mut cmd_encoder,
                 None,
                 &[ImageBarrier::layout_optimal(
                     &[Access::ShaderSampledImageRead],
@@ -414,7 +636,7 @@ pub fn main() {
             );
 
             device.cmd_copy_buffer_to_image(
-                &mut cmd_buffer,
+                &mut cmd_encoder,
                 buffer.to_arg(),
                 image,
                 ImageLayout::Optimal,
@@ -433,7 +655,7 @@ pub fn main() {
             );
 
             device.cmd_barrier(
-                &mut cmd_buffer,
+                &mut cmd_encoder,
                 None,
                 &[ImageBarrier::layout_optimal(
                     &[Access::TransferWrite],
@@ -445,7 +667,7 @@ pub fn main() {
         }
 
         device.cmd_begin_rendering(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             &RenderingDesc {
                 x: 0,
                 y: 0,
@@ -469,7 +691,7 @@ pub fn main() {
         );
 
         device.cmd_set_scissors(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             &[Scissor {
                 offset: Offset2d { x: 0, y: 0 },
                 extent: Extent2d { width, height },
@@ -477,7 +699,7 @@ pub fn main() {
         );
 
         device.cmd_set_viewports(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             &[Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -493,7 +715,7 @@ pub fn main() {
             device.as_ref(),
             &frame,
             &thread_token,
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             &BasicUniforms { clip_from_model },
             &blåhaj_vertex_buffer,
             &blåhaj_index_buffer,
@@ -502,7 +724,7 @@ pub fn main() {
         );
 
         device.cmd_draw_indexed(
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             blåhaj_indices.len() as u32,
             shark_transforms.len() as u32,
             0,
@@ -515,7 +737,7 @@ pub fn main() {
             device.as_ref(),
             &frame,
             &thread_token,
-            &mut cmd_buffer,
+            &mut cmd_encoder,
             &TextUniforms {
                 screen_width: width,
                 screen_height: height,
@@ -528,11 +750,11 @@ pub fn main() {
             glyph_atlas,
         );
 
-        device.cmd_draw(&mut cmd_buffer, primitive_vertices.len() as u32, 1, 0, 0);
+        device.cmd_draw(&mut cmd_encoder, primitive_vertices.len() as u32, 1, 0, 0);
 
-        device.cmd_end_rendering(&mut cmd_buffer);
+        device.cmd_end_rendering(&mut cmd_encoder);
 
-        device.submit(&frame, cmd_buffer);
+        device.submit(&frame, cmd_encoder);
 
         device.end_frame(frame);
     }

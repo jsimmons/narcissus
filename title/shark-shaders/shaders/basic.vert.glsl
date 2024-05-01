@@ -13,7 +13,7 @@ struct TransformData {
 };
 
 layout(std430, row_major, set = 0, binding = 0) uniform uniformBuffer {
-    mat4 viewProj;
+    mat4 clip_from_camera;
 };
 
 layout(std430, set = 1, binding = 0) readonly buffer vertexBuffer {
@@ -24,23 +24,23 @@ layout(std430, set = 1, binding = 1) readonly buffer transformBuffer {
     TransformData transforms[];
 };
 
-layout(location = 0) out vec2 outTexcoord;
-layout(location = 1) out vec3 outNormal;
+layout(location = 0) out vec2 out_texcoord;
+layout(location = 1) out vec3 out_normal;
 
 void main() {
     TransformData td = transforms[gl_InstanceIndex];
     VertexData vd = vertices[gl_VertexIndex];
 
-    mat3 modelRot = mat3(
-        td.transform[0].x, td.transform[0].w, td.transform[1].z,
-        td.transform[0].y, td.transform[1].x, td.transform[1].w,
-        td.transform[0].z, td.transform[1].y, td.transform[2].x
+    mat4 camera_from_model = mat4(
+        td.transform[0].x, td.transform[0].w, td.transform[1].z, 0.0,
+        td.transform[0].y, td.transform[1].x, td.transform[1].w, 0.0, 
+        td.transform[0].z, td.transform[1].y, td.transform[2].x, 0.0, 
+        td.transform[2].y, td.transform[2].z, td.transform[2].w, 1.0
     );
-    vec3 modelOff = vec3(td.transform[2].y, td.transform[2].z, td.transform[2].w);
-    vec3 posWorld = modelRot * vd.position.xyz + modelOff;
-    vec4 posClip = viewProj * vec4(posWorld, 1.0);
-    gl_Position = posClip;
 
-    outNormal = vd.normal.xyz;
-    outTexcoord = vec2(vd.texcoord.x, 1.0 - vd.texcoord.y);
+    vec4 position_clip = clip_from_camera * camera_from_model * vec4(vd.position.xyz, 1.0);
+    gl_Position = position_clip;
+
+    out_normal = vd.normal.xyz;
+    out_texcoord = vec2(vd.texcoord.x, 1.0 - vd.texcoord.y);
 }

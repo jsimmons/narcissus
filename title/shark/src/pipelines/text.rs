@@ -143,7 +143,7 @@ impl TextPipeline {
         device: &(dyn Device + 'static),
         frame: &Frame,
         thread_token: &ThreadToken,
-        cmd_buffer: &mut CmdEncoder,
+        cmd_encoder: &mut CmdEncoder,
         text_uniforms: &TextUniforms,
         primitive_vertices: &[PrimitiveVertex],
         touched_glyphs: &[TouchedGlyph],
@@ -177,10 +177,10 @@ impl TextPipeline {
             primitive_instances,
         );
 
-        device.cmd_set_pipeline(cmd_buffer, self.pipeline);
+        device.cmd_set_pipeline(cmd_encoder, self.pipeline);
         device.cmd_set_bind_group(
             frame,
-            cmd_buffer,
+            cmd_encoder,
             self.bind_group_layout,
             0,
             &[
