@@ -167,6 +167,7 @@ impl App for SdlApp {
             sdl::EventType::KEYUP | sdl::EventType::KEYDOWN => {
                 let scancode = unsafe { event.key.keysym.scancode };
                 let modifiers = unsafe { event.key.keysym.modifiers };
+                let repeat = unsafe { event.key.repeat } != 0;
                 let state = unsafe { event.key.state };
                 let key = map_sdl_scancode(scancode);
                 let modifiers = map_sdl_modifiers(modifiers);
@@ -174,6 +175,7 @@ impl App for SdlApp {
                 Event::KeyPress {
                     window_id: sdl_window_id(unsafe { event.window.window_id }),
                     key,
+                    repeat,
                     pressed,
                     modifiers,
                 }

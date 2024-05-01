@@ -193,6 +193,7 @@ pub fn main() {
                 KeyPress {
                     window_id: _,
                     key,
+                    repeat: _,
                     pressed,
                     modifiers: _,
                 } => {

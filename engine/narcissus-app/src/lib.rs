@@ -47,6 +47,7 @@ pub enum Event {
     KeyPress {
         window_id: WindowId,
         key: Key,
+        repeat: bool,
         pressed: PressedState,
         modifiers: ModifierFlags,
     },
