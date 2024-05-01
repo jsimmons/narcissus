@@ -15,7 +15,7 @@ use narcissus_gpu::{
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
 use narcissus_maths::{
-    sin_cos_pi_f32, tan_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
+    sin_cos_pi_f32, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
 use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
 
@@ -31,14 +31,14 @@ const GLYPH_CACHE_SIZE: usize = 1024;
 struct GameVariables {
     game_speed: f32,
     player_speed: f32,
-    camera_height: f32,
+    camera_distance: f32,
     camera_angle: Deg,
 }
 
 const GAME_VARIABLES: GameVariables = GameVariables {
     game_speed: 1.0,
     player_speed: 15.0,
-    camera_height: 35.0,
+    camera_distance: 55.0,
     camera_angle: Deg::new(60.0),
 };
 
@@ -112,11 +112,17 @@ struct CameraState {
 
 impl CameraState {
     fn new() -> Self {
-        let offset = GAME_VARIABLES.camera_height
-            / tan_pi_f32(HalfTurn::from(GAME_VARIABLES.camera_angle).as_f32());
-        let offset = offset * (1.0 / 2.0_f32.sqrt());
+        let theta = HalfTurn::from(GAME_VARIABLES.camera_angle).as_f32();
+        let hypotenuse = GAME_VARIABLES.camera_distance;
+        let height = sin_pi_f32(theta) * hypotenuse;
+        let base = (hypotenuse * hypotenuse - height * height).sqrt();
+
+        // Rotate camera
+        let one_on_sqrt2 = 1.0 / 2.0_f32.sqrt();
+        let offset = Vec3::new(-base * one_on_sqrt2, height, -base * one_on_sqrt2);
+
         Self {
-            offset: Vec3::new(-offset, GAME_VARIABLES.camera_height, -offset),
+            offset,
             target: Point3::ZERO,
         }
     }
@@ -152,6 +158,7 @@ impl GameState {
             | (self.actions.is_active(Action::Left) as usize) << 2
             | (self.actions.is_active(Action::Right) as usize) << 3;
 
+        // Pre-rotated values
         const UP: Vec3 = Vec3::new(SQRT_2, 0.0, SQRT_2);
         const DOWN: Vec3 = Vec3::new(-SQRT_2, 0.0, -SQRT_2);
         const LEFT: Vec3 = Vec3::new(SQRT_2, 0.0, -SQRT_2);
