@@ -211,6 +211,14 @@ pub fn dequantize_unorm_u8(x: u8) -> f32 {
     x as f32 / 255.0
 }
 
+/// Linearly interpolate between `a` and `b` with the control value `t`
+///
+/// Returns the exact value of `a` when `t == 0.0` and the exact value of `b` when `t == 1.0`
+#[inline(always)]
+pub fn lerp(t: f32, a: f32, b: f32) -> f32 {
+    t.mul_add(b, t.mul_add(-a, a))
+}
+
 #[macro_export]
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
@@ -231,16 +239,23 @@ macro_rules! impl_shared {
                 unsafe { std::mem::transmute([value; $n]) }
             }
 
-            #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element is initialized with the minimum of the corresponding elements `a[i]` and `b[i]`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::min`] for exact details.")]
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the minimum of the corresponding elements in `a` and `b`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::min`] for exact details.")]
             #[inline]
             pub fn min(a: $name, b: $name) -> $name {
                 a.map2(b, |a, b| $crate::min(a, b))
             }
 
-            #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element is initialized with the maximum of the corresponding elements `a[i]` and `b[i]`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::max`] for exact details.")]
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the maximum of the corresponding elements in `a` and `b`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::max`] for exact details.")]
             #[inline]
             pub fn max(a: $name, b: $name) -> $name {
                 a.map2(b, |a, b| $crate::max(a, b))
+            }
+
+            #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initalized by linearly interpolating between the corresponding elements in `a` and `b` using `t` as a control value.")]
+            #[inline]
+            #[must_use]
+            pub fn lerp(t: f32, a: Self, b: Self) -> Self {
+                a.map2(b, |a, b| $crate::lerp(t, a, b))
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element `x[i]` is clamped between the corresponding elements `lo[i]` and `hi[i]`.\n\n# Panics\n\nPanics if any element of `lo` is greater than its corresponding element in `hi`.")]
