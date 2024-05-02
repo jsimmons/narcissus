@@ -53,7 +53,7 @@ impl<T> VirtualVec<T> {
         } else {
             unsafe {
                 self.len -= 1;
-                Some(ptr::read(self.get_unchecked(self.len())))
+                Some(ptr::read(self.as_ptr().add(self.len())))
             }
         }
     }
