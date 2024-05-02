@@ -15,7 +15,8 @@ use narcissus_gpu::{
     RenderingDesc, Scissor, StoreOp, ThreadToken, Viewport,
 };
 use narcissus_maths::{
-    sin_cos_pi_f32, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
+    clamp, perlin_noise3, sin_cos_pi_f32, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4,
+    Point3, Vec3,
 };
 use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
 
@@ -35,6 +36,8 @@ struct GameVariables {
     camera_angle: Deg,
     camera_damping: f32,
     camera_deadzone: f32,
+    camera_shake_decay: f32,
+    camera_shake_max_offset: f32,
 }
 
 const GAME_VARIABLES: GameVariables = GameVariables {
@@ -44,6 +47,8 @@ const GAME_VARIABLES: GameVariables = GameVariables {
     camera_angle: Deg::new(60.0),
     camera_damping: 35.0,
     camera_deadzone: 0.1,
+    camera_shake_decay: 1.0,
+    camera_shake_max_offset: 5.0,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -52,6 +57,7 @@ pub enum Action {
     Right,
     Up,
     Down,
+    Damage,
 }
 
 pub struct ActionEvent {
@@ -110,9 +116,13 @@ impl PlayerState {
 }
 
 struct CameraState {
-    offset: Vec3,
+    eye_offset: Vec3,
+
+    shake: f32,
+    shake_offset: Vec3,
+
+    position: Point3,
     velocity: Vec3,
-    target: Point3,
 }
 
 impl CameraState {
@@ -124,22 +134,68 @@ impl CameraState {
 
         // Rotate camera
         let one_on_sqrt2 = 1.0 / 2.0_f32.sqrt();
-        let offset = Vec3::new(-base * one_on_sqrt2, height, -base * one_on_sqrt2);
+        let eye_offset = Vec3::new(-base * one_on_sqrt2, height, -base * one_on_sqrt2);
 
         Self {
-            offset,
+            eye_offset,
+
+            shake: 0.0,
+            shake_offset: Vec3::ZERO,
+
+            position: Point3::ZERO,
             velocity: Vec3::ZERO,
-            target: Point3::ZERO,
+        }
+    }
+
+    fn tick(&mut self, target: Point3, time: f32, dt: f32) {
+        if Point3::distance_sq(self.position, target)
+            > (GAME_VARIABLES.camera_deadzone * GAME_VARIABLES.camera_deadzone)
+        {
+            let (pos_x, vel_x) = simple_spring_damper_exact(
+                self.position.x,
+                self.velocity.x,
+                target.x,
+                GAME_VARIABLES.camera_damping,
+                dt,
+            );
+            let (pos_z, vel_z) = simple_spring_damper_exact(
+                self.position.z,
+                self.velocity.z,
+                target.z,
+                GAME_VARIABLES.camera_damping,
+                dt,
+            );
+
+            self.position.z = pos_z;
+            self.position.x = pos_x;
+            self.velocity.x = vel_x;
+            self.velocity.z = vel_z;
+        }
+
+        self.shake -= GAME_VARIABLES.camera_shake_decay * dt;
+        self.shake = clamp(self.shake, 0.0, 1.0);
+
+        let shake_factor = self.shake * self.shake;
+        self.shake_offset = Vec3 {
+            x: GAME_VARIABLES.camera_shake_max_offset
+                * shake_factor
+                * perlin_noise3(0.0, time * 10.0, 0.0),
+            y: 0.0,
+            z: GAME_VARIABLES.camera_shake_max_offset
+                * shake_factor
+                * perlin_noise3(1.0, time * 10.0, 0.0),
         }
     }
 
     fn camera_from_model(&self) -> Mat4 {
-        let eye = self.target + self.offset;
-        Mat4::look_at(eye, self.target, Vec3::Y)
+        let position = self.position + self.shake_offset;
+        let eye = position + self.eye_offset;
+        Mat4::look_at(eye, position, Vec3::Y)
     }
 }
 
 struct GameState {
+    time: f32,
     actions: Actions,
     camera: CameraState,
     player: PlayerState,
@@ -148,6 +204,7 @@ struct GameState {
 impl GameState {
     fn new() -> Self {
         Self {
+            time: 0.0,
             actions: Actions::new(),
             camera: CameraState::new(),
             player: PlayerState::new(),
@@ -155,9 +212,14 @@ impl GameState {
     }
 
     fn tick(&mut self, dt: f32, action_queue: &[ActionEvent]) {
+        let dt = dt * GAME_VARIABLES.game_speed;
+        self.time += dt;
+
         self.actions.tick(action_queue);
 
-        let dt = dt * GAME_VARIABLES.game_speed;
+        if self.actions.became_active_this_frame(Action::Damage) {
+            self.camera.shake += 0.5;
+        }
 
         let movement_bitmap = self.actions.is_active(Action::Up) as usize
             | (self.actions.is_active(Action::Down) as usize) << 1
@@ -215,45 +277,17 @@ impl GameState {
 
         self.player.position += movement * GAME_VARIABLES.player_speed * dt;
 
-        // https://theorangeduck.com/page/spring-roll-call
-        fn simple_spring_damper_exact(
-            x: f32,
-            v: f32,
-            x_goal: f32,
-            damping: f32,
-            dt: f32,
-        ) -> (f32, f32) {
-            let y = damping / 2.0;
-            let j0 = x - x_goal;
-            let j1 = v + j0 * y;
-            let eydt = (-y * dt).exp();
-            (eydt * (j0 + j1 * dt) + x_goal, eydt * (v - j1 * y * dt))
-        }
-
-        if Point3::distance_sq(self.camera.target, self.player.position)
-            > (GAME_VARIABLES.camera_deadzone * GAME_VARIABLES.camera_deadzone)
-        {
-            let (pos_x, vel_x) = simple_spring_damper_exact(
-                self.camera.target.x,
-                self.camera.velocity.x,
-                self.player.position.x,
-                GAME_VARIABLES.camera_damping,
-                dt,
-            );
-            let (pos_z, vel_z) = simple_spring_damper_exact(
-                self.camera.target.z,
-                self.camera.velocity.z,
-                self.player.position.z,
-                GAME_VARIABLES.camera_damping,
-                dt,
-            );
-
-            self.camera.target.x = pos_x;
-            self.camera.target.z = pos_z;
-            self.camera.velocity.x = vel_x;
-            self.camera.velocity.z = vel_z;
-        }
+        self.camera.tick(self.player.position, self.time, dt);
     }
+}
+
+// https://theorangeduck.com/page/spring-roll-call
+fn simple_spring_damper_exact(x: f32, v: f32, x_goal: f32, damping: f32, dt: f32) -> (f32, f32) {
+    let y = damping / 2.0;
+    let j0 = x - x_goal;
+    let j1 = v + j0 * y;
+    let eydt = (-y * dt).exp();
+    (eydt * (j0 + j1 * dt) + x_goal, eydt * (v - j1 * y * dt))
 }
 
 pub fn main() {
@@ -488,6 +522,12 @@ pub fn main() {
                                 value,
                             })
                         }
+                        if key == Key::Space {
+                            action_queue.push(ActionEvent {
+                                action: Action::Damage,
+                                value,
+                            })
+                        }
                     }
                 }
                 Quit => {
@@ -545,10 +585,9 @@ pub fn main() {
             let r = Vec3::cross(f, Vec3::Y).normalized();
             let u = Vec3::cross(r, f);
             Mat3::from_rows([[r.x, u.x, -f.x], [r.y, u.y, -f.y], [r.z, u.z, -f.z]])
-        };
+        } * Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
 
-        shark_transforms[0].matrix =
-            orientation * Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
+        shark_transforms[0].matrix = orientation;
         shark_transforms[0].translate = game_state.player.position.as_vec3();
 
         for (i, transform) in shark_transforms.iter_mut().skip(1).enumerate() {
