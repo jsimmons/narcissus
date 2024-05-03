@@ -38,17 +38,19 @@ struct GameVariables {
     camera_deadzone: f32,
     camera_shake_decay: f32,
     camera_shake_max_offset: f32,
+    camera_shake_frequency: f32,
 }
 
-const GAME_VARIABLES: GameVariables = GameVariables {
+static GAME_VARIABLES: GameVariables = GameVariables {
     game_speed: 1.0,
     player_speed: 15.0,
     camera_distance: 55.0,
     camera_angle: Deg::new(60.0),
     camera_damping: 35.0,
     camera_deadzone: 0.1,
-    camera_shake_decay: 1.0,
-    camera_shake_max_offset: 5.0,
+    camera_shake_decay: 2.0,
+    camera_shake_max_offset: 2.0,
+    camera_shake_frequency: 11.0,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -175,16 +177,11 @@ impl CameraState {
         self.shake -= GAME_VARIABLES.camera_shake_decay * dt;
         self.shake = clamp(self.shake, 0.0, 1.0);
 
-        let shake_factor = self.shake * self.shake;
-        self.shake_offset = Vec3 {
-            x: GAME_VARIABLES.camera_shake_max_offset
-                * shake_factor
-                * perlin_noise3(0.0, time * 10.0, 0.0),
-            y: 0.0,
-            z: GAME_VARIABLES.camera_shake_max_offset
-                * shake_factor
-                * perlin_noise3(1.0, time * 10.0, 0.0),
-        }
+        let t = time * GAME_VARIABLES.camera_shake_frequency;
+        let shake = GAME_VARIABLES.camera_shake_max_offset * self.shake * self.shake * self.shake;
+
+        self.shake_offset.x = shake * perlin_noise3(0.0, t, 0.0);
+        self.shake_offset.z = shake * perlin_noise3(1.0, t, 0.0);
     }
 
     fn camera_from_model(&self) -> Mat4 {
@@ -218,7 +215,7 @@ impl GameState {
         self.actions.tick(action_queue);
 
         if self.actions.became_active_this_frame(Action::Damage) {
-            self.camera.shake += 0.5;
+            self.camera.shake += 0.4;
         }
 
         let movement_bitmap = self.actions.is_active(Action::Up) as usize
