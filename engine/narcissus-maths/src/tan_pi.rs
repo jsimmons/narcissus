@@ -4,8 +4,6 @@
 //
 // Sollya code for generating these polynomials is in `doc/sincostan.sollya`
 
-use crate::round_ties_to_even;
-
 const F32_TAN_PI_15_K: [f32; 7] = unsafe {
     std::mem::transmute::<[u32; 7], _>([
         0x41255def, // 0x1.4abbdep3
@@ -34,7 +32,7 @@ pub fn tan_pi_f32(a: f32) -> f32 {
     const T: [f32; 7] = F32_TAN_PI_15_K;
 
     // Range reduction.
-    let r = round_ties_to_even(a + a);
+    let r = (a + a).round_ties_even();
 
     // SAFETY: The clamp above avoids the possibility of overflow here.
     let i = unsafe { r.to_int_unchecked::<i32>() } as u32;

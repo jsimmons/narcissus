@@ -2,8 +2,6 @@
 //
 // Sollya code for generating these polynomials is in `doc/sincostan.sollya`
 
-use crate::round_ties_to_even;
-
 // constants for sin(pi x), cos(pi x) for x on [-1/4,1/4]
 const F32_SIN_PI_7_K: [f32; 3] = unsafe {
     std::mem::transmute::<[u32; 3], _>([
@@ -51,7 +49,7 @@ pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
     let a = if a.abs() < 16777216.0 { a } else { a * 0.0 };
 
     // Range reduction.
-    let r = round_ties_to_even(a + a);
+    let r = (a + a).round_ties_even();
 
     // SAFETY: The clamp above avoids the possibility of overflow here.
     let i = unsafe { r.to_int_unchecked::<i32>() } as u32;
