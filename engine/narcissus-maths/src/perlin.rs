@@ -91,9 +91,9 @@ fn grad(index: usize, x: f32, y: f32, z: f32) -> f32 {
 
     // Unfortunately the compiler does not track the range of values in INDICES,
     // and so cannot see a bounds check is superflous here. Do it ourselves.
-
+    //
     // SAFETY: const loop asserts all values in INDICES are in bounds for BASIS.
-    let [a, b, c] = unsafe {
+    let &[a, b, c] = unsafe {
         const _: () = {
             let mut i = 0;
             while i < INDICES.len() {
