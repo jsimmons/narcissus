@@ -1,5 +1,6 @@
 mod affine2;
 mod affine3;
+mod exp;
 mod mat2;
 mod mat3;
 mod mat4;
@@ -16,6 +17,7 @@ mod vec4;
 
 pub use affine2::Affine2;
 pub use affine3::Affine3;
+pub use exp::exp_f32;
 pub use mat2::Mat2;
 pub use mat3::Mat3;
 pub use mat4::Mat4;

@@ -5,7 +5,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use narcissus_maths::{next_after_f32, sin_cos_pi_f32, tan_pi_f32};
+use narcissus_maths::{exp_f32, next_after_f32, sin_cos_pi_f32, tan_pi_f32};
 
 use gmp_mpfr_sys::mpfr;
 
@@ -122,6 +122,10 @@ impl Float {
 
     pub fn tan_mut(&mut self, round: Round) -> i32 {
         unsafe { mpfr::tan(&mut self.0, &self.0, round.to_raw()) }
+    }
+
+    pub fn exp_mut(&mut self, round: Round) -> i32 {
+        unsafe { mpfr::exp(&mut self.0, &self.0, round.to_raw()) }
     }
 
     pub fn abs_mut(&mut self, round: Round) -> i32 {
@@ -418,6 +422,10 @@ fn ref_tan_pi_f32(x: &mut Float, pi: &Float) -> i32 {
     x.tan_mut(Round::TiesToEven)
 }
 
+fn ref_exp_f32(x: &mut Float, _: &Float) -> i32 {
+    x.exp_mut(Round::TiesToEven)
+}
+
 #[test]
 #[ignore]
 pub fn exhaustive_sin_pi() {
@@ -443,4 +451,12 @@ pub fn exhaustive_tan_pi() {
     println!("TAN: {errors:?}");
     assert_eq!(errors.num_errors, 100_555_422);
     assert_eq!(errors.max_error_ulp, 2);
+}
+
+#[test]
+#[ignore]
+pub fn exhaustive_exp() {
+    let errors = check_exhaustive_f32(ref_exp_f32, |a| exp_f32(a), false);
+    println!("EXP: {errors:?}");
+    assert_eq!(errors.max_error_ulp, 1);
 }
