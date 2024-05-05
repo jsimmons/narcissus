@@ -192,12 +192,66 @@ pub fn dequantize_unorm_u8(x: u8) -> f32 {
     x as f32 / 255.0
 }
 
-/// Linearly interpolate between `a` and `b` with the control value `t`
+/// Linearly interpolate between `a` and `b` with the control value `t`.
 ///
-/// Returns the exact value of `a` when `t == 0.0` and the exact value of `b` when `t == 1.0`
+/// Returns the exact value of `a` when `t == 0.0` and the exact value of `b` when `t == 1.0`.
 #[inline(always)]
 pub fn lerp(t: f32, a: f32, b: f32) -> f32 {
     t.mul_add(b, t.mul_add(-a, a))
+}
+
+/// Convert the given `f32` value to `i32`, returning an implementation defined
+/// value in case of overflow.
+///
+/// If the conversion is inexact, a truncated result is returned. That is, it
+/// rounds towards zero.
+///
+/// # Notes
+///
+/// `f32::to_int_unchecked<T>` can lead to UB when converting an `x` that:
+///   * Is Inf
+///   * Is NaN
+///   * Would produce a value that is out of bounds for <T>
+///
+/// This function performs the same operation, but returns an implementation
+/// defined value for these cases.
+#[inline(always)]
+pub fn f32_to_i32(x: f32) -> i32 {
+    #[cfg(not(target_arch = "x86_64"))]
+    const _: () = panic!("unsupported platform");
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let x = core::arch::x86_64::_mm_load_ss(&x);
+        core::arch::x86_64::_mm_cvtt_ss2si(x)
+    }
+}
+
+/// Convert the given `f32` value to `i64`, returning an implementation defined
+/// value in case of overflow.
+///
+/// If the conversion is inexact, a truncated result is returned. That is, it
+/// rounds towards zero.
+///
+/// # Notes
+///
+/// `f32::to_int_unchecked<T>` can lead to UB when converting an `x` that:
+///   * Is Inf
+///   * Is NaN
+///   * Would produce a value that is out of bounds for <T>
+///
+/// This function performs the same operation, but returns an implementation
+/// defined value for these cases.
+#[inline(always)]
+pub fn f32_to_i64(x: f32) -> i64 {
+    #[cfg(not(target_arch = "x86_64"))]
+    const _: () = panic!("unsupported platform");
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let x = core::arch::x86_64::_mm_load_ss(&x);
+        core::arch::x86_64::_mm_cvttss_si64(x)
+    }
 }
 
 #[macro_export]
