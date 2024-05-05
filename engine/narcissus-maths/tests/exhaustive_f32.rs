@@ -459,4 +459,5 @@ pub fn exhaustive_exp() {
     let errors = check_exhaustive_f32(ref_exp_f32, exp_f32, false);
     println!("EXP: {errors:?}");
     assert_eq!(errors.max_error_ulp, 1);
+    assert_eq!(errors.num_errors, 11_067_510);
 }
