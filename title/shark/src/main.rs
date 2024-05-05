@@ -377,7 +377,7 @@ impl GameState {
         self.archetype_projectile[i / 8].velocity_x[i % 8] = velocity.x;
         self.archetype_projectile[i / 8].velocity_z[i % 8] = velocity.z;
         self.archetype_projectile[i / 8].lifetime[i % 8] = lifetime;
-        self.archetype_projectile_bitmap_1[i / 64] |= 1 << i % 64;
+        self.archetype_projectile_bitmap_1[i / 64] |= 1 << (i % 64);
         self.archetype_projectile_bitmap_0[i / 64 / 64] |= 1 << ((i / 64) % 64);
     }
 }
@@ -472,12 +472,12 @@ pub fn main() {
 
         let blåhaj_buffer = device.request_transient_buffer_with_data(
             &frame,
-            &thread_token,
+            thread_token,
             BufferUsageFlags::TRANSFER,
             blåhaj_image_data.as_slice(),
         );
 
-        let mut cmd_encoder = device.request_cmd_encoder(&frame, &thread_token);
+        let mut cmd_encoder = device.request_cmd_encoder(&frame, thread_token);
         {
             let cmd_encoder = &mut cmd_encoder;
 
@@ -558,7 +558,7 @@ pub fn main() {
             let (width, height, swapchain_image) = loop {
                 let (width, height) = main_window.extent();
                 if let Ok(result) = device.acquire_swapchain(
-                    &frame,
+                    frame,
                     main_window.upcast(),
                     width,
                     height,
@@ -682,12 +682,12 @@ pub fn main() {
             );
             let clip_from_model = clip_from_camera * camera_from_model;
 
-            let mut cmd_encoder = device.request_cmd_encoder(&frame, &thread_token);
+            let mut cmd_encoder = device.request_cmd_encoder(frame, thread_token);
             {
                 let cmd_encoder = &mut cmd_encoder;
 
                 if width != depth_width || height != depth_height {
-                    device.destroy_image(&frame, depth_image);
+                    device.destroy_image(frame, depth_image);
                     depth_image = device.create_image(&ImageDesc {
                         memory_location: MemoryLocation::Device,
                         host_mapped: false,
@@ -1009,7 +1009,7 @@ pub fn main() {
 
                 device.cmd_end_rendering(cmd_encoder);
             }
-            device.submit(&frame, cmd_encoder);
+            device.submit(frame, cmd_encoder);
         }
         device.end_frame(frame);
     }

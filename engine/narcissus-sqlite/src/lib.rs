@@ -489,7 +489,7 @@ mod tests {
         for (name, age) in names_to_ages {
             statement
                 .query()
-                .bind_text(name_index, &name)
+                .bind_text(name_index, name)
                 .bind_i32(age_index, age)
                 .execute()
                 .unwrap();

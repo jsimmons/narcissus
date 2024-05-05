@@ -456,7 +456,7 @@ pub fn exhaustive_tan_pi() {
 #[test]
 #[ignore]
 pub fn exhaustive_exp() {
-    let errors = check_exhaustive_f32(ref_exp_f32, |a| exp_f32(a), false);
+    let errors = check_exhaustive_f32(ref_exp_f32, exp_f32, false);
     println!("EXP: {errors:?}");
     assert_eq!(errors.max_error_ulp, 1);
 }
