@@ -4,6 +4,8 @@
 //
 // Sollya code for generating these polynomials is in `doc/sincostan.sollya`
 
+use crate::f32_to_i32;
+
 const F32_TAN_PI_15_K: [f32; 7] = unsafe {
     std::mem::transmute::<[u32; 7], _>([
         0x41255def, // 0x1.4abbdep3
@@ -34,8 +36,7 @@ pub fn tan_pi_f32(a: f32) -> f32 {
     // Range reduction.
     let r = (a + a).round_ties_even();
 
-    // SAFETY: The clamp above avoids the possibility of overflow here.
-    let i = unsafe { r.to_int_unchecked::<i32>() } as u32;
+    let i = f32_to_i32(r) as u32;
     let r = r.mul_add(-0.5, a);
 
     let e = if i.wrapping_add(1) & 2 != 0 {

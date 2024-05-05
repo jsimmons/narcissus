@@ -2,6 +2,8 @@
 //
 // Sollya code for generating these polynomials is in `doc/sincostan.sollya`
 
+use crate::f32_to_i32;
+
 // constants for sin(pi x), cos(pi x) for x on [-1/4,1/4]
 const F32_SIN_PI_7_K: [f32; 3] = unsafe {
     std::mem::transmute::<[u32; 3], _>([
@@ -51,8 +53,7 @@ pub fn sin_cos_pi_f32(a: f32) -> (f32, f32) {
     // Range reduction.
     let r = (a + a).round_ties_even();
 
-    // SAFETY: The clamp above avoids the possibility of overflow here.
-    let i = unsafe { r.to_int_unchecked::<i32>() } as u32;
+    let i = f32_to_i32(r) as u32;
     let r = r.mul_add(-0.5, a);
 
     let sx = (i >> 1) << 31;
