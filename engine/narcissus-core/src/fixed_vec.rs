@@ -34,6 +34,12 @@ impl<T, F: FnMut() -> T> ExtendWith<T> for ExtendFunc<F> {
     }
 }
 
+impl<T, const CAP: usize> Default for FixedVec<T, CAP> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, const CAP: usize> FixedVec<T, CAP> {
     pub const fn new() -> Self {
         FixedVec {
