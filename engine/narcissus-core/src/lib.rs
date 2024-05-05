@@ -118,17 +118,20 @@ macro_rules! thread_token_def {
 #[macro_export]
 macro_rules! flags_def {
     ($name:ident) => {
+        flags_def!($name, u32);
+    };
+    ($name:ident, $ty:ty) => {
         #[derive(PartialEq, Hash, Debug)]
-        pub struct $name(u32);
+        pub struct $name($ty);
 
         impl $name {
             #[inline]
-            pub fn from_raw(value: u32) -> Self {
+            pub fn from_raw(value: $ty) -> Self {
                 Self(value)
             }
 
             #[inline]
-            pub fn as_raw(self) -> u32 {
+            pub fn as_raw(self) -> $ty {
                 self.0
             }
 
