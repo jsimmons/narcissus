@@ -2,28 +2,35 @@ use crate::{Mat3, Point3, Vec3};
 
 /// Matrix and translation vector which together represent a 3d affine
 /// transformation.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct Affine3 {
     pub matrix: Mat3,
-    pub translate: Vec3,
+    pub translation: Vec3,
 }
 
 impl Affine3 {
     pub const ZERO: Affine3 = Affine3 {
         matrix: Mat3::ZERO,
-        translate: Vec3::ZERO,
+        translation: Vec3::ZERO,
     };
 
     pub const IDENTITY: Affine3 = Affine3 {
         matrix: Mat3::IDENTITY,
-        translate: Vec3::ZERO,
+        translation: Vec3::ZERO,
     };
+
+    pub fn new(matrix: Mat3, translation: Vec3) -> Self {
+        Self {
+            matrix,
+            translation,
+        }
+    }
 
     pub fn mul_affine3(&self, rhs: Affine3) -> Affine3 {
         Self {
             matrix: self.matrix * rhs.matrix,
-            translate: self.translate + rhs.translate,
+            translation: self.translation + rhs.translation,
         }
     }
 
@@ -32,7 +39,7 @@ impl Affine3 {
     }
 
     pub fn transform_point3(&self, point: Point3) -> Point3 {
-        self.matrix * point + self.translate
+        self.matrix * point + self.translation
     }
 }
 

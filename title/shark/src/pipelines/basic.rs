@@ -1,12 +1,11 @@
 use narcissus_core::default;
 use narcissus_gpu::{
-    Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
-    GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, IndexType,
-    PersistentBuffer, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc,
-    SamplerFilter, ShaderDesc, ShaderStageFlags, ThreadToken, Topology, TypedBind,
+    BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
+    CompareOp, CullingMode, Device, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout,
+    ImageFormat, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter,
+    ShaderDesc, ShaderStageFlags, Topology,
 };
-use narcissus_maths::{Affine3, Mat4};
+use narcissus_maths::Mat4;
 
 #[allow(unused)]
 #[repr(C)]
@@ -114,77 +113,5 @@ impl BasicPipeline {
             sampler,
             pipeline,
         }
-    }
-
-    pub fn bind(
-        &self,
-        device: &(dyn Device + 'static),
-        frame: &Frame,
-        thread_token: &ThreadToken,
-        cmd_encoder: &mut CmdEncoder,
-        basic_uniforms: &BasicUniforms,
-        vertex_buffer: &PersistentBuffer,
-        index_buffer: &PersistentBuffer,
-        transforms: &[Affine3],
-        texture: Image,
-    ) {
-        let uniform_buffer = device.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::UNIFORM,
-            basic_uniforms,
-        );
-
-        let transform_buffer = device.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::STORAGE,
-            transforms,
-        );
-
-        device.cmd_set_pipeline(cmd_encoder, self.pipeline);
-
-        device.cmd_set_bind_group(
-            frame,
-            cmd_encoder,
-            self.uniforms_bind_group_layout,
-            0,
-            &[Bind {
-                binding: 0,
-                array_element: 0,
-                typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
-            }],
-        );
-
-        device.cmd_set_bind_group(
-            frame,
-            cmd_encoder,
-            self.storage_bind_group_layout,
-            1,
-            &[
-                Bind {
-                    binding: 0,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[vertex_buffer.to_arg()]),
-                },
-                Bind {
-                    binding: 1,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[transform_buffer.to_arg()]),
-                },
-                Bind {
-                    binding: 2,
-                    array_element: 0,
-                    typed: TypedBind::Sampler(&[self.sampler]),
-                },
-                Bind {
-                    binding: 3,
-                    array_element: 0,
-                    typed: TypedBind::Image(&[(ImageLayout::Optimal, texture)]),
-                },
-            ],
-        );
-
-        device.cmd_set_index_buffer(cmd_encoder, index_buffer.to_arg(), 0, IndexType::U16);
     }
 }
