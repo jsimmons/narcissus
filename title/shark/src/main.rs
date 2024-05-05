@@ -52,7 +52,7 @@ struct GameVariables {
 static GAME_VARIABLES: GameVariables = GameVariables {
     game_speed: 1.0,
 
-    camera_distance: 55.0,
+    camera_distance: 45.0,
     camera_angle: Deg::new(60.0),
     camera_damping: 35.0,
     camera_deadzone: 0.1,
@@ -60,11 +60,11 @@ static GAME_VARIABLES: GameVariables = GameVariables {
     camera_shake_max_offset: 2.0,
     camera_shake_frequency: 11.0,
 
-    player_speed: 15.0,
+    player_speed: 10.0,
 
-    weapon_cooldown: 0.125,
-    weapon_projectile_speed: 20.0,
-    weapon_projectile_lifetime: 2.0,
+    weapon_cooldown: 0.0,
+    weapon_projectile_speed: 25.0,
+    weapon_projectile_lifetime: 10.0,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -639,7 +639,7 @@ pub fn main() {
             action_queue.clear();
 
             let half_turn_y = Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
-            let scale = Mat3::from_scale(Vec3::splat(0.25));
+            let scale = Mat3::from_scale(Vec3::splat(0.125));
 
             fn rotate_dir(dir: Vec3, up: Vec3) -> Mat3 {
                 let f = dir.normalized();
