@@ -132,6 +132,7 @@ impl From<Deg> for HalfTurn {
 /// ---
 /// On `x86` If either input is `NaN`, returns the value of `y`. Other platforms follow IEEE754-2008 semantics, where if
 /// either input is `NaN` the other input is returned. `NaN` propagates when both inputs are `NaN`.
+#[must_use]
 #[inline(always)]
 pub fn min(x: f32, y: f32) -> f32 {
     #[cfg(target_arch = "x86_64")]
@@ -151,6 +152,7 @@ pub fn min(x: f32, y: f32) -> f32 {
 /// # Platform Specific Behavior
 /// On `x86` If either input is `NaN`, returns the value of `y`. Other platforms follow IEEE754-2008 semantics, where if
 /// either input is `NaN` the other input is returned. `NaN` propagates when both inputs are `NaN`.
+#[must_use]
 #[inline(always)]
 pub fn max(x: f32, y: f32) -> f32 {
     #[cfg(target_arch = "x86_64")]
@@ -170,6 +172,7 @@ pub fn max(x: f32, y: f32) -> f32 {
 /// # Panics
 ///
 /// Panics if `lo` is greater than `hi`.
+#[must_use]
 #[inline(always)]
 pub fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
     debug_assert!(lo <= hi);
@@ -197,6 +200,7 @@ pub fn dequantize_unorm_u8(x: u8) -> f32 {
 /// Linearly interpolate between `a` and `b` with the control value `t`.
 ///
 /// Returns the exact value of `a` when `t == 0.0` and the exact value of `b` when `t == 1.0`.
+#[must_use]
 #[inline(always)]
 pub fn lerp(t: f32, a: f32, b: f32) -> f32 {
     t.mul_add(b, t.mul_add(-a, a))
@@ -217,6 +221,7 @@ pub fn lerp(t: f32, a: f32, b: f32) -> f32 {
 ///
 /// This function performs the same operation, but returns an implementation
 /// defined value for these cases.
+#[must_use]
 #[inline(always)]
 pub fn f32_to_i32(x: f32) -> i32 {
     #[cfg(not(target_arch = "x86_64"))]
@@ -270,6 +275,7 @@ macro_rules! impl_shared {
 
             #[doc = concat!("Constructs a new [`", stringify!($name), "`] where each element is initialized with the given `value`.")]
             #[inline(always)]
+            #[must_use]
             pub const fn splat(value: $t) -> $name {
                 // we have to transmute here because we can't make `into()` const.
                 // SAFETY: $name is repr(C) struct with $n elements of type $t, so the transmute is always valid.
@@ -277,52 +283,59 @@ macro_rules! impl_shared {
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the minimum of the corresponding elements in `a` and `b`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::min`] for exact details.")]
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn min(a: $name, b: $name) -> $name {
-                a.map2(b, |a, b| $crate::min(a, b))
+                a.map2(b, #[inline(always)] |a, b| $crate::min(a, b))
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initialized with the maximum of the corresponding elements in `a` and `b`.\n\nThis function returns a platform dependent value if either input is `NaN`. See [`crate::max`] for exact details.")]
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn max(a: $name, b: $name) -> $name {
-                a.map2(b, |a, b| $crate::max(a, b))
+                a.map2(b, #[inline(always)] |a, b| $crate::max(a, b))
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is initalized by linearly interpolating between the corresponding elements in `a` and `b` using `t` as a control value.")]
-            #[inline]
+            #[inline(always)]
             #[must_use]
             pub fn lerp(t: f32, a: Self, b: Self) -> Self {
-                a.map2(b, |a, b| $crate::lerp(t, a, b))
+                a.map2(b, #[inline(always)] |a, b| $crate::lerp(t, a, b))
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where the `i`th element `x[i]` is clamped between the corresponding elements `lo[i]` and `hi[i]`.\n\n# Panics\n\nPanics if any element of `lo` is greater than its corresponding element in `hi`.")]
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn clamp(x: $name, lo: $name, hi: $name) -> $name {
                 Self::max(Self::min(x, hi), lo)
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the absolute value of the corresponding element in `self`.")]
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn abs(self) -> $name {
-                self.map(|x| x.abs())
+                self.map(#[inline(always)] |x| x.abs())
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the smallest integer value greater than or equal to the corresponding element in `self`.")]
             #[inline(always)]
+            #[must_use]
             pub fn ceil(self) -> $name {
-                self.map(|x| x.ceil())
+                self.map(#[inline(always)] |x| x.ceil())
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the largest integer value less than or equal to the corresponding element in `self`.")]
             #[inline(always)]
+            #[must_use]
             pub fn floor(self) -> $name {
-                self.map(|x| x.floor())
+                self.map(#[inline(always)] |x| x.floor())
             }
 
             #[doc = concat!("Returns a [`", stringify!($name), "`] where each element is the nearest integer value to the corresponding element in `self`. Rounds half-way cases away from `0.0`.")]
             #[inline(always)]
+            #[must_use]
             pub fn round(self) -> $name {
-                self.map(|x| x.round())
+                self.map(#[inline(always)] |x| x.round())
             }
         }
 
@@ -347,14 +360,16 @@ macro_rules! impl_affine {
     ($name:ty, $t:ty, $n:expr) => {
         impl $name {
             /// Calculates the euclidean distance between the two points `a` and `b`.
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn distance(a: $name, b: $name) -> $t {
                 (b - a).length()
             }
 
             /// Calculates the squared euclidean distance between the two points `a` and `b`.
             /// Avoids an expensive `sqrt` operation.
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn distance_sq(a: $name, b: $name) -> $t {
                 (b - a).length_sq()
             }
@@ -367,21 +382,23 @@ macro_rules! impl_vector {
     ($name:ty, $t:ty, $n:expr) => {
         impl $name {
             /// Calculates the length of the vector `self`.
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn length(self) -> $t {
                 self.length_sq().sqrt()
             }
 
             /// Calculate the squared length of the vector `self`.
             /// Avoids an expensive `sqrt` operation.
-            #[inline]
+            #[inline(always)]
+            #[must_use]
             pub fn length_sq(self) -> $t {
                 Self::dot(self, self)
             }
 
             /// Returns a vector with the same direction as `self` but with unit (1.0) length.
+            #[inline(always)]
             #[must_use]
-            #[inline]
             pub fn normalized(self) -> $name {
                 self / self.length()
             }
@@ -391,7 +408,10 @@ macro_rules! impl_vector {
             type Output = $name;
             #[inline(always)]
             fn neg(self) -> Self::Output {
-                self.map(|x| -x)
+                self.map(
+                    #[inline(always)]
+                    |x| -x,
+                )
             }
         }
 
@@ -399,7 +419,10 @@ macro_rules! impl_vector {
             type Output = $name;
             #[inline(always)]
             fn add(self, rhs: $t) -> Self::Output {
-                self.map(|x| x + rhs)
+                self.map(
+                    #[inline(always)]
+                    |x| x + rhs,
+                )
             }
         }
 
@@ -407,7 +430,10 @@ macro_rules! impl_vector {
             type Output = $name;
             #[inline(always)]
             fn sub(self, rhs: $t) -> Self::Output {
-                self.map(|x| x - rhs)
+                self.map(
+                    #[inline(always)]
+                    |x| x - rhs,
+                )
             }
         }
 
@@ -415,7 +441,10 @@ macro_rules! impl_vector {
             type Output = $name;
             #[inline(always)]
             fn mul(self, rhs: $t) -> Self::Output {
-                self.map(|x| x * rhs)
+                self.map(
+                    #[inline(always)]
+                    |x| x * rhs,
+                )
             }
         }
 
@@ -423,7 +452,10 @@ macro_rules! impl_vector {
             type Output = $name;
             #[inline(always)]
             fn mul(self, rhs: $name) -> Self::Output {
-                rhs.map(|x| self * x)
+                rhs.map(
+                    #[inline(always)]
+                    |x| self * x,
+                )
             }
         }
 
@@ -431,7 +463,10 @@ macro_rules! impl_vector {
             type Output = $name;
             #[inline(always)]
             fn div(self, rhs: $t) -> Self::Output {
-                self.map(|x| x / rhs)
+                self.map(
+                    #[inline(always)]
+                    |x| x / rhs,
+                )
             }
         }
 

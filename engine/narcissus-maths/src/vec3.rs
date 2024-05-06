@@ -22,18 +22,21 @@ impl Vec3 {
 
     /// Constructs a new [`Vec3`] with the given `x`, `y` and `z` components.
     #[inline(always)]
+    #[must_use]
     pub const fn new(x: f32, y: f32, z: f32) -> Vec3 {
         Vec3 { x, y, z }
     }
 
     /// Converts this point to the equivalent point.
     #[inline(always)]
+    #[must_use]
     pub const fn as_point3(self) -> Point3 {
         Point3::new(self.x, self.y, self.z)
     }
 
     /// Returns a [`Vec3`] with the function `f` applied to each component in order.
     #[inline(always)]
+    #[must_use]
     pub fn map<F>(self, mut f: F) -> Vec3
     where
         F: FnMut(f32) -> f32,
@@ -48,6 +51,7 @@ impl Vec3 {
     /// Returns a new [`Vec3`] with the function `f` applied to each pair of
     /// components from `self` and `rhs` in order.
     #[inline(always)]
+    #[must_use]
     pub fn map2<F>(self, rhs: Self, mut f: F) -> Vec3
     where
         F: FnMut(f32, f32) -> f32,
@@ -60,14 +64,14 @@ impl Vec3 {
     }
 
     /// Returns the dot product of `a` and `b`.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn dot(a: Vec3, b: Vec3) -> f32 {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 
     /// Returns the cross product of `a` and `b`.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
         [
@@ -81,7 +85,7 @@ impl Vec3 {
 
 impl std::ops::Add for Vec3 {
     type Output = Vec3;
-    #[inline]
+    #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x + rhs.x,
@@ -93,7 +97,7 @@ impl std::ops::Add for Vec3 {
 
 impl std::ops::Sub for Vec3 {
     type Output = Vec3;
-    #[inline]
+    #[inline(always)]
     fn sub(self, rhs: Self) -> Self::Output {
         Self::Output {
             x: self.x - rhs.x,
@@ -146,7 +150,7 @@ impl std::ops::SubAssign for Vec3 {
 }
 
 impl std::ops::MulAssign for Vec3 {
-    #[inline]
+    #[inline(always)]
     fn mul_assign(&mut self, rhs: Self) {
         self.x *= rhs.x;
         self.y *= rhs.y;

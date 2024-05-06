@@ -20,18 +20,21 @@ impl Vec2 {
 
     /// Constructs a new [`Vec2`] with the given `x` and `y` components.
     #[inline(always)]
+    #[must_use]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
     /// Converts this point to the equivalent point.
     #[inline(always)]
+    #[must_use]
     pub const fn as_point2(self) -> Point2 {
         Point2::new(self.x, self.y)
     }
 
     /// Returns a [`Vec2`] with the function `f` applied to each component in order.
     #[inline(always)]
+    #[must_use]
     pub fn map<F>(self, mut f: F) -> Vec2
     where
         F: FnMut(f32) -> f32,
@@ -45,6 +48,7 @@ impl Vec2 {
     /// Returns a new [`Vec2`] with the function `f` applied to each pair of
     /// components from `self` and `rhs` in order.
     #[inline(always)]
+    #[must_use]
     pub fn map2<F>(self, rhs: Vec2, mut f: F) -> Vec2
     where
         F: FnMut(f32, f32) -> f32,
@@ -56,7 +60,7 @@ impl Vec2 {
     }
 
     /// Returns the dot product of `a` and `b`.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn dot(a: Self, b: Self) -> f32 {
         a.x * b.x + a.y * b.y

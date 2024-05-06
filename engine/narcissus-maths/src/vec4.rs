@@ -24,12 +24,14 @@ impl Vec4 {
 
     /// Constructs a new [`Vec4`] with the given `x`, `y`, `z` and `w` components.
     #[inline(always)]
+    #[must_use]
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Vec4 {
         Vec4 { x, y, z, w }
     }
 
     /// Returns a [`Vec4`] with the function `f` applied to each component in order.
     #[inline(always)]
+    #[must_use]
     pub fn map<F>(self, mut f: F) -> Vec4
     where
         F: FnMut(f32) -> f32,
@@ -45,6 +47,7 @@ impl Vec4 {
     /// Returns a new [`Vec4`] with the function `f` applied to each pair of
     /// components from `self` and `rhs` in order.
     #[inline(always)]
+    #[must_use]
     pub fn map2<F>(self, rhs: Self, mut f: F) -> Vec4
     where
         F: FnMut(f32, f32) -> f32,
@@ -58,7 +61,7 @@ impl Vec4 {
     }
 
     /// Returns the dot product of `a` and `b`.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn dot(a: Vec4, b: Vec4) -> f32 {
         a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
