@@ -6,7 +6,9 @@ use crate::{
 };
 use helpers::{load_image, load_obj};
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
-use narcissus_core::{default, rand::Pcg64, slice::array_windows, BitIter};
+use narcissus_core::{
+    box_assume_init, default, rand::Pcg64, slice::array_windows, zeroed_box, BitIter,
+};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
     create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, DeviceExt,
@@ -63,8 +65,8 @@ static GAME_VARIABLES: GameVariables = GameVariables {
     player_speed: 10.0,
 
     weapon_cooldown: 0.0,
-    weapon_projectile_speed: 25.0,
-    weapon_projectile_lifetime: 10.0,
+    weapon_projectile_speed: 20.0,
+    weapon_projectile_lifetime: 6.0,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -210,12 +212,34 @@ impl CameraState {
 }
 
 #[derive(Clone, Copy, Default)]
-struct ArchetypeProjectile8 {
-    position_x: [f32; 8],
-    position_z: [f32; 8],
-    velocity_x: [f32; 8],
-    velocity_z: [f32; 8],
-    lifetime: [f32; 8],
+#[repr(align(16))]
+struct ArchetypeProjectileBlock {
+    position_x: [f32; Self::WIDTH],
+    position_z: [f32; Self::WIDTH],
+    velocity_x: [f32; Self::WIDTH],
+    velocity_z: [f32; Self::WIDTH],
+    lifetime: [f32; Self::WIDTH],
+}
+
+impl ArchetypeProjectileBlock {
+    const WIDTH: usize = 8;
+}
+
+#[derive(Default)]
+struct ArchetypeProjectileChunk {
+    bitmap: [u8; Self::WIDTH],
+    blocks: [ArchetypeProjectileBlock; Self::WIDTH],
+}
+
+impl ArchetypeProjectileChunk {
+    const WIDTH: usize = 8;
+    const LEN: usize = Self::WIDTH * ArchetypeProjectileBlock::WIDTH;
+}
+
+struct ArchetypeProjectile {
+    bitmap_non_empty: [u64; ARCHTYPE_PROJECTILE_MAX / ArchetypeProjectileChunk::LEN / 64],
+    bitmap_non_full: [u64; ARCHTYPE_PROJECTILE_MAX / ArchetypeProjectileChunk::LEN / 64],
+    chunks: [ArchetypeProjectileChunk; ARCHTYPE_PROJECTILE_MAX / ArchetypeProjectileChunk::LEN],
 }
 
 struct GameState {
@@ -226,26 +250,21 @@ struct GameState {
     camera: CameraState,
     player: PlayerState,
 
-    archetype_projectile_bitmap_0: [u64; ARCHTYPE_PROJECTILE_MAX / 64 / 64],
-    archetype_projectile_bitmap_1: [u64; ARCHTYPE_PROJECTILE_MAX / 64],
-    archetype_projectile: Box<[ArchetypeProjectile8]>,
+    archetype_projectile: Box<ArchetypeProjectile>,
 }
 
 impl GameState {
     fn new() -> Self {
+        let mut archetype_projectile: Box<ArchetypeProjectile> =
+            unsafe { box_assume_init(zeroed_box()) };
+        archetype_projectile.bitmap_non_full.fill(u64::MAX);
         Self {
             rng: Pcg64::new(),
             time: 0.0,
             actions: Actions::new(),
             camera: CameraState::new(),
             player: PlayerState::new(),
-            archetype_projectile_bitmap_0: [0; ARCHTYPE_PROJECTILE_MAX / 64 / 64],
-            archetype_projectile_bitmap_1: [0; ARCHTYPE_PROJECTILE_MAX / 64],
-            archetype_projectile: vec![
-                ArchetypeProjectile8::default();
-                ARCHTYPE_PROJECTILE_MAX / 8
-            ]
-            .into_boxed_slice(),
+            archetype_projectile,
         }
     }
 
@@ -323,62 +342,97 @@ impl GameState {
 
         if self.player.weapon_cooldown <= 0.0 {
             // fire!
-            let [x, y] = self.rng.next_uniform_unit_circle_f32();
-            let direction = vec3(x, 0.0, y);
-            let velocity = player_velocity + direction * GAME_VARIABLES.weapon_projectile_speed;
-            self.spawn_projectile(
-                self.player.position,
-                velocity,
-                GAME_VARIABLES.weapon_projectile_lifetime,
-            );
+            for _ in 0..32 {
+                let [x, y] = self.rng.next_uniform_unit_circle_f32();
+                let direction = vec3(x, 0.0, y);
+                let velocity = player_velocity + direction * GAME_VARIABLES.weapon_projectile_speed;
+                self.spawn_projectile(
+                    self.player.position,
+                    velocity,
+                    GAME_VARIABLES.weapon_projectile_lifetime,
+                );
+            }
 
             self.player.weapon_cooldown = GAME_VARIABLES.weapon_cooldown;
         }
 
-        // Expire projectiles
-        for (base, base_word) in self.archetype_projectile_bitmap_0.iter_mut().enumerate() {
-            for i in BitIter::new(std::iter::once(*base_word)) {
-                let index = base * 64 + i;
-                let word = &mut self.archetype_projectile_bitmap_1[index];
-                for j in BitIter::new(std::iter::once(*word)) {
-                    let index = index * 64 + j;
-                    self.archetype_projectile[index / 8].lifetime[index % 8] -= delta_time;
-                    let dead = self.archetype_projectile[index / 8].lifetime[index % 8] <= 0.0;
-                    *word &= !((dead as u64) << j);
-                }
-                *base_word &= !(((*word == 0) as u64) << i);
-            }
-        }
+        for (bitmap_base, (bitmap_non_empty_word, bitmap_non_full_word)) in self
+            .archetype_projectile
+            .bitmap_non_empty
+            .iter_mut()
+            .zip(self.archetype_projectile.bitmap_non_full.iter_mut())
+            .enumerate()
+        {
+            for i in BitIter::new(std::iter::once(*bitmap_non_empty_word)) {
+                let chunk_index = bitmap_base * 64 + i;
+                let chunk = &mut self.archetype_projectile.chunks[chunk_index];
 
-        // Move projectiles
-        for base in BitIter::new(self.archetype_projectile_bitmap_0.iter().copied()) {
-            for i in BitIter::new(std::iter::once(self.archetype_projectile_bitmap_1[base])) {
-                let i = base * 64 + i;
-                self.archetype_projectile[i / 8].position_x[i % 8] +=
-                    self.archetype_projectile[i / 8].velocity_x[i % 8] * delta_time;
-                self.archetype_projectile[i / 8].position_z[i % 8] +=
-                    self.archetype_projectile[i / 8].velocity_z[i % 8] * delta_time;
+                for (bitmap, block) in chunk.bitmap.iter_mut().zip(chunk.blocks.iter_mut()) {
+                    if *bitmap == 0 {
+                        continue;
+                    }
+
+                    let old_bitmap = *bitmap;
+
+                    for j in 0..8 {
+                        if old_bitmap & (1 << j) == 0 {
+                            continue;
+                        }
+
+                        block.position_x[j] += block.velocity_x[j] * delta_time;
+                        block.position_z[j] += block.velocity_z[j] * delta_time;
+                        block.lifetime[j] -= delta_time;
+                        let projectile_dead = block.lifetime[j] <= 0.0;
+
+                        *bitmap &= !((projectile_dead as u8) << j);
+                    }
+                }
+
+                let non_empty = chunk.bitmap.iter().any(|&x| x != 0);
+                let non_full = chunk.bitmap.iter().any(|&x| x != u8::MAX);
+
+                *bitmap_non_empty_word =
+                    (*bitmap_non_empty_word & !(1 << i)) | (non_empty as u64) << i;
+                *bitmap_non_full_word =
+                    (*bitmap_non_full_word & !(1 << i)) | (non_full as u64) << i;
             }
         }
     }
 
     fn spawn_projectile(&mut self, position: Point3, velocity: Vec3, lifetime: f32) {
-        let i = BitIter::new(
-            self.archetype_projectile_bitmap_1
-                .iter()
-                .copied()
-                .map(|x| !x),
-        )
-        .next()
-        .unwrap();
+        let projectile = &mut self.archetype_projectile;
+        let bitmap_non_full = &mut projectile.bitmap_non_full;
+        let bitmap_non_empty = &mut projectile.bitmap_non_empty;
 
-        self.archetype_projectile[i / 8].position_x[i % 8] = position.x;
-        self.archetype_projectile[i / 8].position_z[i % 8] = position.z;
-        self.archetype_projectile[i / 8].velocity_x[i % 8] = velocity.x;
-        self.archetype_projectile[i / 8].velocity_z[i % 8] = velocity.z;
-        self.archetype_projectile[i / 8].lifetime[i % 8] = lifetime;
-        self.archetype_projectile_bitmap_1[i / 64] |= 1 << (i % 64);
-        self.archetype_projectile_bitmap_0[i / 64 / 64] |= 1 << ((i / 64) % 64);
+        let chunk_index = BitIter::new(bitmap_non_full.iter().copied())
+            .next()
+            .unwrap();
+        let chunk = &mut projectile.chunks[chunk_index];
+
+        let block_index = chunk
+            .bitmap
+            .iter()
+            .copied()
+            .position(|x| x != u8::MAX)
+            .unwrap();
+        let block = &mut chunk.blocks[block_index];
+
+        let j = BitIter::new(std::iter::once(!chunk.bitmap[block_index]))
+            .next()
+            .unwrap();
+
+        block.position_x[j] = position.x;
+        block.position_z[j] = position.z;
+        block.velocity_x[j] = velocity.x;
+        block.velocity_z[j] = velocity.z;
+        block.lifetime[j] = lifetime;
+
+        chunk.bitmap[block_index] |= 1 << j;
+        let block_non_full = chunk.bitmap[block_index] != !0;
+        bitmap_non_empty[chunk_index / 64] |= 1 << (chunk_index % 64);
+        bitmap_non_full[chunk_index / 64] = (bitmap_non_full[chunk_index / 64]
+            & !(1 << (chunk_index % 64)))
+            | (block_non_full as u64) << (chunk_index % 64);
     }
 }
 
@@ -652,25 +706,32 @@ pub fn main() {
             let translation = game_state.player.position.as_vec3();
             basic_transforms.push(Affine3::new(matrix, translation));
 
-            // Render projectiles
-            for base in BitIter::new(game_state.archetype_projectile_bitmap_0.iter().copied()) {
-                for i in BitIter::new(std::iter::once(
-                    game_state.archetype_projectile_bitmap_1[base],
-                )) {
-                    let i = base * 64 + i;
-                    let translation = vec3(
-                        game_state.archetype_projectile[i / 8].position_x[i % 8],
-                        0.0,
-                        game_state.archetype_projectile[i / 8].position_z[i % 8],
-                    );
-                    let velocity = vec3(
-                        game_state.archetype_projectile[i / 8].velocity_x[i % 8],
-                        0.0,
-                        game_state.archetype_projectile[i / 8].velocity_z[i % 8],
-                    );
+            let half_turn_y_scale = half_turn_y * scale;
 
-                    let matrix = rotate_dir(velocity, Vec3::Y) * half_turn_y * scale;
-                    basic_transforms.push(Affine3::new(matrix, translation))
+            // Render projectiles
+            for i in BitIter::new(
+                game_state
+                    .archetype_projectile
+                    .bitmap_non_empty
+                    .iter()
+                    .copied(),
+            ) {
+                let chunk = &game_state.archetype_projectile.chunks[i];
+                for (&bitmap, block) in chunk.bitmap.iter().zip(chunk.blocks.iter()) {
+                    if bitmap == 0 {
+                        continue;
+                    }
+
+                    for j in 0..8 {
+                        if bitmap & (1 << j) == 0 {
+                            continue;
+                        }
+
+                        let translation = vec3(block.position_x[j], 0.0, block.position_z[j]);
+                        let velocity = vec3(block.velocity_x[j], 0.0, block.velocity_z[j]);
+                        let matrix = rotate_dir(velocity, Vec3::Y) * half_turn_y_scale;
+                        basic_transforms.push(Affine3::new(matrix, translation));
+                    }
                 }
             }
 
