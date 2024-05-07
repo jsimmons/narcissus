@@ -46,37 +46,46 @@ where
     }
 }
 
-impl Bits for u64 {
-    fn is_zero(self) -> bool {
-        self == 0
-    }
+macro_rules! impl_bits {
+    ($t:ty) => {
+        impl Bits for $t {
+            #[inline(always)]
+            fn is_zero(self) -> bool {
+                self == 0
+            }
 
-    fn clear_least_significant_set_bit(&mut self) -> u32 {
-        let b = *self;
-        let t = b & (!b + 1);
-        let index = b.trailing_zeros();
-        *self ^= t;
-        index
-    }
+            #[inline(always)]
+            fn clear_least_significant_set_bit(&mut self) -> u32 {
+                let b = *self;
+                let t = b & (!b + 1);
+                let index = b.trailing_zeros();
+                *self ^= t;
+                index
+            }
+        }
+    };
 }
 
-impl Bits for u32 {
-    fn is_zero(self) -> bool {
-        self == 0
-    }
-
-    fn clear_least_significant_set_bit(&mut self) -> u32 {
-        let b = *self;
-        let t = b & (!b + 1);
-        let index = b.trailing_zeros();
-        *self ^= t;
-        index
-    }
-}
+impl_bits!(u64);
+impl_bits!(u32);
+impl_bits!(u16);
+impl_bits!(u8);
 
 #[cfg(test)]
 mod tests {
     use crate::*;
+
+    #[test]
+    fn all_bits_set() {
+        let slice = [u64::MAX; 512];
+        let mut i = 0;
+        for j in BitIter::new(slice.iter().copied()) {
+            assert_eq!(i, j);
+            i += 1;
+        }
+        assert_eq!(i, 512 * 64);
+    }
+
     #[test]
     fn iterate_bits() {
         {
