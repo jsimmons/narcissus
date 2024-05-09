@@ -25,6 +25,15 @@ impl Window for SdlWindow {
         let mut width = 0;
         let mut height = 0;
         unsafe {
+            sdl::SDL_GetWindowSize(self.window, &mut width, &mut height);
+        }
+        (width as u32, height as u32)
+    }
+
+    fn drawable_extent(&self) -> (u32, u32) {
+        let mut width = 0;
+        let mut height = 0;
+        unsafe {
             sdl::SDL_Vulkan_GetDrawableSize(self.window, &mut width, &mut height);
         }
         (width as u32, height as u32)
@@ -96,7 +105,10 @@ impl App for SdlApp {
                 0,
                 desc.width as i32,
                 desc.height as i32,
-                sdl::WINDOW_VULKAN | sdl::WINDOW_SHOWN | sdl::WINDOW_RESIZABLE,
+                sdl::WINDOW_VULKAN
+                    | sdl::WINDOW_SHOWN
+                    | sdl::WINDOW_RESIZABLE
+                    | sdl::WINDOW_ALLOW_HIGHDPI,
             )
         };
         assert!(!window.is_null());

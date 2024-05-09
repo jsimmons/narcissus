@@ -36,6 +36,7 @@ pub trait Window: AsRawWindow + Upcast<dyn AsRawWindow> {
     fn id(&self) -> WindowId;
 
     fn extent(&self) -> (u32, u32);
+    fn drawable_extent(&self) -> (u32, u32);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
