@@ -1305,7 +1305,7 @@ extern "C" {
 
     pub fn SDL_GetWindowID(window: *mut Window) -> u32;
     pub fn SDL_GetWindowFromID(id: u32) -> *mut Window;
-
+    pub fn SDL_GetWindowSize(window: *mut Window, w: *mut i32, h: *mut i32);
     pub fn SDL_GetKeyFromScancode(scancode: Scancode) -> Keycode;
 
     pub fn SDL_PollEvent(event: *mut Event) -> i32;
@@ -1326,4 +1326,5 @@ extern "C" {
 pub const INIT_VIDEO: u32 = 0x0000_0020;
 pub const WINDOW_SHOWN: u32 = 0x0000_0004;
 pub const WINDOW_RESIZABLE: u32 = 0x0000_0020;
+pub const WINDOW_ALLOW_HIGHDPI: u32 = 0x0000_2000;
 pub const WINDOW_VULKAN: u32 = 0x1000_0000;
