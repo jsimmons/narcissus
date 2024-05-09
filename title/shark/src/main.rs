@@ -460,6 +460,11 @@ pub fn main() {
         std::env::set_var("RUST_BACKTRACE", "1")
     }
 
+    // Default to wayland because otherwise HiDPI is totally borked.
+    if std::env::var("SDL_VIDEODRIVER").is_err() {
+        std::env::set_var("SDL_VIDEODRIVER", "wayland")
+    }
+
     let app = create_app();
     let main_window = app.create_window(&WindowDesc {
         title: "shark",
@@ -604,13 +609,19 @@ pub fn main() {
 
     let mut basic_transforms = vec![];
 
+    let mut ui_scale;
+
     'main: loop {
         let frame = device.begin_frame();
         {
             let frame = &frame;
 
             let (width, height, swapchain_image) = loop {
-                let (width, height) = main_window.extent();
+                let (virtual_width, _virtual_height) = main_window.extent();
+                let (width, height) = main_window.drawable_extent();
+
+                ui_scale = width as f32 / virtual_width as f32;
+
                 if let Ok(result) = device.acquire_swapchain(
                     frame,
                     main_window.upcast(),
@@ -796,6 +807,8 @@ pub fn main() {
                     } else {
                         (FontFamily::NotoSansJapanese, 22.0, line1)
                     };
+
+                    let font_size_px = font_size_px * ui_scale;
 
                     let font = fonts.font(font_family);
                     let scale = font.scale_for_size_px(font_size_px);
