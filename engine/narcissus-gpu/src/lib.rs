@@ -48,26 +48,30 @@ pub struct Extent3d {
     pub depth: u32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Image(Handle);
+macro_rules! handle_newtype {
+    ($name:ident) => {
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+        pub struct $name(Handle);
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Buffer(Handle);
+        impl $name {
+            pub fn is_null(self) -> bool {
+                self.0.is_null()
+            }
+        }
+    };
+}
+
+handle_newtype!(Image);
+handle_newtype!(Buffer);
+handle_newtype!(Sampler);
+handle_newtype!(BindGroupLayout);
+handle_newtype!(Pipeline);
 
 impl Buffer {
     pub fn to_arg(self) -> BufferArg<'static> {
         BufferArg::Unmanaged(self)
     }
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Sampler(Handle);
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BindGroupLayout(Handle);
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Pipeline(Handle);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryLocation {
