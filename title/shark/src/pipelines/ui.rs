@@ -1,18 +1,17 @@
 use narcissus_core::default;
-use narcissus_font::{TouchedGlyph, TouchedGlyphIndex};
+use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
-    Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, DeviceExt, Frame, FrontFace,
-    GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline,
-    PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
-    ShaderStageFlags, ThreadToken, Topology, TypedBind,
+    BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
+    CompareOp, CullingMode, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat,
+    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
+    ShaderStageFlags, Topology,
 };
 
 use crate::Gpu;
 
 #[allow(unused)]
 #[repr(C)]
-pub struct TextUniforms {
+pub struct UiUniforms {
     pub screen_width: u32,
     pub screen_height: u32,
     pub atlas_width: u32,
@@ -45,13 +44,13 @@ pub struct PrimitiveInstance {
     pub color: u32,
 }
 
-pub struct TextPipeline {
-    bind_group_layout: BindGroupLayout,
-    sampler: Sampler,
-    pipeline: Pipeline,
+pub struct UiPipeline {
+    pub bind_group_layout: BindGroupLayout,
+    pub sampler: Sampler,
+    pub pipeline: Pipeline,
 }
 
-impl TextPipeline {
+impl UiPipeline {
     pub fn new(gpu: &Gpu) -> Self {
         let bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
             entries: &[
@@ -106,11 +105,11 @@ impl TextPipeline {
         let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
-                code: shark_shaders::TEXT_VERT_SPV,
+                code: shark_shaders::UI_VERT_SPV,
             },
             fragment_shader: ShaderDesc {
                 entry: c"main",
-                code: shark_shaders::TEXT_FRAG_SPV,
+                code: shark_shaders::UI_FRAG_SPV,
             },
             bind_group_layouts: &[bind_group_layout],
             layout: GraphicsPipelineLayout {
@@ -138,83 +137,5 @@ impl TextPipeline {
             sampler,
             pipeline,
         }
-    }
-
-    pub fn bind(
-        &self,
-        gpu: &Gpu,
-        frame: &Frame,
-        thread_token: &ThreadToken,
-        cmd_encoder: &mut CmdEncoder,
-        text_uniforms: &TextUniforms,
-        primitive_vertices: &[PrimitiveVertex],
-        touched_glyphs: &[TouchedGlyph],
-        primitive_instances: &[PrimitiveInstance],
-        glyph_atlas_image: Image,
-    ) {
-        let uniforms_buffer = gpu.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::UNIFORM,
-            text_uniforms,
-        );
-        let primitive_vertex_buffer = gpu.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::STORAGE,
-            primitive_vertices,
-        );
-        let cached_glyphs_buffer = gpu.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::STORAGE,
-            touched_glyphs,
-        );
-        let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::STORAGE,
-            primitive_instances,
-        );
-
-        gpu.cmd_set_pipeline(cmd_encoder, self.pipeline);
-        gpu.cmd_set_bind_group(
-            frame,
-            cmd_encoder,
-            self.bind_group_layout,
-            0,
-            &[
-                Bind {
-                    binding: 0,
-                    array_element: 0,
-                    typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
-                },
-                Bind {
-                    binding: 1,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[primitive_vertex_buffer.to_arg()]),
-                },
-                Bind {
-                    binding: 2,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[cached_glyphs_buffer.to_arg()]),
-                },
-                Bind {
-                    binding: 3,
-                    array_element: 0,
-                    typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
-                },
-                Bind {
-                    binding: 4,
-                    array_element: 0,
-                    typed: TypedBind::Sampler(&[self.sampler]),
-                },
-                Bind {
-                    binding: 5,
-                    array_element: 0,
-                    typed: TypedBind::Image(&[(ImageLayout::Optimal, glyph_atlas_image)]),
-                },
-            ],
-        );
     }
 }

@@ -35,11 +35,11 @@ const SHADERS: [Shader; 4] = [
     },
     Shader {
         stage: ShaderStage::Vertex,
-        name: "text",
+        name: "ui",
     },
     Shader {
         stage: ShaderStage::Fragment,
-        name: "text",
+        name: "ui",
     },
 ];
 

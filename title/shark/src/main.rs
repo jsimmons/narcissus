@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -19,7 +20,7 @@ use narcissus_image as image;
 use narcissus_maths::{
     clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
-use pipelines::{BasicPipeline, BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextPipeline};
+use pipelines::{BasicPipeline, BasicUniforms, PrimitiveInstance, PrimitiveVertex, UiPipeline};
 use spring::simple_spring_damper_exact;
 
 mod fonts;
@@ -438,6 +439,9 @@ struct UiState<'a> {
     scale: f32,
     fonts: &'a Fonts<'a>,
     glyph_cache: GlyphCache<'a, Fonts<'a>>,
+
+    tmp_string: String,
+
     primitive_instances: Vec<PrimitiveInstance>,
     primitive_vertices: Vec<PrimitiveVertex>,
 }
@@ -450,19 +454,30 @@ impl<'a> UiState<'a> {
             scale,
             fonts,
             glyph_cache,
+            tmp_string: default(),
             primitive_instances: vec![],
             primitive_vertices: vec![],
         }
     }
 
-    fn text(&mut self, mut x: f32, y: f32, font_family: FontFamily, font_size_px: f32, text: &str) {
+    fn text_fmt(
+        &mut self,
+        mut x: f32,
+        y: f32,
+        font_family: FontFamily,
+        font_size_px: f32,
+        args: std::fmt::Arguments,
+    ) {
         let font = self.fonts.font(font_family);
         let font_size_px = font_size_px * self.scale;
         let scale = font.scale_for_size_px(font_size_px);
 
         let mut prev_index = None;
 
-        for c in text.chars() {
+        self.tmp_string.clear();
+        self.tmp_string.write_fmt(args).unwrap();
+
+        for c in self.tmp_string.chars() {
             let glyph_index = font
                 .glyph_index(c)
                 .unwrap_or_else(|| font.glyph_index('□').unwrap());
@@ -539,7 +554,7 @@ struct DrawState<'device> {
     gpu: &'device Gpu,
 
     basic_pipeline: BasicPipeline,
-    text_pipeline: TextPipeline,
+    ui_pipeline: UiPipeline,
 
     width: u32,
     height: u32,
@@ -686,7 +701,7 @@ fn load_images(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
 impl<'device> DrawState<'device> {
     fn new(gpu: &'device Gpu, thread_token: &ThreadToken) -> Self {
         let basic_pipeline = BasicPipeline::new(gpu);
-        let text_pipeline = TextPipeline::new(gpu);
+        let ui_pipeline = UiPipeline::new(gpu);
 
         let models = load_models(gpu);
         let images = load_images(gpu, thread_token);
@@ -694,7 +709,7 @@ impl<'device> DrawState<'device> {
         Self {
             gpu,
             basic_pipeline,
-            text_pipeline,
+            ui_pipeline,
             width: 0,
             height: 0,
             depth_image: default(),
@@ -1014,24 +1029,89 @@ impl<'device> DrawState<'device> {
 
                 // We're done with you now!
                 self.transforms.clear();
+            }
 
-                // Render text stuff.
-                self.text_pipeline.bind(
-                    gpu,
+            // Render UI stuff.
+            {
+                let ui_uniforms = &pipelines::UiUniforms {
+                    screen_width: width,
+                    screen_height: height,
+                    atlas_width,
+                    atlas_height,
+                };
+                let primitive_vertices = ui_state.primitive_vertices.as_slice();
+                let primitive_instances = ui_state.primitive_instances.as_slice();
+                let uniforms_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
-                    cmd_encoder,
-                    &pipelines::TextUniforms {
-                        screen_width: width,
-                        screen_height: height,
-                        atlas_width,
-                        atlas_height,
-                    },
-                    ui_state.primitive_vertices.as_slice(),
-                    touched_glyphs,
-                    ui_state.primitive_instances.as_slice(),
-                    self.glyph_atlas_image,
+                    BufferUsageFlags::UNIFORM,
+                    ui_uniforms,
                 );
+                let primitive_vertex_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    primitive_vertices,
+                );
+                let cached_glyphs_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    touched_glyphs,
+                );
+                let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    primitive_instances,
+                );
+
+                {
+                    gpu.cmd_set_pipeline(cmd_encoder, self.ui_pipeline.pipeline);
+                    gpu.cmd_set_bind_group(
+                        frame,
+                        cmd_encoder,
+                        self.ui_pipeline.bind_group_layout,
+                        0,
+                        &[
+                            Bind {
+                                binding: 0,
+                                array_element: 0,
+                                typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
+                            },
+                            Bind {
+                                binding: 1,
+                                array_element: 0,
+                                typed: TypedBind::StorageBuffer(
+                                    &[primitive_vertex_buffer.to_arg()],
+                                ),
+                            },
+                            Bind {
+                                binding: 2,
+                                array_element: 0,
+                                typed: TypedBind::StorageBuffer(&[cached_glyphs_buffer.to_arg()]),
+                            },
+                            Bind {
+                                binding: 3,
+                                array_element: 0,
+                                typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
+                            },
+                            Bind {
+                                binding: 4,
+                                array_element: 0,
+                                typed: TypedBind::Sampler(&[self.ui_pipeline.sampler]),
+                            },
+                            Bind {
+                                binding: 5,
+                                array_element: 0,
+                                typed: TypedBind::Image(&[(
+                                    ImageLayout::Optimal,
+                                    self.glyph_atlas_image,
+                                )]),
+                            },
+                        ],
+                    );
+                };
 
                 gpu.cmd_draw(
                     cmd_encoder,
@@ -1043,7 +1123,7 @@ impl<'device> DrawState<'device> {
 
                 ui_state.primitive_instances.clear();
                 ui_state.primitive_vertices.clear();
-            };
+            }
 
             gpu.cmd_end_rendering(cmd_encoder);
         }
@@ -1193,15 +1273,21 @@ pub fn main() {
 
             let tick_duration = Instant::now() - tick_start;
 
-            ui_state.text(
+            ui_state.text_fmt(
                 5.0,
                 30.0,
                 FontFamily::RobotoRegular,
                 22.0,
-                format!("tick: {:?}", tick_duration).as_str(),
+                format_args!("tick: {:?}", tick_duration),
             );
 
-            ui_state.text(5.0, 60.0, FontFamily::NotoSansJapanese, 22.0, "お握り");
+            ui_state.text_fmt(
+                5.0,
+                60.0,
+                FontFamily::NotoSansJapanese,
+                18.0,
+                format_args!("お握り The Quick Brown Fox Jumped Over The Lazy Dog"),
+            );
 
             draw_state.draw(
                 thread_token,
