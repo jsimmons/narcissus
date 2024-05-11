@@ -228,6 +228,7 @@ pub struct ImageViewDesc {
     pub subresource_range: ImageSubresourceRange,
 }
 
+#[derive(Default)]
 pub struct BufferImageCopy {
     pub buffer_offset: u64,
     pub buffer_row_length: u32,
