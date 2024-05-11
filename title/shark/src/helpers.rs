@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use narcissus_core::{obj, Widen};
-use narcissus_image as image;
 use narcissus_maths::{vec2, vec3, vec4, Vec2, Vec3};
 
 use crate::pipelines::Vertex;
@@ -38,7 +37,6 @@ pub fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
         fn visit_smooth_group(&mut self, _group: i32) {}
     }
 
-    let start = std::time::Instant::now();
     let path = path.as_ref();
     let file = std::fs::File::open(path).expect("couldn't open file");
     let mut visitor = ObjVisitor::default();
@@ -67,23 +65,5 @@ pub fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
         })
         .unzip();
 
-    println!(
-        "parsing obj {path:?} took {:?}",
-        std::time::Instant::now() - start
-    );
-
     (vertices, indices)
-}
-
-pub fn load_image<P: AsRef<Path>>(path: P) -> image::Image {
-    let start = std::time::Instant::now();
-    let path = path.as_ref();
-    let texture =
-        image::Image::from_buffer(std::fs::read(path).expect("failed to read file").as_slice())
-            .expect("failed to load image");
-    println!(
-        "loading image {path:?} took {:?}",
-        std::time::Instant::now() - start
-    );
-    texture
 }

@@ -1,11 +1,13 @@
 use narcissus_core::default;
 use narcissus_gpu::{
     BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    CompareOp, CullingMode, Device, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout,
-    ImageFormat, Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter,
-    ShaderDesc, ShaderStageFlags, Topology,
+    CompareOp, CullingMode, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat,
+    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
+    ShaderStageFlags, Topology,
 };
 use narcissus_maths::Mat4;
+
+use crate::Gpu;
 
 #[allow(unused)]
 #[repr(C)]
@@ -29,8 +31,8 @@ pub struct BasicPipeline {
 }
 
 impl BasicPipeline {
-    pub fn new(device: &dyn Device) -> Self {
-        let uniforms_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
+    pub fn new(gpu: &Gpu) -> Self {
+        let uniforms_bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
             entries: &[BindGroupLayoutEntryDesc {
                 slot: 0,
                 stages: ShaderStageFlags::ALL,
@@ -39,7 +41,7 @@ impl BasicPipeline {
             }],
         });
 
-        let storage_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        let storage_bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
             entries: &[
                 BindGroupLayoutEntryDesc {
                     slot: 0,
@@ -68,7 +70,7 @@ impl BasicPipeline {
             ],
         });
 
-        let sampler = device.create_sampler(&SamplerDesc {
+        let sampler = gpu.create_sampler(&SamplerDesc {
             filter: SamplerFilter::Point,
             address_mode: SamplerAddressMode::Clamp,
             compare_op: None,
@@ -77,7 +79,7 @@ impl BasicPipeline {
             max_lod: 1000.0,
         });
 
-        let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
+        let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
                 code: shark_shaders::BASIC_VERT_SPV,

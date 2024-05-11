@@ -2,11 +2,13 @@ use narcissus_core::default;
 use narcissus_font::{TouchedGlyph, TouchedGlyphIndex};
 use narcissus_gpu::{
     Bind, BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, Device, DeviceExt, Frame, FrontFace,
+    BufferUsageFlags, CmdEncoder, CompareOp, CullingMode, DeviceExt, Frame, FrontFace,
     GraphicsPipelineDesc, GraphicsPipelineLayout, Image, ImageFormat, ImageLayout, Pipeline,
     PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
     ShaderStageFlags, ThreadToken, Topology, TypedBind,
 };
+
+use crate::Gpu;
 
 #[allow(unused)]
 #[repr(C)]
@@ -50,8 +52,8 @@ pub struct TextPipeline {
 }
 
 impl TextPipeline {
-    pub fn new(device: &dyn Device) -> Self {
-        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDesc {
+    pub fn new(gpu: &Gpu) -> Self {
+        let bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
             entries: &[
                 BindGroupLayoutEntryDesc {
                     slot: 0,
@@ -92,7 +94,7 @@ impl TextPipeline {
             ],
         });
 
-        let sampler = device.create_sampler(&SamplerDesc {
+        let sampler = gpu.create_sampler(&SamplerDesc {
             filter: SamplerFilter::Bilinear,
             address_mode: SamplerAddressMode::Clamp,
             compare_op: None,
@@ -101,7 +103,7 @@ impl TextPipeline {
             max_lod: 0.0,
         });
 
-        let pipeline = device.create_graphics_pipeline(&GraphicsPipelineDesc {
+        let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
                 code: shark_shaders::TEXT_VERT_SPV,
@@ -140,7 +142,7 @@ impl TextPipeline {
 
     pub fn bind(
         &self,
-        device: &(dyn Device + 'static),
+        gpu: &Gpu,
         frame: &Frame,
         thread_token: &ThreadToken,
         cmd_encoder: &mut CmdEncoder,
@@ -148,37 +150,35 @@ impl TextPipeline {
         primitive_vertices: &[PrimitiveVertex],
         touched_glyphs: &[TouchedGlyph],
         primitive_instances: &[PrimitiveInstance],
-        atlas: Image,
+        glyph_atlas_image: Image,
     ) {
-        let uniforms_buffer = device.request_transient_buffer_with_data(
+        let uniforms_buffer = gpu.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::UNIFORM,
             text_uniforms,
         );
-
-        let primitive_vertex_buffer = device.request_transient_buffer_with_data(
+        let primitive_vertex_buffer = gpu.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::STORAGE,
             primitive_vertices,
         );
-
-        let cached_glyphs_buffer = device.request_transient_buffer_with_data(
+        let cached_glyphs_buffer = gpu.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::STORAGE,
             touched_glyphs,
         );
-        let glyph_instance_buffer = device.request_transient_buffer_with_data(
+        let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
             frame,
             thread_token,
             BufferUsageFlags::STORAGE,
             primitive_instances,
         );
 
-        device.cmd_set_pipeline(cmd_encoder, self.pipeline);
-        device.cmd_set_bind_group(
+        gpu.cmd_set_pipeline(cmd_encoder, self.pipeline);
+        gpu.cmd_set_bind_group(
             frame,
             cmd_encoder,
             self.bind_group_layout,
@@ -212,7 +212,7 @@ impl TextPipeline {
                 Bind {
                     binding: 5,
                     array_element: 0,
-                    typed: TypedBind::Image(&[(ImageLayout::Optimal, atlas)]),
+                    typed: TypedBind::Image(&[(ImageLayout::Optimal, glyph_atlas_image)]),
                 },
             ],
         );

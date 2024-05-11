@@ -1,28 +1,25 @@
-use std::fmt::Write;
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use renderdoc_sys as rdoc;
 
-use crate::{
-    fonts::{FontFamily, Fonts},
-    pipelines::{BasicPipeline, TextPipeline},
-};
-use helpers::{load_image, load_obj};
+use fonts::{FontFamily, Fonts};
+use helpers::load_obj;
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
-use narcissus_core::{
-    box_assume_init, default, rand::Pcg64, slice::array_windows, zeroed_box, BitIter,
-};
+use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, DeviceExt,
-    Extent2d, Extent3d, ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat,
-    ImageLayout, ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d,
-    Offset3d, RenderingAttachment, RenderingDesc, Scissor, StoreOp, ThreadToken, TypedBind,
-    Viewport,
+    create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder, Device,
+    DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
+    ImageDimension, ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, IndexType, LoadOp,
+    MemoryLocation, Offset2d, PersistentBuffer, RenderingAttachment, RenderingDesc, Scissor,
+    StoreOp, ThreadToken, TypedBind, Viewport,
 };
+use narcissus_image as image;
 use narcissus_maths::{
     clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
-use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
+use pipelines::{BasicPipeline, BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextPipeline};
 use spring::simple_spring_damper_exact;
 
 mod fonts;
@@ -31,9 +28,7 @@ mod pipelines;
 mod spring;
 
 const SQRT_2: f32 = 0.70710677;
-
 const GLYPH_CACHE_SIZE: usize = 1024;
-
 const ARCHTYPE_PROJECTILE_MAX: usize = 65536;
 
 struct GameVariables {
@@ -439,6 +434,623 @@ impl GameState {
     }
 }
 
+struct UiState<'a> {
+    scale: f32,
+    fonts: &'a Fonts<'a>,
+    glyph_cache: GlyphCache<'a, Fonts<'a>>,
+    primitive_instances: Vec<PrimitiveInstance>,
+    primitive_vertices: Vec<PrimitiveVertex>,
+}
+
+impl<'a> UiState<'a> {
+    fn new(fonts: &'a Fonts<'a>, scale: f32) -> Self {
+        let glyph_cache = GlyphCache::new(fonts, GLYPH_CACHE_SIZE, GLYPH_CACHE_SIZE, 1);
+
+        Self {
+            scale,
+            fonts,
+            glyph_cache,
+            primitive_instances: vec![],
+            primitive_vertices: vec![],
+        }
+    }
+
+    fn text(&mut self, mut x: f32, y: f32, font_family: FontFamily, font_size_px: f32, text: &str) {
+        let font = self.fonts.font(font_family);
+        let font_size_px = font_size_px * self.scale;
+        let scale = font.scale_for_size_px(font_size_px);
+
+        let mut prev_index = None;
+
+        for c in text.chars() {
+            let glyph_index = font
+                .glyph_index(c)
+                .unwrap_or_else(|| font.glyph_index('□').unwrap());
+
+            let touched_glyph_index =
+                self.glyph_cache
+                    .touch_glyph(font_family, glyph_index, font_size_px);
+
+            let HorizontalMetrics {
+                advance_width,
+                left_side_bearing: _,
+            } = font.horizontal_metrics(glyph_index);
+
+            let advance = if let Some(prev_index) = prev_index {
+                font.kerning_advance(prev_index, glyph_index)
+            } else {
+                0.0
+            };
+            prev_index = Some(glyph_index);
+
+            x += advance * scale;
+
+            let instance_index = self.primitive_instances.len() as u32;
+            self.primitive_instances.push(PrimitiveInstance {
+                x,
+                y,
+                touched_glyph_index,
+                color: 0xff000000,
+            });
+            let glyph_vertices = &[
+                PrimitiveVertex::glyph(0, instance_index),
+                PrimitiveVertex::glyph(1, instance_index),
+                PrimitiveVertex::glyph(2, instance_index),
+                PrimitiveVertex::glyph(2, instance_index),
+                PrimitiveVertex::glyph(1, instance_index),
+                PrimitiveVertex::glyph(3, instance_index),
+            ];
+            self.primitive_vertices.extend_from_slice(glyph_vertices);
+
+            x += advance_width * scale;
+        }
+    }
+}
+
+struct Model<'device> {
+    indices: u32,
+    vertex_buffer: PersistentBuffer<'device>,
+    index_buffer: PersistentBuffer<'device>,
+}
+
+enum ModelRes {
+    Shark,
+}
+
+impl ModelRes {
+    const MAX_MODELS: usize = 1;
+}
+
+struct Models<'device>([Model<'device>; ModelRes::MAX_MODELS]);
+
+enum ImageRes {
+    Shark,
+}
+
+impl ImageRes {
+    const MAX_IMAGES: usize = 1;
+}
+
+struct Images([Image; ImageRes::MAX_IMAGES]);
+
+type Gpu = dyn Device + 'static;
+
+struct DrawState<'device> {
+    gpu: &'device Gpu,
+
+    basic_pipeline: BasicPipeline,
+    text_pipeline: TextPipeline,
+
+    width: u32,
+    height: u32,
+
+    depth_image: Image,
+    glyph_atlas_image: Image,
+
+    models: Models<'device>,
+    images: Images,
+
+    transforms: Vec<Affine3>,
+}
+
+fn load_models(gpu: &Gpu) -> Models {
+    fn load_model<P>(gpu: &Gpu, path: P) -> Model
+    where
+        P: AsRef<Path>,
+    {
+        let (vertices, indices) = load_obj(path);
+        let vertex_buffer = gpu.create_persistent_buffer_with_data(
+            MemoryLocation::Device,
+            BufferUsageFlags::STORAGE,
+            vertices.as_slice(),
+        );
+        let index_buffer = gpu.create_persistent_buffer_with_data(
+            MemoryLocation::Device,
+            BufferUsageFlags::INDEX,
+            indices.as_slice(),
+        );
+
+        Model {
+            indices: indices.len() as u32,
+            vertex_buffer,
+            index_buffer,
+        }
+    }
+
+    Models([load_model(gpu, "title/shark/data/blåhaj.obj")])
+}
+
+fn load_images(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
+    fn load_image<P>(
+        gpu: &Gpu,
+        frame: &Frame,
+        thread_token: &ThreadToken,
+        cmd_encoder: &mut CmdEncoder,
+        path: P,
+    ) -> Image
+    where
+        P: AsRef<Path>,
+    {
+        let image_data =
+            image::Image::from_buffer(std::fs::read(path.as_ref()).unwrap().as_slice()).unwrap();
+
+        let width = image_data.width() as u32;
+        let height = image_data.height() as u32;
+
+        let image = gpu.create_image(&ImageDesc {
+            memory_location: MemoryLocation::Device,
+            host_mapped: false,
+            usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+            dimension: ImageDimension::Type2d,
+            format: ImageFormat::RGBA8_SRGB,
+            tiling: ImageTiling::Optimal,
+            width,
+            height,
+            depth: 1,
+            layer_count: 1,
+            mip_levels: 1,
+        });
+
+        gpu.cmd_barrier(
+            cmd_encoder,
+            None,
+            &[ImageBarrier::layout_optimal(
+                &[Access::None],
+                &[Access::TransferWrite],
+                image,
+                ImageAspectFlags::COLOR,
+            )],
+        );
+
+        let buffer = gpu.request_transient_buffer_with_data(
+            frame,
+            thread_token,
+            BufferUsageFlags::TRANSFER,
+            image_data.as_slice(),
+        );
+
+        gpu.cmd_copy_buffer_to_image(
+            cmd_encoder,
+            buffer.to_arg(),
+            image,
+            ImageLayout::Optimal,
+            &[BufferImageCopy {
+                image_extent: Extent3d {
+                    width,
+                    height,
+                    depth: 1,
+                },
+                ..default()
+            }],
+        );
+
+        gpu.cmd_barrier(
+            cmd_encoder,
+            None,
+            &[ImageBarrier::layout_optimal(
+                &[Access::TransferWrite],
+                &[Access::FragmentShaderSampledImageRead],
+                image,
+                ImageAspectFlags::COLOR,
+            )],
+        );
+
+        image
+    }
+
+    let images;
+    let frame = gpu.begin_frame();
+    {
+        let frame = &frame;
+
+        let mut cmd_encoder = gpu.request_cmd_encoder(frame, thread_token);
+        {
+            let cmd_encoder = &mut cmd_encoder;
+
+            images = Images([load_image(
+                gpu,
+                frame,
+                thread_token,
+                cmd_encoder,
+                "title/shark/data/blåhaj.png",
+            )]);
+        }
+
+        gpu.submit(frame, cmd_encoder);
+    }
+    gpu.end_frame(frame);
+
+    images
+}
+
+impl<'device> DrawState<'device> {
+    fn new(gpu: &'device Gpu, thread_token: &ThreadToken) -> Self {
+        let basic_pipeline = BasicPipeline::new(gpu);
+        let text_pipeline = TextPipeline::new(gpu);
+
+        let models = load_models(gpu);
+        let images = load_images(gpu, thread_token);
+
+        Self {
+            gpu,
+            basic_pipeline,
+            text_pipeline,
+            width: 0,
+            height: 0,
+            depth_image: default(),
+            glyph_atlas_image: default(),
+            models,
+            images,
+            transforms: vec![],
+        }
+    }
+
+    fn draw(
+        &mut self,
+        thread_token: &ThreadToken,
+        frame: &Frame,
+        ui_state: &mut UiState,
+        game_state: &GameState,
+        width: u32,
+        height: u32,
+        swapchain_image: Image,
+    ) {
+        let gpu = self.gpu;
+
+        let half_turn_y = Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
+        let scale = Mat3::from_scale(Vec3::splat(0.125));
+
+        fn rotate_dir(dir: Vec3, up: Vec3) -> Mat3 {
+            let f = dir.normalized();
+            let r = Vec3::cross(f, up).normalized();
+            let u = Vec3::cross(r, f);
+            Mat3::from_rows([[r.x, u.x, -f.x], [r.y, u.y, -f.y], [r.z, u.z, -f.z]])
+        }
+
+        let matrix = rotate_dir(game_state.player.heading, Vec3::Y) * half_turn_y;
+        let translation = game_state.player.position.as_vec3();
+        self.transforms.push(Affine3::new(matrix, translation));
+
+        let half_turn_y_scale = half_turn_y * scale;
+
+        // Render projectiles
+        for i in BitIter::new(
+            game_state
+                .archetype_projectile
+                .bitmap_non_empty
+                .iter()
+                .copied(),
+        ) {
+            let chunk = &game_state.archetype_projectile.chunks[i];
+            for (&bitmap, block) in chunk.bitmap.iter().zip(chunk.blocks.iter()) {
+                if bitmap == 0 {
+                    continue;
+                }
+
+                for j in 0..8 {
+                    if bitmap & (1 << j) == 0 {
+                        continue;
+                    }
+
+                    let translation = vec3(block.position_x[j], 0.0, block.position_z[j]);
+                    let velocity = vec3(block.velocity_x[j], 0.0, block.velocity_z[j]);
+                    let matrix = rotate_dir(velocity, Vec3::Y) * half_turn_y_scale;
+                    self.transforms.push(Affine3::new(matrix, translation));
+                }
+            }
+        }
+
+        let camera_from_model = game_state.camera.camera_from_model();
+        let clip_from_camera = Mat4::perspective_rev_inf_zo(
+            HalfTurn::new(1.0 / 3.0),
+            width as f32 / height as f32,
+            0.01,
+        );
+        let clip_from_model = clip_from_camera * camera_from_model;
+
+        let mut cmd_encoder = self.gpu.request_cmd_encoder(frame, thread_token);
+        {
+            let cmd_encoder = &mut cmd_encoder;
+
+            if width != self.width || height != self.height {
+                gpu.destroy_image(frame, self.depth_image);
+                self.depth_image = gpu.create_image(&ImageDesc {
+                    memory_location: MemoryLocation::Device,
+                    host_mapped: false,
+                    usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                    dimension: ImageDimension::Type2d,
+                    format: ImageFormat::DEPTH_F32,
+                    tiling: ImageTiling::Optimal,
+                    width,
+                    height,
+                    depth: 1,
+                    layer_count: 1,
+                    mip_levels: 1,
+                });
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::None],
+                        &[Access::DepthStencilAttachmentWrite],
+                        self.depth_image,
+                        ImageAspectFlags::DEPTH,
+                    )],
+                );
+
+                self.width = width;
+                self.height = height;
+            }
+
+            if self.glyph_atlas_image.is_null() {
+                let image = gpu.create_image(&ImageDesc {
+                    memory_location: MemoryLocation::Device,
+                    usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+                    host_mapped: false,
+                    dimension: ImageDimension::Type2d,
+                    format: ImageFormat::R8_UNORM,
+                    tiling: ImageTiling::Optimal,
+                    width: ui_state.glyph_cache.width() as u32,
+                    height: ui_state.glyph_cache.height() as u32,
+                    depth: 1,
+                    layer_count: 1,
+                    mip_levels: 1,
+                });
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::None],
+                        &[Access::ShaderSampledImageRead],
+                        image,
+                        ImageAspectFlags::COLOR,
+                    )],
+                );
+
+                self.glyph_atlas_image = image;
+            }
+
+            let atlas_width = ui_state.glyph_cache.width() as u32;
+            let atlas_height = ui_state.glyph_cache.height() as u32;
+
+            let (touched_glyphs, glyph_texture) = ui_state.glyph_cache.update_atlas();
+
+            // If the atlas has been updated, we need to upload it to the GPU.
+            if let Some(texture) = glyph_texture {
+                let image = self.glyph_atlas_image;
+
+                let buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::TRANSFER,
+                    texture,
+                );
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::ShaderSampledImageRead],
+                        &[Access::TransferWrite],
+                        image,
+                        ImageAspectFlags::COLOR,
+                    )],
+                );
+
+                gpu.cmd_copy_buffer_to_image(
+                    cmd_encoder,
+                    buffer.to_arg(),
+                    image,
+                    ImageLayout::Optimal,
+                    &[BufferImageCopy {
+                        image_extent: Extent3d {
+                            width: atlas_width,
+                            height: atlas_height,
+                            depth: 1,
+                        },
+                        ..default()
+                    }],
+                );
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::TransferWrite],
+                        &[Access::FragmentShaderSampledImageRead],
+                        image,
+                        ImageAspectFlags::COLOR,
+                    )],
+                );
+            }
+
+            gpu.cmd_begin_rendering(
+                cmd_encoder,
+                &RenderingDesc {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                    color_attachments: &[RenderingAttachment {
+                        image: swapchain_image,
+                        load_op: LoadOp::Clear(ClearValue::ColorF32([1.0, 1.0, 1.0, 1.0])),
+                        store_op: StoreOp::Store,
+                    }],
+                    depth_attachment: Some(RenderingAttachment {
+                        image: self.depth_image,
+                        load_op: LoadOp::Clear(ClearValue::DepthStencil {
+                            depth: 0.0,
+                            stencil: 0,
+                        }),
+                        store_op: StoreOp::DontCare,
+                    }),
+                    stencil_attachment: None,
+                },
+            );
+
+            gpu.cmd_set_scissors(
+                cmd_encoder,
+                &[Scissor {
+                    offset: Offset2d { x: 0, y: 0 },
+                    extent: Extent2d { width, height },
+                }],
+            );
+
+            gpu.cmd_set_viewports(
+                cmd_encoder,
+                &[Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: width as f32,
+                    height: height as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
+            );
+
+            // Render basic stuff.
+            {
+                gpu.cmd_set_pipeline(cmd_encoder, self.basic_pipeline.pipeline);
+
+                let basic_uniforms = BasicUniforms { clip_from_model };
+
+                let uniform_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::UNIFORM,
+                    &basic_uniforms,
+                );
+
+                gpu.cmd_set_bind_group(
+                    frame,
+                    cmd_encoder,
+                    self.basic_pipeline.uniforms_bind_group_layout,
+                    0,
+                    &[Bind {
+                        binding: 0,
+                        array_element: 0,
+                        typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
+                    }],
+                );
+
+                {
+                    let model = &self.models.0[ModelRes::Shark as usize];
+                    let image = self.images.0[ImageRes::Shark as usize];
+
+                    let transform_buffer = gpu.request_transient_buffer_with_data(
+                        frame,
+                        thread_token,
+                        BufferUsageFlags::STORAGE,
+                        self.transforms.as_slice(),
+                    );
+
+                    gpu.cmd_set_bind_group(
+                        frame,
+                        cmd_encoder,
+                        self.basic_pipeline.storage_bind_group_layout,
+                        1,
+                        &[
+                            Bind {
+                                binding: 0,
+                                array_element: 0,
+                                typed: TypedBind::StorageBuffer(&[model.vertex_buffer.to_arg()]),
+                            },
+                            Bind {
+                                binding: 1,
+                                array_element: 0,
+                                typed: TypedBind::StorageBuffer(&[transform_buffer.to_arg()]),
+                            },
+                            Bind {
+                                binding: 2,
+                                array_element: 0,
+                                typed: TypedBind::Sampler(&[self.basic_pipeline.sampler]),
+                            },
+                            Bind {
+                                binding: 3,
+                                array_element: 0,
+                                typed: TypedBind::Image(&[(ImageLayout::Optimal, image)]),
+                            },
+                        ],
+                    );
+
+                    gpu.cmd_set_index_buffer(
+                        cmd_encoder,
+                        model.index_buffer.to_arg(),
+                        0,
+                        IndexType::U16,
+                    );
+
+                    gpu.cmd_draw_indexed(
+                        cmd_encoder,
+                        model.indices,
+                        self.transforms.len() as u32,
+                        0,
+                        0,
+                        0,
+                    );
+                }
+
+                // We're done with you now!
+                self.transforms.clear();
+
+                // Render text stuff.
+                self.text_pipeline.bind(
+                    gpu,
+                    frame,
+                    thread_token,
+                    cmd_encoder,
+                    &pipelines::TextUniforms {
+                        screen_width: width,
+                        screen_height: height,
+                        atlas_width,
+                        atlas_height,
+                    },
+                    ui_state.primitive_vertices.as_slice(),
+                    touched_glyphs,
+                    ui_state.primitive_instances.as_slice(),
+                    self.glyph_atlas_image,
+                );
+
+                gpu.cmd_draw(
+                    cmd_encoder,
+                    ui_state.primitive_vertices.len() as u32,
+                    1,
+                    0,
+                    0,
+                );
+
+                ui_state.primitive_instances.clear();
+                ui_state.primitive_vertices.clear();
+            };
+
+            gpu.cmd_end_rendering(cmd_encoder);
+        }
+        gpu.submit(frame, cmd_encoder);
+    }
+}
+
 pub fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("RUST_BACKTRACE").is_err() {
@@ -454,165 +1066,43 @@ pub fn main() {
     }
 
     let app = create_app();
-    let main_window = app.create_window(&WindowDesc {
+    let gpu = create_device(narcissus_gpu::DeviceBackend::Vulkan);
+
+    let window = app.create_window(&WindowDesc {
         title: "shark",
         width: 800,
         height: 600,
     });
 
-    let device = create_device(narcissus_gpu::DeviceBackend::Vulkan);
+    let scale = 2.0;
 
     let thread_token = ThreadToken::new();
     let thread_token = &thread_token;
 
-    let basic_pipeline = BasicPipeline::new(device.as_ref());
-    let text_pipeline = TextPipeline::new(device.as_ref());
+    let mut action_queue = Vec::new();
 
     let fonts = Fonts::new();
-    let mut glyph_cache = GlyphCache::new(&fonts, GLYPH_CACHE_SIZE, GLYPH_CACHE_SIZE, 1);
-
-    let blåhaj_image_data = load_image("title/shark/data/blåhaj.png");
-    let (blåhaj_vertices, blåhaj_indices) = load_obj("title/shark/data/blåhaj.obj");
-
-    let blåhaj_vertex_buffer = device.create_persistent_buffer_with_data(
-        MemoryLocation::Device,
-        BufferUsageFlags::STORAGE,
-        blåhaj_vertices.as_slice(),
-    );
-
-    let blåhaj_index_buffer = device.create_persistent_buffer_with_data(
-        MemoryLocation::Device,
-        BufferUsageFlags::INDEX,
-        blåhaj_indices.as_slice(),
-    );
-
-    let blåhaj_image = device.create_image(&ImageDesc {
-        memory_location: MemoryLocation::Device,
-        host_mapped: false,
-        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-        dimension: ImageDimension::Type2d,
-        format: ImageFormat::RGBA8_SRGB,
-        tiling: ImageTiling::Optimal,
-        width: blåhaj_image_data.width() as u32,
-        height: blåhaj_image_data.height() as u32,
-        depth: 1,
-        layer_count: 1,
-        mip_levels: 1,
-    });
-
-    let glyph_atlas = device.create_image(&ImageDesc {
-        memory_location: MemoryLocation::Device,
-        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-        host_mapped: false,
-        dimension: ImageDimension::Type2d,
-        format: ImageFormat::R8_UNORM,
-        tiling: ImageTiling::Optimal,
-        width: glyph_cache.width() as u32,
-        height: glyph_cache.height() as u32,
-        depth: 1,
-        layer_count: 1,
-        mip_levels: 1,
-    });
-
-    {
-        let frame = device.begin_frame();
-
-        let blåhaj_buffer = device.request_transient_buffer_with_data(
-            &frame,
-            thread_token,
-            BufferUsageFlags::TRANSFER,
-            blåhaj_image_data.as_slice(),
-        );
-
-        let mut cmd_encoder = device.request_cmd_encoder(&frame, thread_token);
-        {
-            let cmd_encoder = &mut cmd_encoder;
-
-            device.cmd_barrier(
-                cmd_encoder,
-                None,
-                &[
-                    ImageBarrier::layout_optimal(
-                        &[Access::None],
-                        &[Access::ShaderSampledImageRead],
-                        glyph_atlas,
-                        ImageAspectFlags::COLOR,
-                    ),
-                    ImageBarrier::layout_optimal(
-                        &[Access::None],
-                        &[Access::TransferWrite],
-                        blåhaj_image,
-                        ImageAspectFlags::COLOR,
-                    ),
-                ],
-            );
-
-            device.cmd_copy_buffer_to_image(
-                cmd_encoder,
-                blåhaj_buffer.to_arg(),
-                blåhaj_image,
-                ImageLayout::Optimal,
-                &[BufferImageCopy {
-                    buffer_offset: 0,
-                    buffer_row_length: 0,
-                    buffer_image_height: 0,
-                    image_subresource: default(),
-                    image_offset: Offset3d { x: 0, y: 0, z: 0 },
-                    image_extent: Extent3d {
-                        width: blåhaj_image_data.width() as u32,
-                        height: blåhaj_image_data.width() as u32,
-                        depth: 1,
-                    },
-                }],
-            );
-
-            device.cmd_barrier(
-                cmd_encoder,
-                None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::TransferWrite],
-                    &[Access::FragmentShaderSampledImageRead],
-                    blåhaj_image,
-                    ImageAspectFlags::COLOR,
-                )],
-            );
-        }
-
-        device.submit(&frame, cmd_encoder);
-        device.end_frame(frame);
-    }
-
-    let mut depth_width = 0;
-    let mut depth_height = 0;
-    let mut depth_image = default();
-
-    let mut font_size_str = String::new();
-    let mut primitive_instances = Vec::new();
-    let mut primitive_vertices = Vec::new();
-    let mut line_glyph_indices = Vec::new();
-    let mut line_kern_advances = Vec::new();
-
-    let mut action_queue = Vec::new();
+    let mut ui_state = UiState::new(&fonts, scale);
     let mut game_state = GameState::new();
+    let mut draw_state = DrawState::new(gpu.as_ref(), thread_token);
 
-    let mut basic_transforms = vec![];
+    let target_hz = 120.0;
+    let target_dt = Duration::from_secs_f64(1.0 / target_hz);
 
-    let mut ui_scale;
+    let mut last_frame = Instant::now();
+    let mut tick_accumulator = target_dt;
 
     'main: loop {
-        let frame = device.begin_frame();
+        let frame = gpu.begin_frame();
         {
             let frame = &frame;
 
             let (width, height, swapchain_image) = loop {
-                let (virtual_width, _virtual_height) = main_window.extent();
-                let (width, height) = main_window.drawable_extent();
+                let (width, height) = window.drawable_extent();
 
-                ui_scale = width as f32 / virtual_width as f32;
-
-                if let Ok(result) = device.acquire_swapchain(
+                if let Ok(result) = gpu.acquire_swapchain(
                     frame,
-                    main_window.upcast(),
+                    window.upcast(),
                     width,
                     height,
                     ImageFormat::BGRA8_SRGB,
@@ -621,458 +1111,113 @@ pub fn main() {
                 }
             };
 
-            'poll_events: while let Some(event) = app.poll_event() {
-                use Event::*;
-                match event {
-                    KeyPress {
-                        window_id: _,
-                        key,
-                        repeat,
-                        pressed,
-                        modifiers: _,
-                    } => {
-                        if repeat {
-                            continue 'poll_events;
-                        }
+            let tick_start = Instant::now();
+            'tick: loop {
+                'poll_events: while let Some(event) = app.poll_event() {
+                    use Event::*;
+                    match event {
+                        KeyPress {
+                            window_id: _,
+                            key,
+                            repeat,
+                            pressed,
+                            modifiers: _,
+                        } => {
+                            if repeat {
+                                continue 'poll_events;
+                            }
 
-                        if key == Key::Escape {
+                            if key == Key::Escape {
+                                break 'main;
+                            }
+
+                            {
+                                let value = match pressed {
+                                    PressedState::Released => 0.0,
+                                    PressedState::Pressed => 1.0,
+                                };
+
+                                if key == Key::Left || key == Key::A {
+                                    action_queue.push(ActionEvent {
+                                        action: Action::Left,
+                                        value,
+                                    })
+                                }
+                                if key == Key::Right || key == Key::D {
+                                    action_queue.push(ActionEvent {
+                                        action: Action::Right,
+                                        value,
+                                    })
+                                }
+                                if key == Key::Up || key == Key::W {
+                                    action_queue.push(ActionEvent {
+                                        action: Action::Up,
+                                        value,
+                                    })
+                                }
+                                if key == Key::Down || key == Key::S {
+                                    action_queue.push(ActionEvent {
+                                        action: Action::Down,
+                                        value,
+                                    })
+                                }
+                                if key == Key::Space {
+                                    action_queue.push(ActionEvent {
+                                        action: Action::Damage,
+                                        value,
+                                    })
+                                }
+                            }
+                        }
+                        Quit => {
                             break 'main;
                         }
-
-                        {
-                            let value = match pressed {
-                                PressedState::Released => 0.0,
-                                PressedState::Pressed => 1.0,
-                            };
-
-                            if key == Key::Left || key == Key::A {
-                                action_queue.push(ActionEvent {
-                                    action: Action::Left,
-                                    value,
-                                })
-                            }
-                            if key == Key::Right || key == Key::D {
-                                action_queue.push(ActionEvent {
-                                    action: Action::Right,
-                                    value,
-                                })
-                            }
-                            if key == Key::Up || key == Key::W {
-                                action_queue.push(ActionEvent {
-                                    action: Action::Up,
-                                    value,
-                                })
-                            }
-                            if key == Key::Down || key == Key::S {
-                                action_queue.push(ActionEvent {
-                                    action: Action::Down,
-                                    value,
-                                })
-                            }
-                            if key == Key::Space {
-                                action_queue.push(ActionEvent {
-                                    action: Action::Damage,
-                                    value,
-                                })
-                            }
+                        Close { window_id } => {
+                            let window = app.window(window_id);
+                            gpu.destroy_swapchain(window.upcast());
                         }
-                    }
-                    Quit => {
-                        break 'main;
-                    }
-                    Close { window_id } => {
-                        let window = app.window(window_id);
-                        device.destroy_swapchain(window.upcast());
-                    }
-                    _ => {}
-                }
-            }
-
-            game_state.tick(1.0 / 120.0, &action_queue);
-            action_queue.clear();
-
-            let half_turn_y = Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
-            let scale = Mat3::from_scale(Vec3::splat(0.125));
-
-            fn rotate_dir(dir: Vec3, up: Vec3) -> Mat3 {
-                let f = dir.normalized();
-                let r = Vec3::cross(f, up).normalized();
-                let u = Vec3::cross(r, f);
-                Mat3::from_rows([[r.x, u.x, -f.x], [r.y, u.y, -f.y], [r.z, u.z, -f.z]])
-            }
-
-            let matrix = rotate_dir(game_state.player.heading, Vec3::Y) * half_turn_y;
-            let translation = game_state.player.position.as_vec3();
-            basic_transforms.push(Affine3::new(matrix, translation));
-
-            let half_turn_y_scale = half_turn_y * scale;
-
-            // Render projectiles
-            for i in BitIter::new(
-                game_state
-                    .archetype_projectile
-                    .bitmap_non_empty
-                    .iter()
-                    .copied(),
-            ) {
-                let chunk = &game_state.archetype_projectile.chunks[i];
-                for (&bitmap, block) in chunk.bitmap.iter().zip(chunk.blocks.iter()) {
-                    if bitmap == 0 {
-                        continue;
-                    }
-
-                    for j in 0..8 {
-                        if bitmap & (1 << j) == 0 {
-                            continue;
-                        }
-
-                        let translation = vec3(block.position_x[j], 0.0, block.position_z[j]);
-                        let velocity = vec3(block.velocity_x[j], 0.0, block.velocity_z[j]);
-                        let matrix = rotate_dir(velocity, Vec3::Y) * half_turn_y_scale;
-                        basic_transforms.push(Affine3::new(matrix, translation));
+                        _ => {}
                     }
                 }
+
+                if tick_accumulator < target_dt {
+                    break 'tick;
+                }
+
+                game_state.tick(target_dt.as_secs_f32(), &action_queue);
+
+                action_queue.clear();
+
+                tick_accumulator -= target_dt;
             }
 
-            let camera_from_model = game_state.camera.camera_from_model();
-            let clip_from_camera = Mat4::perspective_rev_inf_zo(
-                HalfTurn::new(1.0 / 3.0),
-                width as f32 / height as f32,
-                0.01,
+            let tick_duration = Instant::now() - tick_start;
+
+            ui_state.text(
+                5.0,
+                30.0,
+                FontFamily::RobotoRegular,
+                22.0,
+                format!("tick: {:?}", tick_duration).as_str(),
             );
-            let clip_from_model = clip_from_camera * camera_from_model;
 
-            let mut cmd_encoder = device.request_cmd_encoder(frame, thread_token);
-            {
-                let cmd_encoder = &mut cmd_encoder;
+            ui_state.text(5.0, 60.0, FontFamily::NotoSansJapanese, 22.0, "お握り");
 
-                if width != depth_width || height != depth_height {
-                    device.destroy_image(frame, depth_image);
-                    depth_image = device.create_image(&ImageDesc {
-                        memory_location: MemoryLocation::Device,
-                        host_mapped: false,
-                        usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-                        dimension: ImageDimension::Type2d,
-                        format: ImageFormat::DEPTH_F32,
-                        tiling: ImageTiling::Optimal,
-                        width,
-                        height,
-                        depth: 1,
-                        layer_count: 1,
-                        mip_levels: 1,
-                    });
-
-                    device.cmd_barrier(
-                        cmd_encoder,
-                        None,
-                        &[ImageBarrier::layout_optimal(
-                            &[Access::None],
-                            &[Access::DepthStencilAttachmentWrite],
-                            depth_image,
-                            ImageAspectFlags::DEPTH,
-                        )],
-                    );
-
-                    depth_width = width;
-                    depth_height = height;
-                }
-
-                // Do some Font Shit.'
-                let line0 = "Snarfe, Blåhaj! And the Quick Brown Fox jumped Over the Lazy doge.";
-                let line1 = "加盟国は、国際連合と協力して";
-
-                let mut x;
-                let mut y = 0.0;
-
-                let mut rng = Pcg64::new();
-
-                primitive_instances.clear();
-                primitive_vertices.clear();
-
-                for line in 0..2 {
-                    let (font_family, font_size_px, text) = if line & 1 == 0 {
-                        (FontFamily::RobotoRegular, 22.0, line0)
-                    } else {
-                        (FontFamily::NotoSansJapanese, 22.0, line1)
-                    };
-
-                    let font_size_px = font_size_px * ui_scale;
-
-                    let font = fonts.font(font_family);
-                    let scale = font.scale_for_size_px(font_size_px);
-
-                    x = 0.0;
-                    y += (font.ascent() - font.descent() + font.line_gap()) * scale;
-
-                    font_size_str.clear();
-                    write!(&mut font_size_str, "{font_size_px}: ").unwrap();
-
-                    line_glyph_indices.clear();
-                    line_glyph_indices.extend(font_size_str.chars().chain(text.chars()).map(|c| {
-                        font.glyph_index(c)
-                            .unwrap_or_else(|| font.glyph_index('□').unwrap())
-                    }));
-
-                    line_kern_advances.clear();
-                    line_kern_advances.push(0.0);
-                    line_kern_advances.extend(array_windows(line_glyph_indices.as_slice()).map(
-                        |&[prev_index, next_index]| font.kerning_advance(prev_index, next_index),
-                    ));
-
-                    'repeat_str: for _ in 0.. {
-                        for (glyph_index, advance) in line_glyph_indices
-                            .iter()
-                            .copied()
-                            .zip(line_kern_advances.iter().copied())
-                        {
-                            if x >= width as f32 {
-                                break 'repeat_str;
-                            }
-
-                            let touched_glyph_index =
-                                glyph_cache.touch_glyph(font_family, glyph_index, font_size_px);
-
-                            let HorizontalMetrics {
-                                advance_width,
-                                left_side_bearing: _,
-                            } = font.horizontal_metrics(glyph_index);
-
-                            x += advance * scale;
-
-                            let color = *rng
-                                .array_select(&[0xfffac228, 0xfff57d15, 0xffd44842, 0xff9f2a63]);
-
-                            let instance_index = primitive_instances.len() as u32;
-                            primitive_instances.push(PrimitiveInstance {
-                                x,
-                                y,
-                                touched_glyph_index,
-                                color,
-                            });
-                            let glyph_vertices = &[
-                                PrimitiveVertex::glyph(0, instance_index),
-                                PrimitiveVertex::glyph(1, instance_index),
-                                PrimitiveVertex::glyph(2, instance_index),
-                                PrimitiveVertex::glyph(2, instance_index),
-                                PrimitiveVertex::glyph(1, instance_index),
-                                PrimitiveVertex::glyph(3, instance_index),
-                            ];
-                            primitive_vertices.extend_from_slice(glyph_vertices);
-
-                            x += advance_width * scale;
-                        }
-                    }
-                }
-
-                let atlas_width = glyph_cache.width() as u32;
-                let atlas_height = glyph_cache.height() as u32;
-
-                let (touched_glyphs, texture) = glyph_cache.update_atlas();
-
-                // If the atlas has been updated, we need to upload it to the GPU.
-                if let Some(texture) = texture {
-                    let width = atlas_width;
-                    let height = atlas_height;
-                    let image = glyph_atlas;
-
-                    let buffer = device.request_transient_buffer_with_data(
-                        frame,
-                        thread_token,
-                        BufferUsageFlags::TRANSFER,
-                        texture,
-                    );
-
-                    device.cmd_barrier(
-                        cmd_encoder,
-                        None,
-                        &[ImageBarrier::layout_optimal(
-                            &[Access::ShaderSampledImageRead],
-                            &[Access::TransferWrite],
-                            image,
-                            ImageAspectFlags::COLOR,
-                        )],
-                    );
-
-                    device.cmd_copy_buffer_to_image(
-                        cmd_encoder,
-                        buffer.to_arg(),
-                        image,
-                        ImageLayout::Optimal,
-                        &[BufferImageCopy {
-                            buffer_offset: 0,
-                            buffer_row_length: 0,
-                            buffer_image_height: 0,
-                            image_subresource: default(),
-                            image_offset: Offset3d { x: 0, y: 0, z: 0 },
-                            image_extent: Extent3d {
-                                width,
-                                height,
-                                depth: 1,
-                            },
-                        }],
-                    );
-
-                    device.cmd_barrier(
-                        cmd_encoder,
-                        None,
-                        &[ImageBarrier::layout_optimal(
-                            &[Access::TransferWrite],
-                            &[Access::FragmentShaderSampledImageRead],
-                            image,
-                            ImageAspectFlags::COLOR,
-                        )],
-                    );
-                }
-
-                device.cmd_begin_rendering(
-                    cmd_encoder,
-                    &RenderingDesc {
-                        x: 0,
-                        y: 0,
-                        width,
-                        height,
-                        color_attachments: &[RenderingAttachment {
-                            image: swapchain_image,
-                            load_op: LoadOp::Clear(ClearValue::ColorF32([1.0, 1.0, 1.0, 1.0])),
-                            store_op: StoreOp::Store,
-                        }],
-                        depth_attachment: Some(RenderingAttachment {
-                            image: depth_image,
-                            load_op: LoadOp::Clear(ClearValue::DepthStencil {
-                                depth: 0.0,
-                                stencil: 0,
-                            }),
-                            store_op: StoreOp::DontCare,
-                        }),
-                        stencil_attachment: None,
-                    },
-                );
-
-                device.cmd_set_scissors(
-                    cmd_encoder,
-                    &[Scissor {
-                        offset: Offset2d { x: 0, y: 0 },
-                        extent: Extent2d { width, height },
-                    }],
-                );
-
-                device.cmd_set_viewports(
-                    cmd_encoder,
-                    &[Viewport {
-                        x: 0.0,
-                        y: 0.0,
-                        width: width as f32,
-                        height: height as f32,
-                        min_depth: 0.0,
-                        max_depth: 1.0,
-                    }],
-                );
-
-                // Render basic stuff.
-                {
-                    device.cmd_set_pipeline(cmd_encoder, basic_pipeline.pipeline);
-
-                    let basic_uniforms = BasicUniforms { clip_from_model };
-
-                    let uniform_buffer = device.request_transient_buffer_with_data(
-                        frame,
-                        thread_token,
-                        BufferUsageFlags::UNIFORM,
-                        &basic_uniforms,
-                    );
-
-                    let transform_buffer = device.request_transient_buffer_with_data(
-                        frame,
-                        thread_token,
-                        BufferUsageFlags::STORAGE,
-                        basic_transforms.as_slice(),
-                    );
-
-                    device.cmd_set_bind_group(
-                        frame,
-                        cmd_encoder,
-                        basic_pipeline.uniforms_bind_group_layout,
-                        0,
-                        &[Bind {
-                            binding: 0,
-                            array_element: 0,
-                            typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
-                        }],
-                    );
-
-                    device.cmd_set_bind_group(
-                        frame,
-                        cmd_encoder,
-                        basic_pipeline.storage_bind_group_layout,
-                        1,
-                        &[
-                            Bind {
-                                binding: 0,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(&[blåhaj_vertex_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 1,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(&[transform_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 2,
-                                array_element: 0,
-                                typed: TypedBind::Sampler(&[basic_pipeline.sampler]),
-                            },
-                            Bind {
-                                binding: 3,
-                                array_element: 0,
-                                typed: TypedBind::Image(&[(ImageLayout::Optimal, blåhaj_image)]),
-                            },
-                        ],
-                    );
-
-                    device.cmd_set_index_buffer(
-                        cmd_encoder,
-                        blåhaj_index_buffer.to_arg(),
-                        0,
-                        IndexType::U16,
-                    );
-
-                    device.cmd_draw_indexed(
-                        cmd_encoder,
-                        blåhaj_indices.len() as u32,
-                        basic_transforms.len() as u32,
-                        0,
-                        0,
-                        0,
-                    );
-
-                    // We're done with you now!
-                    basic_transforms.clear();
-                };
-
-                // Render text stuff.
-                text_pipeline.bind(
-                    device.as_ref(),
-                    frame,
-                    thread_token,
-                    cmd_encoder,
-                    &TextUniforms {
-                        screen_width: width,
-                        screen_height: height,
-                        atlas_width,
-                        atlas_height,
-                    },
-                    primitive_vertices.as_slice(),
-                    touched_glyphs,
-                    primitive_instances.as_slice(),
-                    glyph_atlas,
-                );
-
-                device.cmd_draw(cmd_encoder, primitive_vertices.len() as u32, 1, 0, 0);
-
-                device.cmd_end_rendering(cmd_encoder);
-            }
-            device.submit(frame, cmd_encoder);
+            draw_state.draw(
+                thread_token,
+                frame,
+                &mut ui_state,
+                &game_state,
+                width,
+                height,
+                swapchain_image,
+            );
         }
-        device.end_frame(frame);
+
+        gpu.end_frame(frame);
+
+        let now = Instant::now();
+        tick_accumulator += now - last_frame;
+        last_frame = now;
     }
 }
