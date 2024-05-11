@@ -74,6 +74,14 @@ pub struct ExtensionProperties {
 }
 
 #[repr(C)]
+pub struct LayerProperties {
+    pub layer_name: [u8; 256],
+    pub spec_version: u32,
+    pub implementation_version: u32,
+    pub description: [u8; 256],
+}
+
+#[repr(C)]
 pub struct AllocationCallbacks {
     user_data: *mut c_void,
     allocation: Option<FnAllocationFunction>,

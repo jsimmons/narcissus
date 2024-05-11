@@ -303,6 +303,7 @@ pub struct GlobalFunctions {
     get_instance_proc_addr: FnGetInstanceProcAddr,
     enumerate_instance_version: Option<FnEnumerateInstanceVersion>,
     enumerate_instance_extension_properties: FnEnumerateInstanceExtensionProperties,
+    enumerate_instance_layer_properties: FnEnumerateInstanceLayerProperties,
     create_instance: FnCreateInstance,
 }
 
@@ -318,6 +319,10 @@ impl GlobalFunctions {
             enumerate_instance_extension_properties: transmute::<_, _>(get_instance_proc_addr(
                 Instance::null(),
                 c"vkEnumerateInstanceExtensionProperties".as_ptr(),
+            )),
+            enumerate_instance_layer_properties: transmute::<_, _>(get_instance_proc_addr(
+                Instance::null(),
+                c"vkEnumerateInstanceLayerProperties".as_ptr(),
             )),
             create_instance: transmute::<_, _>(
                 get_instance_proc_addr(Instance::null(), c"vkCreateInstance".as_ptr())
@@ -353,6 +358,15 @@ impl GlobalFunctions {
         properties: *mut ExtensionProperties,
     ) -> Result {
         (self.enumerate_instance_extension_properties)(layer_name, property_count, properties)
+    }
+
+    #[inline]
+    pub unsafe fn enumerate_instance_layer_properties(
+        &self,
+        property_count: &mut u32,
+        properties: *mut LayerProperties,
+    ) -> Result {
+        (self.enumerate_instance_layer_properties)(property_count, properties)
     }
 
     #[inline]

@@ -46,6 +46,9 @@ pub type FnEnumerateInstanceExtensionProperties = extern "system" fn(
     properties: *mut ExtensionProperties,
 ) -> Result;
 
+pub type FnEnumerateInstanceLayerProperties =
+    extern "system" fn(property_count: &mut u32, properties: *mut LayerProperties) -> Result;
+
 pub type FnCreateInstance = extern "system" fn(
     create_info: &InstanceCreateInfo,
     allocator: Option<&AllocationCallbacks>,
