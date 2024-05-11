@@ -398,10 +398,26 @@ impl VulkanDevice {
             panic!("instance does not support vulkan 1.2")
         }
 
-        // #[cfg(debug_assertions)]
-        // let enabled_layers = &[(c"VK_LAYER_KHRONOS_validation").as_ptr()];
-        // #[cfg(not(debug_assertions))]
-        let enabled_layers = &[];
+        let layer_properties = vk_vec(|count, ptr| unsafe {
+            global_fn.enumerate_instance_layer_properties(count, ptr)
+        });
+
+        let mut enabled_layers = vec![];
+
+        if cfg!(debug_assertions) {
+            for layer in &layer_properties {
+                let layer_name = CStr::from_bytes_until_nul(&layer.layer_name).unwrap();
+                if layer_name == c"VK_LAYER_KHRONOS_validation" {
+                    enabled_layers.push(layer_name);
+                    break;
+                }
+            }
+        }
+
+        let enabled_layers = enabled_layers
+            .iter()
+            .map(|x| x.as_ptr())
+            .collect::<Vec<*const c_char>>();
 
         let extension_properties = vk_vec(|count, ptr| unsafe {
             global_fn.enumerate_instance_extension_properties(std::ptr::null(), count, ptr)
@@ -443,7 +459,7 @@ impl VulkanDevice {
                 ..default()
             };
             let create_info = vk::InstanceCreateInfo {
-                enabled_layers: enabled_layers.into(),
+                enabled_layers: enabled_layers.as_slice().into(),
                 enabled_extension_names: enabled_extensions.as_slice().into(),
                 application_info: Some(&application_info),
                 ..default()
