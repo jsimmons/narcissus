@@ -18,14 +18,15 @@ use narcissus_gpu::{
     Viewport,
 };
 use narcissus_maths::{
-    clamp, exp_f32, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3,
-    Vec3,
+    clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
 use pipelines::{BasicUniforms, PrimitiveInstance, PrimitiveVertex, TextUniforms};
+use spring::simple_spring_damper_exact;
 
 mod fonts;
 mod helpers;
 mod pipelines;
+mod spring;
 
 const SQRT_2: f32 = 0.70710677;
 
@@ -434,24 +435,6 @@ impl GameState {
             & !(1 << (chunk_index % 64)))
             | (block_non_full as u64) << (chunk_index % 64);
     }
-}
-
-// https://theorangeduck.com/page/spring-roll-call
-fn simple_spring_damper_exact(
-    x: f32,
-    velocity: f32,
-    goal: f32,
-    damping: f32,
-    delta_time: f32,
-) -> (f32, f32) {
-    let y = damping / 2.0;
-    let j0 = x - goal;
-    let j1 = velocity + j0 * y;
-    let eydt = exp_f32(-y * delta_time);
-    (
-        eydt * (j0 + j1 * delta_time) + goal,
-        eydt * (velocity - j1 * y * delta_time),
-    )
 }
 
 pub fn main() {
