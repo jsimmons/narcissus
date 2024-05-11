@@ -6,6 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+
+renderdoc-sys = { path = "../../external/renderdoc-sys" }
+
 narcissus-app = { path = "../../engine/narcissus-app" }
 narcissus-core = { path = "../../engine/narcissus-core" }
 narcissus-font = { path = "../../engine/narcissus-font" }

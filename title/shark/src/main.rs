@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+use renderdoc_sys as rdoc;
+
 use crate::{
     fonts::{FontFamily, Fonts},
     pipelines::{BasicPipeline, TextPipeline},
@@ -443,8 +445,11 @@ pub fn main() {
         std::env::set_var("RUST_BACKTRACE", "1")
     }
 
+    let renderdoc = rdoc::RenderdocApi1_5_0::load();
+
     // Default to wayland because otherwise HiDPI is totally borked.
-    if std::env::var("SDL_VIDEODRIVER").is_err() {
+    // Unless renderdoc is attached, in which case wayland would break capture.
+    if renderdoc.is_none() && std::env::var("SDL_VIDEODRIVER").is_err() {
         std::env::set_var("SDL_VIDEODRIVER", "wayland")
     }
 

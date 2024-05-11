@@ -183,6 +183,7 @@ dependencies = [
  "narcissus-gpu",
  "narcissus-image",
  "narcissus-maths",
+ "renderdoc-sys",
  "shark-shaders",
 ]
 
