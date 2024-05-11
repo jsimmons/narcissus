@@ -679,7 +679,7 @@ impl<'a> Frame<'a> {
 }
 
 pub struct CmdEncoder<'a> {
-    cmd_buffer_addr: usize,
+    cmd_encoder_addr: usize,
     thread_token: &'a ThreadToken,
     phantom_unsend: PhantomUnsend,
 }

@@ -266,15 +266,19 @@ impl VulkanTransientBufferAllocator {
     }
 }
 
-struct VulkanCmdBuffer {
+struct VulkanCmdEncoder {
+    #[cfg(debug_assertions)]
+    in_render_pass: bool,
     command_buffer: vk::CommandBuffer,
     bound_pipeline: Option<VulkanBoundPipeline>,
     swapchains_touched: HashMap<vk::SurfaceKHR, (vk::Image, vk::PipelineStageFlags2)>,
 }
 
-impl Default for VulkanCmdBuffer {
+impl Default for VulkanCmdEncoder {
     fn default() -> Self {
         Self {
+            #[cfg(debug_assertions)]
+            in_render_pass: false,
             command_buffer: default(),
             bound_pipeline: default(),
             swapchains_touched: default(),
@@ -753,13 +757,13 @@ impl VulkanDevice {
         unsafe { &mut *self.frames[frame.frame_index % VULKAN_CONSTANTS.num_frames].get() }
     }
 
-    fn cmd_buffer_mut<'a>(&self, cmd_encoder: &'a mut CmdEncoder) -> &'a mut VulkanCmdBuffer {
-        // SAFETY: `CmdEncoder`s can't outlive a frame, and the memory for a cmd_buffer
-        // is reset when the frame ends. So the pointer contained in the cmd_buffer is
-        // always valid while the `CmdBuffer` is valid. They can't cloned, copied or be
+    fn cmd_encoder_mut<'a>(&self, cmd_encoder: &'a mut CmdEncoder) -> &'a mut VulkanCmdEncoder {
+        // SAFETY: `CmdEncoder`s can't outlive a frame, and the memory for a cmd_encoder
+        // is reset when the frame ends. So the pointer contained in the cmd_encoder is
+        // always valid while the `CmdEncoder` is valid. They can't cloned, copied or be
         // sent between threads, and we have a mutable reference.
         unsafe {
-            NonNull::new_unchecked(cmd_encoder.cmd_buffer_addr as *mut VulkanCmdBuffer).as_mut()
+            NonNull::new_unchecked(cmd_encoder.cmd_encoder_addr as *mut VulkanCmdEncoder).as_mut()
         }
     }
 
@@ -1557,13 +1561,13 @@ impl Device for VulkanDevice {
             }
         ));
 
-        let vulkan_cmd_buffer = per_thread.arena.alloc(VulkanCmdBuffer {
+        let vulkan_cmd_encoder = per_thread.arena.alloc(VulkanCmdEncoder {
             command_buffer,
             ..default()
         });
 
         CmdEncoder {
-            cmd_buffer_addr: vulkan_cmd_buffer as *mut _ as usize,
+            cmd_encoder_addr: vulkan_cmd_encoder as *mut _ as usize,
             thread_token,
             phantom_unsend: PhantomUnsend {},
         }
@@ -1595,10 +1599,14 @@ impl Device for VulkanDevice {
                 vulkan_image_memory_barrier(image_barrier, image, subresource_range)
             }));
 
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+
+        #[cfg(debug_assertions)]
+        debug_assert!(!cmd_encoder.in_render_pass);
+
         unsafe {
             self.device_fn.cmd_pipeline_barrier2(
-                command_buffer,
+                cmd_encoder.command_buffer,
                 &vk::DependencyInfo {
                     memory_barriers: memory_barriers.into(),
 
@@ -1642,7 +1650,7 @@ impl Device for VulkanDevice {
             ImageLayout::General => vk::ImageLayout::General,
         };
 
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn.cmd_copy_buffer_to_image(
                 command_buffer,
@@ -1696,7 +1704,7 @@ impl Device for VulkanDevice {
             ImageLayout::General => vk::ImageLayout::General,
         };
 
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn.cmd_blit_image(
                 command_buffer,
@@ -1851,17 +1859,17 @@ impl Device for VulkanDevice {
                 .update_descriptor_sets(self.device, write_descriptors, &[])
         };
 
-        let cmd_buffer = self.cmd_buffer_mut(cmd_encoder);
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
         let VulkanBoundPipeline {
             pipeline_layout,
             pipeline_bind_point,
-        } = cmd_buffer
+        } = cmd_encoder
             .bound_pipeline
             .as_ref()
             .expect("cannot set bind groups without a pipeline bound")
             .clone();
 
-        let command_buffer = cmd_buffer.command_buffer;
+        let command_buffer = cmd_encoder.command_buffer;
 
         unsafe {
             self.device_fn.cmd_bind_descriptor_sets(
@@ -1884,7 +1892,7 @@ impl Device for VulkanDevice {
     ) {
         let (buffer, base_offset, _range) = self.unwrap_buffer_arg(&buffer);
 
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         let index_type = vulkan_index_type(index_type);
         unsafe {
             self.device_fn.cmd_bind_index_buffer(
@@ -1897,7 +1905,7 @@ impl Device for VulkanDevice {
     }
 
     fn cmd_set_pipeline(&self, cmd_encoder: &mut CmdEncoder, pipeline: Pipeline) {
-        let cmd_buffer = self.cmd_buffer_mut(cmd_encoder);
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
 
         let VulkanPipeline {
             pipeline,
@@ -1905,12 +1913,12 @@ impl Device for VulkanDevice {
             pipeline_bind_point,
         } = *self.pipeline_pool.lock().get(pipeline.0).unwrap();
 
-        cmd_buffer.bound_pipeline = Some(VulkanBoundPipeline {
+        cmd_encoder.bound_pipeline = Some(VulkanBoundPipeline {
             pipeline_layout,
             pipeline_bind_point,
         });
 
-        let command_buffer = cmd_buffer.command_buffer;
+        let command_buffer = cmd_encoder.command_buffer;
 
         unsafe {
             self.device_fn
@@ -1920,7 +1928,13 @@ impl Device for VulkanDevice {
 
     fn cmd_begin_rendering(&self, cmd_encoder: &mut CmdEncoder, desc: &crate::RenderingDesc) {
         let arena = HybridArena::<1024>::new();
-        let cmd_buffer = self.cmd_buffer_mut(cmd_encoder);
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(!cmd_encoder.in_render_pass);
+            cmd_encoder.in_render_pass = true;
+        }
 
         let color_attachments =
             arena.alloc_slice_fill_iter(desc.color_attachments.iter().map(|attachment| {
@@ -1929,10 +1943,10 @@ impl Device for VulkanDevice {
                     VulkanImageHolder::Shared(image) => image.view,
                     VulkanImageHolder::Swapchain(image) => {
                         assert!(
-                            !cmd_buffer.swapchains_touched.contains_key(&image.surface),
+                            !cmd_encoder.swapchains_touched.contains_key(&image.surface),
                             "swapchain attached multiple times in a command buffer"
                         );
-                        cmd_buffer.swapchains_touched.insert(
+                        cmd_encoder.swapchains_touched.insert(
                             image.surface,
                             (
                                 image.image,
@@ -1968,7 +1982,7 @@ impl Device for VulkanDevice {
 
                         unsafe {
                             self.device_fn
-                                .cmd_pipeline_barrier2(cmd_buffer.command_buffer, &dependency_info)
+                                .cmd_pipeline_barrier2(cmd_encoder.command_buffer, &dependency_info)
                         };
 
                         image.view
@@ -2029,17 +2043,24 @@ impl Device for VulkanDevice {
         };
         unsafe {
             self.device_fn
-                .cmd_begin_rendering(cmd_buffer.command_buffer, &rendering_info)
+                .cmd_begin_rendering(cmd_encoder.command_buffer, &rendering_info)
         }
     }
 
     fn cmd_end_rendering(&self, cmd_encoder: &mut CmdEncoder) {
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
-        unsafe { self.device_fn.cmd_end_rendering(command_buffer) }
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(cmd_encoder.in_render_pass);
+            cmd_encoder.in_render_pass = false;
+        }
+
+        unsafe { self.device_fn.cmd_end_rendering(cmd_encoder.command_buffer) }
     }
 
     fn cmd_set_viewports(&self, cmd_encoder: &mut CmdEncoder, viewports: &[crate::Viewport]) {
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn.cmd_set_viewport_with_count(
                 command_buffer,
@@ -2049,7 +2070,7 @@ impl Device for VulkanDevice {
     }
 
     fn cmd_set_scissors(&self, cmd_encoder: &mut CmdEncoder, scissors: &[crate::Scissor]) {
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn.cmd_set_scissor_with_count(
                 command_buffer,
@@ -2066,7 +2087,7 @@ impl Device for VulkanDevice {
         first_vertex: u32,
         first_instance: u32,
     ) {
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn.cmd_draw(
                 command_buffer,
@@ -2087,7 +2108,7 @@ impl Device for VulkanDevice {
         vertex_offset: i32,
         first_instance: u32,
     ) {
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn.cmd_draw_indexed(
                 command_buffer,
@@ -2107,7 +2128,7 @@ impl Device for VulkanDevice {
         group_count_y: u32,
         group_count_z: u32,
     ) {
-        let command_buffer = self.cmd_buffer_mut(cmd_encoder).command_buffer;
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
         unsafe {
             self.device_fn
                 .cmd_dispatch(command_buffer, group_count_x, group_count_y, group_count_z)
@@ -2120,9 +2141,12 @@ impl Device for VulkanDevice {
         let frame = self.frame(frame);
         frame.universal_queue_fence.store(fence, Ordering::Relaxed);
 
-        let cmd_buffer = self.cmd_buffer_mut(&mut cmd_encoder);
+        let cmd_encoder = self.cmd_encoder_mut(&mut cmd_encoder);
 
-        for &(image, _) in cmd_buffer.swapchains_touched.values() {
+        #[cfg(debug_assertions)]
+        debug_assert!(!cmd_encoder.in_render_pass);
+
+        for &(image, _) in cmd_encoder.swapchains_touched.values() {
             // transition swapchain image from attachment optimal to present src
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
                 src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -2149,17 +2173,19 @@ impl Device for VulkanDevice {
             };
             unsafe {
                 self.device_fn
-                    .cmd_pipeline_barrier2(cmd_buffer.command_buffer, &dependency_info)
+                    .cmd_pipeline_barrier2(cmd_encoder.command_buffer, &dependency_info)
             };
         }
 
-        vk_check!(self.device_fn.end_command_buffer(cmd_buffer.command_buffer));
+        vk_check!(self
+            .device_fn
+            .end_command_buffer(cmd_encoder.command_buffer));
 
         let mut wait_semaphores = Vec::new();
         let mut signal_semaphores = Vec::new();
 
-        if !cmd_buffer.swapchains_touched.is_empty() {
-            for (surface, (_, stage_mask)) in cmd_buffer.swapchains_touched.drain() {
+        if !cmd_encoder.swapchains_touched.is_empty() {
+            for (surface, (_, stage_mask)) in cmd_encoder.swapchains_touched.drain() {
                 self.touch_swapchain(
                     frame,
                     surface,
@@ -2178,7 +2204,7 @@ impl Device for VulkanDevice {
         });
 
         let cmd_buffer_infos = &[vk::CommandBufferSubmitInfo {
-            command_buffer: cmd_buffer.command_buffer,
+            command_buffer: cmd_encoder.command_buffer,
             device_mask: 1,
             ..default()
         }];
