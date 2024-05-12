@@ -27,6 +27,8 @@ pub fn vulkan_format(format: ImageFormat) -> vk::Format {
         ImageFormat::RGBA8_UNORM => vk::Format::R8G8B8A8_UNORM,
         ImageFormat::BGRA8_SRGB => vk::Format::B8G8R8A8_SRGB,
         ImageFormat::BGRA8_UNORM => vk::Format::B8G8R8A8_UNORM,
+        ImageFormat::A2R10G10B10_UNORM_PACK32 => vk::Format::A2R10G10B10_UNORM_PACK32,
+        ImageFormat::A2B10G10R10_UNORM_PACK32 => vk::Format::A2B10G10R10_UNORM_PACK32,
         ImageFormat::DEPTH_F32 => vk::Format::D32_SFLOAT,
     }
 }
@@ -38,7 +40,9 @@ pub fn vulkan_aspect_for_format(format: ImageFormat) -> vk::ImageAspectFlags {
         | ImageFormat::BGRA8_SRGB
         | ImageFormat::BGRA8_UNORM
         | ImageFormat::RGBA8_SRGB
-        | ImageFormat::RGBA8_UNORM => vk::ImageAspectFlags::COLOR,
+        | ImageFormat::RGBA8_UNORM
+        | ImageFormat::A2R10G10B10_UNORM_PACK32
+        | ImageFormat::A2B10G10R10_UNORM_PACK32 => vk::ImageAspectFlags::COLOR,
         ImageFormat::DEPTH_F32 => vk::ImageAspectFlags::DEPTH,
     }
 }
