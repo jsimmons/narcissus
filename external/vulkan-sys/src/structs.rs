@@ -515,6 +515,23 @@ pub struct ImageFormatProperties {
 }
 
 #[repr(C)]
+pub struct ImageFormatListCreateInfo<'a> {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub view_formats: VulkanSlice1<'a, u32, Format, 4>,
+}
+
+impl<'a> Default for ImageFormatListCreateInfo<'a> {
+    fn default() -> Self {
+        ImageFormatListCreateInfo {
+            _type: StructureType::ImageFormatListCreateInfo,
+            _next: core::ptr::null(),
+            view_formats: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct SurfaceCapabilitiesKHR {
     pub min_image_count: u32, // Supported minimum number of images for the surface
@@ -3154,6 +3171,13 @@ mod test {
             let release_swapchain_images_info = ReleaseSwapchainImagesInfoEXT::default();
             assert!(is_aligned(addr_of!(
                 release_swapchain_images_info.image_indices.ptr
+            )));
+        }
+
+        {
+            let image_format_list_create_info = ImageFormatListCreateInfo::default();
+            assert!(is_aligned(addr_of!(
+                image_format_list_create_info.view_formats.ptr
             )));
         }
     }
