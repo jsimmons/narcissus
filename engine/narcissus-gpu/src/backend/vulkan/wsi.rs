@@ -11,8 +11,10 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    backend::vulkan::{vk_vec, vulkan_format, VulkanImageHolder, VulkanImageSwapchain},
-    vk_check, Frame, Image, ImageFormat, SwapchainOutOfDateError,
+    backend::vulkan::{
+        vk_vec, vulkan_format, vulkan_image_usage_flags, VulkanImageHolder, VulkanImageSwapchain,
+    },
+    vk_check, Frame, Image, ImageFormat, ImageUsageFlags, SwapchainImage, SwapchainOutOfDateError,
 };
 
 use super::{VulkanDevice, VulkanFrame, VULKAN_CONSTANTS};
@@ -52,6 +54,7 @@ pub struct VulkanWsiSupport {
     xcb: bool,
     surface_maintenance1: bool,
     swapchain_maintenance1: bool,
+    swapchain_mutable_format: bool,
 }
 
 struct RecycleSwapchainSemaphore {
@@ -143,10 +146,15 @@ impl VulkanWsi {
                     wsi_support.swapchain_maintenance1 = true;
                     enabled_extensions.push(extension_name);
                 }
+                "VK_KHR_swapchain_mutable_format" => {
+                    wsi_support.swapchain_mutable_format = true;
+                    enabled_extensions.push(extension_name);
+                }
                 _ => {}
             }
         }
         assert!(khr_swapchain_support);
+        assert!(wsi_support.swapchain_mutable_format);
     }
 
     pub fn new(
@@ -206,8 +214,26 @@ impl VulkanDevice {
         window: &dyn AsRawWindow,
         width: u32,
         height: u32,
-        format: ImageFormat,
-    ) -> Result<(u32, u32, Image), SwapchainOutOfDateError> {
+        usage: ImageUsageFlags,
+        formats: &[ImageFormat],
+        images: &mut [Image],
+    ) -> Result<SwapchainImage, SwapchainOutOfDateError> {
+        assert!(
+            !formats.is_empty(),
+            "must provide at least one swapchain format"
+        );
+        assert!(
+            formats.len() == images.len(),
+            "number of requested formats and number of output images must match"
+        );
+
+        if formats.len() > 1 {
+            assert!(
+                self.wsi.support.swapchain_mutable_format,
+                "VK_KHR_swapchain_mutable_format support required for multiple swapchain formats"
+            );
+        }
+
         let raw_window = window.as_raw_window();
         let mut surfaces = self.wsi.surfaces.lock();
         let surface = *surfaces
@@ -225,7 +251,7 @@ impl VulkanDevice {
                         .xcb_surface_fn
                         .as_ref()
                         .unwrap()
-                        .create_xcb_surface(self.instance, &create_info, None, &mut surface,));
+                        .create_xcb_surface(self.instance, &create_info, None, &mut surface));
                     surface
                 }
                 RawWindow::Xlib(xlib) => {
@@ -240,7 +266,7 @@ impl VulkanDevice {
                         .xlib_surface_fn
                         .as_ref()
                         .unwrap()
-                        .create_xlib_surface(self.instance, &create_info, None, &mut surface,));
+                        .create_xlib_surface(self.instance, &create_info, None, &mut surface));
                     surface
                 }
                 RawWindow::Wayland(wayland) => {
@@ -255,12 +281,17 @@ impl VulkanDevice {
                         .wayland_surface_fn
                         .as_ref()
                         .unwrap()
-                        .create_wayland_surface(self.instance, &create_info, None, &mut surface,));
+                        .create_wayland_surface(self.instance, &create_info, None, &mut surface));
                     surface
                 }
             });
 
-        let format = vulkan_format(format);
+        let formats = formats
+            .iter()
+            .copied()
+            .map(vulkan_format)
+            .collect::<Vec<_>>();
+        let format = formats[0];
 
         let mut swapchains = self.wsi.swapchains.lock();
         let vulkan_swapchain = swapchains.entry(surface).or_insert_with(|| {
@@ -278,7 +309,7 @@ impl VulkanDevice {
                 "universal queue does not support presenting this surface"
             );
 
-            let formats = vk_vec(|count, ptr| unsafe {
+            let surface_formats = vk_vec(|count, ptr| unsafe {
                 self.wsi.surface_fn.get_physical_device_surface_formats(
                     self.physical_device,
                     surface,
@@ -310,7 +341,7 @@ impl VulkanDevice {
                     &mut capabilities
                 ));
 
-            let surface_format = formats
+            let surface_format = surface_formats
                 .iter()
                 .copied()
                 .find(|&x| x.format == format)
@@ -319,13 +350,16 @@ impl VulkanDevice {
             VulkanSwapchain {
                 surface_format,
                 state: VulkanSwapchainState::Vacant,
-                _formats: formats,
+                _formats: surface_formats,
                 _present_modes: present_modes,
                 capabilities,
             }
         });
 
-        assert_eq!(format, vulkan_swapchain.surface_format.format);
+        assert_eq!(
+            format, vulkan_swapchain.surface_format.format,
+            "cannot change swapchain format after creation"
+        );
 
         let frame = self.frame(frame);
         let mut image_pool = self.image_pool.lock();
@@ -361,15 +395,18 @@ impl VulkanDevice {
             match &mut vulkan_swapchain.state {
                 VulkanSwapchainState::Vacant => {
                     let mut new_swapchain = vk::SwapchainKHR::null();
-                    let create_info = vk::SwapchainCreateInfoKHR {
+
+                    let format_list_create_info = vk::ImageFormatListCreateInfo {
+                        view_formats: formats.as_slice().into(),
+                        ..default()
+                    };
+                    let mut create_info = vk::SwapchainCreateInfoKHR {
                         surface,
                         min_image_count: vulkan_swapchain.capabilities.min_image_count,
                         image_format: vulkan_swapchain.surface_format.format,
                         image_color_space: vulkan_swapchain.surface_format.color_space,
                         image_extent: vk::Extent2d { width, height },
-                        image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
-                            | vk::ImageUsageFlags::TRANSFER_SRC
-                            | vk::ImageUsageFlags::TRANSFER_DST,
+                        image_usage: vulkan_image_usage_flags(usage),
                         image_array_layers: 1,
                         image_sharing_mode: vk::SharingMode::Exclusive,
                         pre_transform: vk::SurfaceTransformFlagsKHR::IDENTITY,
@@ -379,6 +416,14 @@ impl VulkanDevice {
                         old_swapchain,
                         ..default()
                     };
+
+                    // Ask for mutable if we need it.
+                    if formats.len() > 1 {
+                        create_info._next =
+                            &format_list_create_info as *const _ as *const core::ffi::c_void;
+                        create_info.flags |= vk::SwapchainCreateFlagsKHR::MUTABLE_FORMAT;
+                    }
+
                     vk_check!(self.wsi.swapchain_fn.create_swapchain(
                         self.device,
                         &create_info,
@@ -387,7 +432,7 @@ impl VulkanDevice {
                     ));
                     assert!(!new_swapchain.is_null());
 
-                    let images = vk_vec(|count, ptr| unsafe {
+                    let swapchain_images = vk_vec(|count, ptr| unsafe {
                         self.wsi.swapchain_fn.get_swapchain_images(
                             self.device,
                             new_swapchain,
@@ -396,13 +441,15 @@ impl VulkanDevice {
                         )
                     });
 
-                    let image_views = images
-                        .iter()
-                        .map(|&image| {
+                    let mut image_views =
+                        Vec::with_capacity(swapchain_images.len() * formats.len());
+
+                    for &swapchain_image in &swapchain_images {
+                        for &format in &formats {
                             let create_info = vk::ImageViewCreateInfo {
-                                image,
+                                image: swapchain_image,
                                 view_type: vk::ImageViewType::Type2d,
-                                format: vulkan_swapchain.surface_format.format,
+                                format,
                                 subresource_range: vk::ImageSubresourceRange {
                                     aspect_mask: vk::ImageAspectFlags::COLOR,
                                     base_mip_level: 0,
@@ -423,13 +470,16 @@ impl VulkanDevice {
                             let handle = image_pool.insert(VulkanImageHolder::Swapchain(
                                 VulkanImageSwapchain {
                                     surface,
-                                    image,
+                                    image: swapchain_image,
                                     view,
                                 },
                             ));
-                            Image(handle)
-                        })
-                        .collect::<Box<_>>();
+
+                            image_views.push(Image(handle));
+                        }
+                    }
+
+                    let image_views = image_views.into_boxed_slice();
 
                     vulkan_swapchain.state = VulkanSwapchainState::Occupied {
                         width,
@@ -518,9 +568,11 @@ impl VulkanDevice {
                     present_info.acquire = acquire;
                     present_info.image_index = image_index;
                     present_info.swapchain = swapchain;
-                    let view = image_views[image_index.widen()];
 
-                    return Ok((width, height, view));
+                    let base_index = image_index.widen() * formats.len();
+                    images.copy_from_slice(&image_views[base_index..base_index + formats.len()]);
+
+                    return Ok(SwapchainImage { width, height });
                 }
             }
         }

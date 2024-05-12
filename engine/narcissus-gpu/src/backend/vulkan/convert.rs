@@ -6,8 +6,8 @@ use vulkan_sys as vk;
 use crate::{
     BindingType, BlendMode, BufferUsageFlags, ClearValue, CompareOp, CullingMode, FrontFace,
     ImageAspectFlags, ImageDimension, ImageFormat, ImageSubresourceLayers, ImageSubresourceRange,
-    ImageTiling, IndexType, LoadOp, PolygonMode, ShaderStageFlags, StencilOp, StencilOpState,
-    StoreOp, Topology,
+    ImageTiling, ImageUsageFlags, IndexType, LoadOp, PolygonMode, ShaderStageFlags, StencilOp,
+    StencilOpState, StoreOp, Topology,
 };
 
 #[must_use]
@@ -70,6 +70,26 @@ pub fn vulkan_buffer_usage_flags(usage: BufferUsageFlags) -> vk::BufferUsageFlag
     }
     if usage.contains(BufferUsageFlags::TRANSFER) {
         usage_flags |= vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST;
+    }
+    usage_flags
+}
+
+pub fn vulkan_image_usage_flags(usage: ImageUsageFlags) -> vk::ImageUsageFlags {
+    let mut usage_flags = vk::ImageUsageFlags::default();
+    if usage.contains(ImageUsageFlags::SAMPLED) {
+        usage_flags |= vk::ImageUsageFlags::SAMPLED;
+    }
+    if usage.contains(ImageUsageFlags::STORAGE) {
+        usage_flags |= vk::ImageUsageFlags::STORAGE;
+    }
+    if usage.contains(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT) {
+        usage_flags |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+    }
+    if usage.contains(ImageUsageFlags::COLOR_ATTACHMENT) {
+        usage_flags |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+    }
+    if usage.contains(ImageUsageFlags::TRANSFER) {
+        usage_flags |= vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC;
     }
     usage_flags
 }

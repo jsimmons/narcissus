@@ -22,7 +22,8 @@ use crate::{
     ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageTiling,
     ImageUsageFlags, ImageViewDesc, IndexType, MemoryLocation, Offset2d, Offset3d,
     PersistentBuffer, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
-    SamplerFilter, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
+    SamplerFilter, SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer,
+    TypedBind,
 };
 
 mod allocator;
@@ -971,26 +972,7 @@ impl Device for VulkanDevice {
         };
 
         let tiling = vulkan_image_tiling(desc.tiling);
-
-        let mut usage = default();
-        if desc.usage.contains(ImageUsageFlags::SAMPLED) {
-            usage |= vk::ImageUsageFlags::SAMPLED;
-        }
-        if desc.usage.contains(ImageUsageFlags::STORAGE) {
-            usage |= vk::ImageUsageFlags::STORAGE;
-        }
-        if desc
-            .usage
-            .contains(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
-        {
-            usage |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
-        }
-        if desc.usage.contains(ImageUsageFlags::COLOR_ATTACHMENT) {
-            usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
-        }
-        if desc.usage.contains(ImageUsageFlags::TRANSFER) {
-            usage |= vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC;
-        }
+        let usage = vulkan_image_usage_flags(desc.usage);
 
         let queue_family_indices = &[self.universal_queue_family_index];
         let create_info = vk::ImageCreateInfo {
@@ -2331,9 +2313,11 @@ impl Device for VulkanDevice {
         window: &dyn AsRawWindow,
         width: u32,
         height: u32,
-        format: ImageFormat,
-    ) -> Result<(u32, u32, Image), SwapchainOutOfDateError> {
-        self.acquire_swapchain(frame, window, width, height, format)
+        usage: ImageUsageFlags,
+        formats: &[ImageFormat],
+        images: &mut [Image],
+    ) -> Result<SwapchainImage, SwapchainOutOfDateError> {
+        self.acquire_swapchain(frame, window, width, height, usage, formats, images)
     }
 
     fn destroy_swapchain(&self, window: &dyn AsRawWindow) {

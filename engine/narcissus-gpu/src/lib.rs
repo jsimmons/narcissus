@@ -695,6 +695,11 @@ impl std::fmt::Display for SwapchainOutOfDateError {
 
 impl std::error::Error for SwapchainOutOfDateError {}
 
+pub struct SwapchainImage {
+    pub width: u32,
+    pub height: u32,
+}
+
 pub trait Device {
     fn create_buffer(&self, desc: &BufferDesc) -> Buffer;
     fn create_persistent_buffer<'device>(
@@ -721,8 +726,10 @@ pub trait Device {
         window: &dyn AsRawWindow,
         width: u32,
         height: u32,
-        format: ImageFormat,
-    ) -> Result<(u32, u32, Image), SwapchainOutOfDateError>;
+        usage: ImageUsageFlags,
+        formats: &[ImageFormat],
+        images: &mut [Image],
+    ) -> Result<SwapchainImage, SwapchainOutOfDateError>;
 
     fn destroy_swapchain(&self, window: &dyn AsRawWindow);
 

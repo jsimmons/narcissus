@@ -14,7 +14,7 @@ use narcissus_gpu::{
     DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
     ImageDimension, ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, IndexType, LoadOp,
     MemoryLocation, Offset2d, PersistentBuffer, RenderingAttachment, RenderingDesc, Scissor,
-    StoreOp, ThreadToken, TypedBind, Viewport,
+    StoreOp, SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -824,7 +824,7 @@ impl<'device> DrawState<'device> {
                     usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
                     host_mapped: false,
                     dimension: ImageDimension::Type2d,
-                    format: ImageFormat::R8_UNORM,
+                    format: ImageFormat::R8_SRGB,
                     tiling: ImageTiling::Optimal,
                     width: ui_state.glyph_cache.width() as u32,
                     height: ui_state.glyph_cache.height() as u32,
@@ -1154,7 +1154,7 @@ pub fn main() {
         height: 600,
     });
 
-    let scale = 2.0;
+    let scale = 1.0;
 
     let thread_token = ThreadToken::new();
     let thread_token = &thread_token;
@@ -1177,19 +1177,29 @@ pub fn main() {
         {
             let frame = &frame;
 
-            let (width, height, swapchain_image) = loop {
-                let (width, height) = window.drawable_extent();
+            let formats = &[ImageFormat::RGBA8_SRGB];
+            let mut swapchain_images = [Image::default(); 1];
+
+            let SwapchainImage { width, height } = loop {
+                let (_width, height) = window.extent();
+                let (drawable_width, drawable_height) = window.drawable_extent();
+
+                ui_state.scale = drawable_height as f32 / height as f32;
 
                 if let Ok(result) = gpu.acquire_swapchain(
                     frame,
                     window.upcast(),
-                    width,
-                    height,
-                    ImageFormat::BGRA8_SRGB,
+                    drawable_width,
+                    drawable_height,
+                    ImageUsageFlags::COLOR_ATTACHMENT,
+                    formats,
+                    &mut swapchain_images,
                 ) {
                     break result;
                 }
             };
+
+            let [swapchain_image_srgb] = swapchain_images;
 
             let tick_start = Instant::now();
             'tick: loop {
@@ -1296,7 +1306,7 @@ pub fn main() {
                 &game_state,
                 width,
                 height,
-                swapchain_image,
+                swapchain_image_srgb,
             );
         }
 
