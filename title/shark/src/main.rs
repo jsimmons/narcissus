@@ -1217,46 +1217,23 @@ pub fn main() {
                                 continue 'poll_events;
                             }
 
-                            if key == Key::Escape {
-                                break 'main;
-                            }
+                            let action = match key {
+                                Key::Left | Key::A => Some(Action::Left),
+                                Key::Right | Key::D => Some(Action::Right),
+                                Key::Up | Key::W => Some(Action::Up),
+                                Key::Down | Key::S => Some(Action::Down),
+                                Key::Space => Some(Action::Damage),
+                                Key::Escape => break 'main,
+                                _ => None,
+                            };
 
-                            {
-                                let value = match pressed {
-                                    PressedState::Released => 0.0,
-                                    PressedState::Pressed => 1.0,
-                                };
+                            let value = match pressed {
+                                PressedState::Released => 0.0,
+                                PressedState::Pressed => 1.0,
+                            };
 
-                                if key == Key::Left || key == Key::A {
-                                    action_queue.push(ActionEvent {
-                                        action: Action::Left,
-                                        value,
-                                    })
-                                }
-                                if key == Key::Right || key == Key::D {
-                                    action_queue.push(ActionEvent {
-                                        action: Action::Right,
-                                        value,
-                                    })
-                                }
-                                if key == Key::Up || key == Key::W {
-                                    action_queue.push(ActionEvent {
-                                        action: Action::Up,
-                                        value,
-                                    })
-                                }
-                                if key == Key::Down || key == Key::S {
-                                    action_queue.push(ActionEvent {
-                                        action: Action::Down,
-                                        value,
-                                    })
-                                }
-                                if key == Key::Space {
-                                    action_queue.push(ActionEvent {
-                                        action: Action::Damage,
-                                        value,
-                                    })
-                                }
+                            if let Some(action) = action {
+                                action_queue.push(ActionEvent { action, value })
                             }
                         }
                         Quit => {
