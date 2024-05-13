@@ -121,7 +121,8 @@ macro_rules! flags_def {
         flags_def!($name, u32);
     };
     ($name:ident, $ty:ty) => {
-        #[derive(PartialEq, Hash, Debug)]
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+        #[repr(transparent)]
         pub struct $name($ty);
 
         impl $name {
@@ -150,22 +151,6 @@ macro_rules! flags_def {
                 self.0.count_ones()
             }
         }
-
-        impl Clone for $name {
-            fn clone(&self) -> Self {
-                *self
-            }
-        }
-
-        impl Copy for $name {}
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self(0)
-            }
-        }
-
-        impl Eq for $name {}
 
         impl std::ops::BitOr for $name {
             type Output = Self;
