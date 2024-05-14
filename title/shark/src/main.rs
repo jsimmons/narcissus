@@ -2,6 +2,7 @@ use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use narcissus_core::dds;
 use renderdoc_sys as rdoc;
 
 use fonts::{FontFamily, Fonts};
@@ -12,15 +13,18 @@ use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
     create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder, Device,
     DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
-    ImageDimension, ImageFormat, ImageLayout, ImageTiling, ImageUsageFlags, IndexType, LoadOp,
-    MemoryLocation, Offset2d, PersistentBuffer, RenderingAttachment, RenderingDesc, Scissor,
-    StoreOp, SwapchainImage, ThreadToken, TypedBind, Viewport,
+    ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange, ImageTiling, ImageUsageFlags,
+    IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer, RenderingAttachment,
+    RenderingDesc, Scissor, StoreOp, SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
     clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
-use pipelines::{BasicPipeline, BasicUniforms, PrimitiveInstance, PrimitiveVertex, UiPipeline};
+use pipelines::{
+    BasicPipeline, BasicUniforms, DisplayTransformPipeline, PrimitiveInstance, PrimitiveVertex,
+    UiPipeline,
+};
 use spring::simple_spring_damper_exact;
 
 mod fonts;
@@ -522,10 +526,10 @@ impl<'a> UiState<'a> {
     }
 }
 
-struct Model<'device> {
+struct Model<'gpu> {
     indices: u32,
-    vertex_buffer: PersistentBuffer<'device>,
-    index_buffer: PersistentBuffer<'device>,
+    vertex_buffer: PersistentBuffer<'gpu>,
+    index_buffer: PersistentBuffer<'gpu>,
 }
 
 enum ModelRes {
@@ -536,33 +540,37 @@ impl ModelRes {
     const MAX_MODELS: usize = 1;
 }
 
-struct Models<'device>([Model<'device>; ModelRes::MAX_MODELS]);
+struct Models<'gpu>([Model<'gpu>; ModelRes::MAX_MODELS]);
 
 enum ImageRes {
+    TonyMcMapfaceLut,
     Shark,
 }
 
 impl ImageRes {
-    const MAX_IMAGES: usize = 1;
+    const MAX_IMAGES: usize = 2;
 }
 
 struct Images([Image; ImageRes::MAX_IMAGES]);
 
 type Gpu = dyn Device + 'static;
 
-struct DrawState<'device> {
-    gpu: &'device Gpu,
+struct DrawState<'gpu> {
+    gpu: &'gpu Gpu,
 
     basic_pipeline: BasicPipeline,
     ui_pipeline: UiPipeline,
+    display_transform_pipeline: DisplayTransformPipeline,
 
     width: u32,
     height: u32,
 
     depth_image: Image,
+    render_target_image: Image,
+
     glyph_atlas_image: Image,
 
-    models: Models<'device>,
+    models: Models<'gpu>,
     images: Images,
 
     transforms: Vec<Affine3>,
@@ -673,6 +681,101 @@ fn load_images(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
         image
     }
 
+    fn load_dds<P>(
+        gpu: &Gpu,
+        frame: &Frame,
+        thread_token: &ThreadToken,
+        cmd_encoder: &mut CmdEncoder,
+        path: P,
+    ) -> Image
+    where
+        P: AsRef<Path>,
+    {
+        let image_data = std::fs::read(path.as_ref()).unwrap();
+        let dds = dds::Dds::from_buffer(&image_data).unwrap();
+        let header_dxt10 = dds.header_dxt10.unwrap();
+
+        let width = dds.header.width;
+        let height = dds.header.height;
+        let depth = dds.header.depth;
+
+        let dimension = match header_dxt10.resource_dimension {
+            dds::D3D10ResourceDimension::Texture1d => ImageDimension::Type1d,
+            dds::D3D10ResourceDimension::Texture2d => ImageDimension::Type2d,
+            dds::D3D10ResourceDimension::Texture3d => ImageDimension::Type3d,
+            _ => panic!(),
+        };
+
+        let format = match header_dxt10.dxgi_format {
+            dds::DxgiFormat::R9G9B9E5_SHAREDEXP => ImageFormat::E5B9G9R9_UFLOAT,
+            _ => panic!(),
+        };
+
+        let image = gpu.create_image(&ImageDesc {
+            memory_location: MemoryLocation::Device,
+            host_mapped: false,
+            usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+            dimension,
+            format,
+            tiling: ImageTiling::Optimal,
+            width,
+            height,
+            depth,
+            layer_count: 1,
+            mip_levels: 1,
+        });
+
+        gpu.cmd_barrier(
+            cmd_encoder,
+            None,
+            &[ImageBarrier {
+                prev_access: &[Access::None],
+                next_access: &[Access::TransferWrite],
+                prev_layout: ImageLayout::Optimal,
+                next_layout: ImageLayout::Optimal,
+                subresource_range: ImageSubresourceRange::default(),
+                image,
+            }],
+        );
+
+        let buffer = gpu.request_transient_buffer_with_data(
+            frame,
+            thread_token,
+            BufferUsageFlags::TRANSFER,
+            dds.data,
+        );
+
+        gpu.cmd_copy_buffer_to_image(
+            cmd_encoder,
+            buffer.to_arg(),
+            image,
+            ImageLayout::Optimal,
+            &[BufferImageCopy {
+                image_extent: Extent3d {
+                    width,
+                    height,
+                    depth,
+                },
+                ..default()
+            }],
+        );
+
+        gpu.cmd_barrier(
+            cmd_encoder,
+            None,
+            &[ImageBarrier {
+                prev_access: &[Access::TransferWrite],
+                next_access: &[Access::ShaderSampledImageRead],
+                prev_layout: ImageLayout::Optimal,
+                next_layout: ImageLayout::Optimal,
+                subresource_range: ImageSubresourceRange::default(),
+                image,
+            }],
+        );
+
+        image
+    }
+
     let images;
     let frame = gpu.begin_frame();
     {
@@ -682,13 +785,22 @@ fn load_images(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
         {
             let cmd_encoder = &mut cmd_encoder;
 
-            images = Images([load_image(
-                gpu,
-                frame,
-                thread_token,
-                cmd_encoder,
-                "title/shark/data/blåhaj.png",
-            )]);
+            images = Images([
+                load_dds(
+                    gpu,
+                    frame,
+                    thread_token,
+                    cmd_encoder,
+                    "title/shark/data/tony_mc_mapface.dds",
+                ),
+                load_image(
+                    gpu,
+                    frame,
+                    thread_token,
+                    cmd_encoder,
+                    "title/shark/data/blåhaj.png",
+                ),
+            ]);
         }
 
         gpu.submit(frame, cmd_encoder);
@@ -698,10 +810,11 @@ fn load_images(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
     images
 }
 
-impl<'device> DrawState<'device> {
-    fn new(gpu: &'device Gpu, thread_token: &ThreadToken) -> Self {
+impl<'gpu> DrawState<'gpu> {
+    fn new(gpu: &'gpu Gpu, thread_token: &ThreadToken) -> Self {
         let basic_pipeline = BasicPipeline::new(gpu);
         let ui_pipeline = UiPipeline::new(gpu);
+        let primitive_pipeline = DisplayTransformPipeline::new(gpu);
 
         let models = load_models(gpu);
         let images = load_images(gpu, thread_token);
@@ -710,9 +823,11 @@ impl<'device> DrawState<'device> {
             gpu,
             basic_pipeline,
             ui_pipeline,
+            display_transform_pipeline: primitive_pipeline,
             width: 0,
             height: 0,
             depth_image: default(),
+            render_target_image: default(),
             glyph_atlas_image: default(),
             models,
             images,
@@ -783,18 +898,64 @@ impl<'device> DrawState<'device> {
         );
         let clip_from_model = clip_from_camera * camera_from_model;
 
+        let atlas_width = ui_state.glyph_cache.width() as u32;
+        let atlas_height = ui_state.glyph_cache.height() as u32;
+
         let mut cmd_encoder = self.gpu.request_cmd_encoder(frame, thread_token);
         {
             let cmd_encoder = &mut cmd_encoder;
 
+            if self.glyph_atlas_image.is_null() {
+                self.glyph_atlas_image = gpu.create_image(&ImageDesc {
+                    memory_location: MemoryLocation::Device,
+                    host_mapped: false,
+                    usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+                    dimension: ImageDimension::Type2d,
+                    format: ImageFormat::R8_SRGB,
+                    tiling: ImageTiling::Optimal,
+                    width: atlas_width,
+                    height: atlas_height,
+                    depth: 1,
+                    layer_count: 1,
+                    mip_levels: 1,
+                });
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    None,
+                    &[ImageBarrier::layout_optimal(
+                        &[Access::None],
+                        &[Access::FragmentShaderSampledImageRead],
+                        self.glyph_atlas_image,
+                        ImageAspectFlags::COLOR,
+                    )],
+                );
+            }
+
             if width != self.width || height != self.height {
                 gpu.destroy_image(frame, self.depth_image);
+                gpu.destroy_image(frame, self.render_target_image);
+
                 self.depth_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
                     host_mapped: false,
                     usage: ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                     dimension: ImageDimension::Type2d,
                     format: ImageFormat::DEPTH_F32,
+                    tiling: ImageTiling::Optimal,
+                    width,
+                    height,
+                    depth: 1,
+                    layer_count: 1,
+                    mip_levels: 1,
+                });
+
+                self.render_target_image = gpu.create_image(&ImageDesc {
+                    memory_location: MemoryLocation::Device,
+                    host_mapped: false,
+                    usage: ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::STORAGE,
+                    dimension: ImageDimension::Type2d,
+                    format: ImageFormat::RGBA16_FLOAT,
                     tiling: ImageTiling::Optimal,
                     width,
                     height,
@@ -818,44 +979,10 @@ impl<'device> DrawState<'device> {
                 self.height = height;
             }
 
-            if self.glyph_atlas_image.is_null() {
-                let image = gpu.create_image(&ImageDesc {
-                    memory_location: MemoryLocation::Device,
-                    usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-                    host_mapped: false,
-                    dimension: ImageDimension::Type2d,
-                    format: ImageFormat::R8_SRGB,
-                    tiling: ImageTiling::Optimal,
-                    width: ui_state.glyph_cache.width() as u32,
-                    height: ui_state.glyph_cache.height() as u32,
-                    depth: 1,
-                    layer_count: 1,
-                    mip_levels: 1,
-                });
-
-                gpu.cmd_barrier(
-                    cmd_encoder,
-                    None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::None],
-                        &[Access::ShaderSampledImageRead],
-                        image,
-                        ImageAspectFlags::COLOR,
-                    )],
-                );
-
-                self.glyph_atlas_image = image;
-            }
-
-            let atlas_width = ui_state.glyph_cache.width() as u32;
-            let atlas_height = ui_state.glyph_cache.height() as u32;
-
             let (touched_glyphs, glyph_texture) = ui_state.glyph_cache.update_atlas();
 
             // If the atlas has been updated, we need to upload it to the GPU.
             if let Some(texture) = glyph_texture {
-                let image = self.glyph_atlas_image;
-
                 let buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
@@ -869,7 +996,7 @@ impl<'device> DrawState<'device> {
                     &[ImageBarrier::layout_optimal(
                         &[Access::ShaderSampledImageRead],
                         &[Access::TransferWrite],
-                        image,
+                        self.glyph_atlas_image,
                         ImageAspectFlags::COLOR,
                     )],
                 );
@@ -877,7 +1004,7 @@ impl<'device> DrawState<'device> {
                 gpu.cmd_copy_buffer_to_image(
                     cmd_encoder,
                     buffer.to_arg(),
-                    image,
+                    self.glyph_atlas_image,
                     ImageLayout::Optimal,
                     &[BufferImageCopy {
                         image_extent: Extent3d {
@@ -895,11 +1022,22 @@ impl<'device> DrawState<'device> {
                     &[ImageBarrier::layout_optimal(
                         &[Access::TransferWrite],
                         &[Access::FragmentShaderSampledImageRead],
-                        image,
+                        self.glyph_atlas_image,
                         ImageAspectFlags::COLOR,
                     )],
                 );
             }
+
+            gpu.cmd_barrier(
+                cmd_encoder,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::None],
+                    &[Access::ColorAttachmentWrite],
+                    self.render_target_image,
+                    ImageAspectFlags::COLOR,
+                )],
+            );
 
             gpu.cmd_begin_rendering(
                 cmd_encoder,
@@ -909,7 +1047,7 @@ impl<'device> DrawState<'device> {
                     width,
                     height,
                     color_attachments: &[RenderingAttachment {
-                        image: swapchain_image,
+                        image: self.render_target_image,
                         load_op: LoadOp::Clear(ClearValue::ColorF32([1.0, 1.0, 1.0, 1.0])),
                         store_op: StoreOp::Store,
                     }],
@@ -1005,7 +1143,7 @@ impl<'device> DrawState<'device> {
                             Bind {
                                 binding: 3,
                                 array_element: 0,
-                                typed: TypedBind::Image(&[(ImageLayout::Optimal, image)]),
+                                typed: TypedBind::SampledImage(&[(ImageLayout::Optimal, image)]),
                             },
                         ],
                     );
@@ -1104,7 +1242,7 @@ impl<'device> DrawState<'device> {
                             Bind {
                                 binding: 5,
                                 array_element: 0,
-                                typed: TypedBind::Image(&[(
+                                typed: TypedBind::SampledImage(&[(
                                     ImageLayout::Optimal,
                                     self.glyph_atlas_image,
                                 )]),
@@ -1126,6 +1264,60 @@ impl<'device> DrawState<'device> {
             }
 
             gpu.cmd_end_rendering(cmd_encoder);
+
+            gpu.cmd_barrier(
+                cmd_encoder,
+                None,
+                &[ImageBarrier {
+                    prev_access: &[Access::ColorAttachmentWrite],
+                    prev_layout: ImageLayout::Optimal,
+                    next_access: &[Access::ShaderOtherRead],
+                    next_layout: ImageLayout::General,
+                    image: self.render_target_image,
+                    subresource_range: ImageSubresourceRange::default(),
+                }],
+            );
+
+            gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
+
+            gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline.pipeline);
+
+            gpu.cmd_set_bind_group(
+                frame,
+                cmd_encoder,
+                self.display_transform_pipeline.bind_group_layout,
+                0,
+                &[
+                    Bind {
+                        binding: 0,
+                        array_element: 0,
+                        typed: TypedBind::Sampler(&[self.display_transform_pipeline.sampler]),
+                    },
+                    Bind {
+                        binding: 1,
+                        array_element: 0,
+                        typed: TypedBind::SampledImage(&[(
+                            ImageLayout::Optimal,
+                            self.images.0[ImageRes::TonyMcMapfaceLut as usize],
+                        )]),
+                    },
+                    Bind {
+                        binding: 2,
+                        array_element: 0,
+                        typed: TypedBind::StorageImage(&[(
+                            ImageLayout::General,
+                            self.render_target_image,
+                        )]),
+                    },
+                    Bind {
+                        binding: 3,
+                        array_element: 0,
+                        typed: TypedBind::StorageImage(&[(ImageLayout::General, swapchain_image)]),
+                    },
+                ],
+            );
+
+            gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
         gpu.submit(frame, cmd_encoder);
     }
@@ -1177,7 +1369,7 @@ pub fn main() {
         {
             let frame = &frame;
 
-            let formats = &[ImageFormat::RGBA8_SRGB];
+            let formats = &[ImageFormat::A2R10G10B10_UNORM];
             let mut swapchain_images = [Image::default(); 1];
 
             let SwapchainImage { width, height } = loop {
@@ -1191,7 +1383,7 @@ pub fn main() {
                     window.upcast(),
                     drawable_width,
                     drawable_height,
-                    ImageUsageFlags::COLOR_ATTACHMENT,
+                    ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::STORAGE,
                     formats,
                     &mut swapchain_images,
                 ) {
@@ -1199,7 +1391,7 @@ pub fn main() {
                 }
             };
 
-            let [swapchain_image_srgb] = swapchain_images;
+            let [swapchain_image_unorm] = swapchain_images;
 
             let tick_start = Instant::now();
             'tick: loop {
@@ -1283,7 +1475,7 @@ pub fn main() {
                 &game_state,
                 width,
                 height,
-                swapchain_image_srgb,
+                swapchain_image_unorm,
             );
         }
 

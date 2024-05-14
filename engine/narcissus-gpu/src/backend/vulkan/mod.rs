@@ -267,12 +267,19 @@ impl VulkanTransientBufferAllocator {
     }
 }
 
+struct VulkanTouchedSwapchain {
+    image: vk::Image,
+    layout: vk::ImageLayout,
+    access_mask: vk::AccessFlags2,
+    stage_mask: vk::PipelineStageFlags2,
+}
+
 struct VulkanCmdEncoder {
     #[cfg(debug_assertions)]
     in_render_pass: bool,
     command_buffer: vk::CommandBuffer,
     bound_pipeline: Option<VulkanBoundPipeline>,
-    swapchains_touched: HashMap<vk::SurfaceKHR, (vk::Image, vk::PipelineStageFlags2)>,
+    swapchains_touched: HashMap<vk::SurfaceKHR, VulkanTouchedSwapchain>,
 }
 
 impl Default for VulkanCmdEncoder {
@@ -1571,6 +1578,60 @@ impl Device for VulkanDevice {
         }
     }
 
+    fn cmd_compute_touch_swapchain(&self, cmd_encoder: &mut CmdEncoder, image: Image) {
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+
+        match self.image_pool.lock().get(image.0) {
+            Some(VulkanImageHolder::Swapchain(image)) => {
+                assert!(
+                    !cmd_encoder.swapchains_touched.contains_key(&image.surface),
+                    "swapchain attached multiple times in a command buffer"
+                );
+                cmd_encoder.swapchains_touched.insert(
+                    image.surface,
+                    VulkanTouchedSwapchain {
+                        image: image.image,
+                        layout: vk::ImageLayout::General,
+                        access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
+                        stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    },
+                );
+
+                // Transition swapchain image to shader storage write
+                let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
+                    src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    src_access_mask: vk::AccessFlags2::NONE,
+                    dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    dst_access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
+                    src_queue_family_index: self.universal_queue_family_index,
+                    dst_queue_family_index: self.universal_queue_family_index,
+                    old_layout: vk::ImageLayout::Undefined,
+                    new_layout: vk::ImageLayout::General,
+                    image: image.image,
+                    subresource_range: vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: !0,
+                        base_array_layer: 0,
+                        layer_count: !0,
+                    },
+                    ..default()
+                }];
+
+                let dependency_info = vk::DependencyInfo {
+                    image_memory_barriers: image_memory_barriers.into(),
+                    ..default()
+                };
+
+                unsafe {
+                    self.device_fn
+                        .cmd_pipeline_barrier2(cmd_encoder.command_buffer, &dependency_info)
+                };
+            }
+            _ => panic!(),
+        }
+    }
+
     fn cmd_barrier(
         &self,
         cmd_encoder: &mut CmdEncoder,
@@ -1786,7 +1847,7 @@ impl Device for VulkanDevice {
                     ..default()
                 }
             }
-            TypedBind::Image(images) => {
+            TypedBind::SampledImage(images) => {
                 let image_infos_iter = images.iter().map(|(image_layout, image)| {
                     let image_view = self.image_pool.lock().get(image.0).unwrap().image_view();
                     vk::DescriptorImageInfo {
@@ -1805,6 +1866,29 @@ impl Device for VulkanDevice {
                     dst_array_element: bind.array_element,
                     descriptor_count: image_infos.len() as u32,
                     descriptor_type: vk::DescriptorType::SampledImage,
+                    image_info: image_infos.as_ptr(),
+                    ..default()
+                }
+            }
+            TypedBind::StorageImage(images) => {
+                let image_infos_iter = images.iter().map(|(image_layout, image)| {
+                    let image_view = self.image_pool.lock().get(image.0).unwrap().image_view();
+                    vk::DescriptorImageInfo {
+                        image_layout: match image_layout {
+                            ImageLayout::Optimal => vk::ImageLayout::ReadOnlyOptimal,
+                            ImageLayout::General => vk::ImageLayout::General,
+                        },
+                        image_view,
+                        sampler: vk::Sampler::null(),
+                    }
+                });
+                let image_infos = arena.alloc_slice_fill_iter(image_infos_iter);
+                vk::WriteDescriptorSet {
+                    dst_set: descriptor_set,
+                    dst_binding: bind.binding,
+                    dst_array_element: bind.array_element,
+                    descriptor_count: image_infos.len() as u32,
+                    descriptor_type: vk::DescriptorType::StorageImage,
                     image_info: image_infos.as_ptr(),
                     ..default()
                 }
@@ -1946,10 +2030,12 @@ impl Device for VulkanDevice {
                         );
                         cmd_encoder.swapchains_touched.insert(
                             image.surface,
-                            (
-                                image.image,
-                                vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-                            ),
+                            VulkanTouchedSwapchain {
+                                image: image.image,
+                                layout: vk::ImageLayout::AttachmentOptimal,
+                                access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                                stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                            },
                         );
 
                         // transition swapchain image to attachment optimal
@@ -2144,16 +2230,22 @@ impl Device for VulkanDevice {
         #[cfg(debug_assertions)]
         debug_assert!(!cmd_encoder.in_render_pass);
 
-        for &(image, _) in cmd_encoder.swapchains_touched.values() {
+        for &VulkanTouchedSwapchain {
+            image,
+            layout,
+            access_mask,
+            stage_mask,
+        } in cmd_encoder.swapchains_touched.values()
+        {
             // transition swapchain image from attachment optimal to present src
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
-                src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-                src_access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
-                dst_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                src_stage_mask: stage_mask,
+                src_access_mask: access_mask,
+                dst_stage_mask: stage_mask,
                 dst_access_mask: vk::AccessFlags2::NONE,
                 src_queue_family_index: self.universal_queue_family_index,
                 dst_queue_family_index: self.universal_queue_family_index,
-                old_layout: vk::ImageLayout::AttachmentOptimal,
+                old_layout: layout,
                 new_layout: vk::ImageLayout::PresentSrcKhr,
                 image,
                 subresource_range: vk::ImageSubresourceRange {
@@ -2183,7 +2275,16 @@ impl Device for VulkanDevice {
         let mut signal_semaphores = Vec::new();
 
         if !cmd_encoder.swapchains_touched.is_empty() {
-            for (surface, (_, stage_mask)) in cmd_encoder.swapchains_touched.drain() {
+            for (
+                surface,
+                VulkanTouchedSwapchain {
+                    image: _,
+                    layout: _,
+                    access_mask: _,
+                    stage_mask,
+                },
+            ) in cmd_encoder.swapchains_touched.drain()
+            {
                 self.touch_swapchain(
                     frame,
                     surface,

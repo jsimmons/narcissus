@@ -458,7 +458,8 @@ pub enum IndexType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingType {
     Sampler,
-    Image,
+    SampledImage,
+    StorageImage,
     UniformBuffer,
     StorageBuffer,
     DynamicUniformBuffer,
@@ -490,7 +491,8 @@ pub enum BufferArg<'a> {
 
 pub enum TypedBind<'a> {
     Sampler(&'a [Sampler]),
-    Image(&'a [(ImageLayout, Image)]),
+    SampledImage(&'a [(ImageLayout, Image)]),
+    StorageImage(&'a [(ImageLayout, Image)]),
     UniformBuffer(&'a [BufferArg<'a>]),
     StorageBuffer(&'a [BufferArg<'a>]),
 }
@@ -784,6 +786,8 @@ pub trait Device {
         offset: u64,
         index_type: IndexType,
     );
+
+    fn cmd_compute_touch_swapchain(&self, cmd_encoder: &mut CmdEncoder, image: Image);
 
     fn cmd_set_pipeline(&self, cmd_encoder: &mut CmdEncoder, pipeline: Pipeline);
 

@@ -87,7 +87,7 @@ impl UiPipeline {
                 BindGroupLayoutEntryDesc {
                     slot: 5,
                     stages: ShaderStageFlags::ALL,
-                    binding_type: BindingType::Image,
+                    binding_type: BindingType::SampledImage,
                     count: 1,
                 },
             ],
@@ -113,7 +113,7 @@ impl UiPipeline {
             },
             bind_group_layouts: &[bind_group_layout],
             layout: GraphicsPipelineLayout {
-                color_attachment_formats: &[ImageFormat::RGBA8_SRGB],
+                color_attachment_formats: &[ImageFormat::RGBA16_FLOAT],
                 depth_attachment_format: Some(ImageFormat::DEPTH_F32),
                 stencil_attachment_format: None,
             },

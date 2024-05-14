@@ -158,7 +158,8 @@ pub fn vulkan_shader_stage_flags(stage_flags: ShaderStageFlags) -> vk::ShaderSta
 pub fn vulkan_descriptor_type(binding_type: BindingType) -> vk::DescriptorType {
     match binding_type {
         BindingType::Sampler => vk::DescriptorType::Sampler,
-        BindingType::Image => vk::DescriptorType::SampledImage,
+        BindingType::StorageImage => vk::DescriptorType::StorageImage,
+        BindingType::SampledImage => vk::DescriptorType::SampledImage,
         BindingType::UniformBuffer => vk::DescriptorType::UniformBuffer,
         BindingType::StorageBuffer => vk::DescriptorType::StorageBuffer,
         BindingType::DynamicUniformBuffer => vk::DescriptorType::UniformBufferDynamic,

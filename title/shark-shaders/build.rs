@@ -7,6 +7,7 @@ const SHADER_ROOT: &str = "shaders";
 enum ShaderStage {
     Vertex,
     Fragment,
+    Compute,
 }
 
 impl ShaderStage {
@@ -14,6 +15,7 @@ impl ShaderStage {
         match self {
             ShaderStage::Vertex => "vert",
             ShaderStage::Fragment => "frag",
+            ShaderStage::Compute => "comp",
         }
     }
 }
@@ -24,7 +26,7 @@ struct Shader {
     name: &'static str,
 }
 
-const SHADERS: [Shader; 4] = [
+const SHADERS: [Shader; 5] = [
     Shader {
         stage: ShaderStage::Vertex,
         name: "basic",
@@ -32,6 +34,10 @@ const SHADERS: [Shader; 4] = [
     Shader {
         stage: ShaderStage::Fragment,
         name: "basic",
+    },
+    Shader {
+        stage: ShaderStage::Compute,
+        name: "display_transform",
     },
     Shader {
         stage: ShaderStage::Vertex,
