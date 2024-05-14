@@ -1,5 +1,6 @@
 mod arena;
 mod bitset;
+pub mod dds;
 mod directory;
 mod finite;
 mod fixed_vec;
