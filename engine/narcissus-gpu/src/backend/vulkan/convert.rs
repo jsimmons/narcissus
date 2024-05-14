@@ -4,10 +4,10 @@ use narcissus_core::default;
 use vulkan_sys as vk;
 
 use crate::{
-    BindingType, BlendMode, BufferUsageFlags, ClearValue, CompareOp, CullingMode, FrontFace,
-    ImageAspectFlags, ImageDimension, ImageFormat, ImageSubresourceLayers, ImageSubresourceRange,
-    ImageTiling, ImageUsageFlags, IndexType, LoadOp, PolygonMode, ShaderStageFlags, StencilOp,
-    StencilOpState, StoreOp, Topology,
+    BindingType, BlendMode, BufferUsageFlags, ClearValue, ColorSpace, CompareOp, CullingMode,
+    FrontFace, ImageAspectFlags, ImageDimension, ImageFormat, ImageSubresourceLayers,
+    ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, PolygonMode,
+    PresentMode, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Topology,
 };
 
 #[must_use]
@@ -15,6 +15,13 @@ pub fn vulkan_bool32(b: bool) -> vk::Bool32 {
     match b {
         false => vk::Bool32::False,
         true => vk::Bool32::True,
+    }
+}
+
+#[must_use]
+pub fn vulkan_color_space(color_space: ColorSpace) -> vk::ColorSpaceKHR {
+    match color_space {
+        ColorSpace::Srgb => vk::ColorSpaceKHR::SrgbNonlinearKhr,
     }
 }
 
@@ -65,6 +72,15 @@ pub fn vulkan_aspect(aspect: ImageAspectFlags) -> vk::ImageAspectFlags {
     aspect_flags
 }
 
+pub fn vulkan_present_mode(present_mode: PresentMode) -> vk::PresentModeKHR {
+    match present_mode {
+        PresentMode::Immediate => vk::PresentModeKHR::Immediate,
+        PresentMode::Mailbox => vk::PresentModeKHR::Mailbox,
+        PresentMode::Fifo => vk::PresentModeKHR::Fifo,
+        PresentMode::FifoRelaxed => vk::PresentModeKHR::FifoRelaxed,
+    }
+}
+
 pub fn vulkan_buffer_usage_flags(usage: BufferUsageFlags) -> vk::BufferUsageFlags {
     let mut usage_flags = vk::BufferUsageFlags::default();
     if usage.contains(BufferUsageFlags::UNIFORM) {
@@ -98,6 +114,26 @@ pub fn vulkan_image_usage_flags(usage: ImageUsageFlags) -> vk::ImageUsageFlags {
     }
     if usage.contains(ImageUsageFlags::TRANSFER) {
         usage_flags |= vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC;
+    }
+    usage_flags
+}
+
+pub fn from_vulkan_image_usage_flags(usage: vk::ImageUsageFlags) -> ImageUsageFlags {
+    let mut usage_flags = ImageUsageFlags::default();
+    if usage.contains(vk::ImageUsageFlags::SAMPLED) {
+        usage_flags |= ImageUsageFlags::SAMPLED;
+    }
+    if usage.contains(vk::ImageUsageFlags::STORAGE) {
+        usage_flags |= ImageUsageFlags::STORAGE;
+    }
+    if usage.contains(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT) {
+        usage_flags |= ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+    }
+    if usage.contains(vk::ImageUsageFlags::COLOR_ATTACHMENT) {
+        usage_flags |= ImageUsageFlags::COLOR_ATTACHMENT;
+    }
+    if usage.contains(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC) {
+        usage_flags |= ImageUsageFlags::TRANSFER;
     }
     usage_flags
 }

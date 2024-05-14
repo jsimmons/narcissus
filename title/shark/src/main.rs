@@ -11,11 +11,12 @@ use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder, Device,
-    DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
-    ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange, ImageTiling, ImageUsageFlags,
-    IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer, RenderingAttachment,
-    RenderingDesc, Scissor, StoreOp, SwapchainImage, ThreadToken, TypedBind, Viewport,
+    create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder,
+    ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags,
+    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange,
+    ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer,
+    PresentMode, RenderingAttachment, RenderingDesc, Scissor, StoreOp, SwapchainConfigurator,
+    SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -1364,15 +1365,55 @@ pub fn main() {
     let mut last_frame = Instant::now();
     let mut tick_accumulator = target_dt;
 
+    struct Configurator();
+    impl SwapchainConfigurator for Configurator {
+        fn choose_present_mode(&mut self, _available_present_modes: &[PresentMode]) -> PresentMode {
+            PresentMode::Fifo
+        }
+
+        fn choose_surface_format(
+            &mut self,
+            _available_usage_flags: ImageUsageFlags,
+            available_surface_formats: &[(ImageFormat, ColorSpace)],
+        ) -> (ImageUsageFlags, (ImageFormat, ColorSpace)) {
+            let image_usage_flags = ImageUsageFlags::STORAGE;
+
+            if let Some(&swapchain_format) =
+                available_surface_formats
+                    .iter()
+                    .find(|(image_format, _color_space)| {
+                        image_format == &ImageFormat::A2R10G10B10_UNORM
+                    })
+            {
+                return (image_usage_flags, swapchain_format);
+            }
+
+            if let Some(&swapchain_format) = available_surface_formats
+                .iter()
+                .find(|(image_format, _color_space)| image_format == &ImageFormat::BGRA8_UNORM)
+            {
+                return (image_usage_flags, swapchain_format);
+            }
+
+            // Default
+            (
+                image_usage_flags,
+                (ImageFormat::RGBA8_UNORM, ColorSpace::Srgb),
+            )
+        }
+    }
+    let mut swapchain_configurator = Configurator();
+
     'main: loop {
         let frame = gpu.begin_frame();
         {
             let frame = &frame;
 
-            let formats = &[ImageFormat::A2R10G10B10_UNORM];
-            let mut swapchain_images = [Image::default(); 1];
-
-            let SwapchainImage { width, height } = loop {
+            let SwapchainImage {
+                width,
+                height,
+                image: swapchain_image,
+            } = loop {
                 let (_width, height) = window.extent();
                 let (drawable_width, drawable_height) = window.drawable_extent();
 
@@ -1383,15 +1424,11 @@ pub fn main() {
                     window.upcast(),
                     drawable_width,
                     drawable_height,
-                    ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::STORAGE,
-                    formats,
-                    &mut swapchain_images,
+                    &mut swapchain_configurator,
                 ) {
                     break result;
                 }
             };
-
-            let [swapchain_image_unorm] = swapchain_images;
 
             let tick_start = Instant::now();
             'tick: loop {
@@ -1475,7 +1512,7 @@ pub fn main() {
                 &game_state,
                 width,
                 height,
-                swapchain_image_unorm,
+                swapchain_image,
             );
         }
 

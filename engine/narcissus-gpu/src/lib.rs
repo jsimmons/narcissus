@@ -79,6 +79,19 @@ pub enum MemoryLocation {
     Device,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PresentMode {
+    Immediate,
+    Mailbox,
+    Fifo,
+    FifoRelaxed,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ColorSpace {
+    Srgb,
+}
+
 #[repr(C)]
 pub struct Viewport {
     pub x: f32,
@@ -120,7 +133,7 @@ pub enum ImageDimension {
     TypeCube,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[allow(non_camel_case_types)]
 pub enum ImageFormat {
     R8_SRGB,
@@ -704,6 +717,16 @@ impl std::error::Error for SwapchainOutOfDateError {}
 pub struct SwapchainImage {
     pub width: u32,
     pub height: u32,
+    pub image: Image,
+}
+
+pub trait SwapchainConfigurator {
+    fn choose_present_mode(&mut self, supported_present_modes: &[PresentMode]) -> PresentMode;
+    fn choose_surface_format(
+        &mut self,
+        supported_usage_flags: ImageUsageFlags,
+        supported_surface_formats: &[(ImageFormat, ColorSpace)],
+    ) -> (ImageUsageFlags, (ImageFormat, ColorSpace));
 }
 
 pub trait Device {
@@ -732,9 +755,7 @@ pub trait Device {
         window: &dyn AsRawWindow,
         width: u32,
         height: u32,
-        usage: ImageUsageFlags,
-        formats: &[ImageFormat],
-        images: &mut [Image],
+        configurator: &mut dyn SwapchainConfigurator,
     ) -> Result<SwapchainImage, SwapchainOutOfDateError>;
 
     fn destroy_swapchain(&self, window: &dyn AsRawWindow);

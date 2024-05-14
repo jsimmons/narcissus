@@ -19,11 +19,10 @@ use crate::{
     frame_counter::FrameCounter, Bind, BindGroupLayout, BindGroupLayoutDesc, Buffer, BufferArg,
     BufferDesc, BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device,
     Extent2d, Extent3d, Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image,
-    ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageTiling,
-    ImageUsageFlags, ImageViewDesc, IndexType, MemoryLocation, Offset2d, Offset3d,
-    PersistentBuffer, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc,
-    SamplerFilter, SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer,
-    TypedBind,
+    ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc,
+    IndexType, MemoryLocation, Offset2d, Offset3d, PersistentBuffer, Pipeline, Sampler,
+    SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter, SwapchainConfigurator,
+    SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
 };
 
 mod allocator;
@@ -2414,11 +2413,9 @@ impl Device for VulkanDevice {
         window: &dyn AsRawWindow,
         width: u32,
         height: u32,
-        usage: ImageUsageFlags,
-        formats: &[ImageFormat],
-        images: &mut [Image],
+        configurator: &mut dyn SwapchainConfigurator,
     ) -> Result<SwapchainImage, SwapchainOutOfDateError> {
-        self.acquire_swapchain(frame, window, width, height, usage, formats, images)
+        self.acquire_swapchain(frame, window, width, height, configurator)
     }
 
     fn destroy_swapchain(&self, window: &dyn AsRawWindow) {
