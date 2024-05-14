@@ -132,6 +132,7 @@ pub enum ImageFormat {
     RGBA16_FLOAT,
     A2R10G10B10_UNORM,
     A2B10G10R10_UNORM,
+    E5B9G9R9_UFLOAT,
     DEPTH_F32,
 }
 
