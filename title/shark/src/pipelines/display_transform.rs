@@ -1,7 +1,6 @@
 use narcissus_gpu::{
     BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
-    ComputePipelineDesc, Pipeline, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter,
-    ShaderDesc, ShaderStageFlags,
+    ComputePipelineDesc, Pipeline, ShaderDesc, ShaderStageFlags,
 };
 
 use crate::Gpu;
@@ -16,7 +15,6 @@ pub struct DisplayTransformUniforms {
 pub struct DisplayTransformPipeline {
     pub bind_group_layout: BindGroupLayout,
     pub pipeline: Pipeline,
-    pub sampler: Sampler,
 }
 
 impl DisplayTransformPipeline {
@@ -50,15 +48,6 @@ impl DisplayTransformPipeline {
             ],
         });
 
-        let sampler = gpu.create_sampler(&SamplerDesc {
-            filter: SamplerFilter::Bilinear,
-            address_mode: SamplerAddressMode::Clamp,
-            compare_op: None,
-            mip_lod_bias: 0.0,
-            min_lod: 0.0,
-            max_lod: 0.0,
-        });
-
         let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
@@ -70,7 +59,6 @@ impl DisplayTransformPipeline {
         Self {
             bind_group_layout,
             pipeline,
-            sampler,
         }
     }
 }

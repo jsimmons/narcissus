@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::ops::Index;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -15,8 +16,9 @@ use narcissus_gpu::{
     ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags,
     ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange,
     ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer,
-    PresentMode, RenderingAttachment, RenderingDesc, Scissor, StoreOp, SwapchainConfigurator,
-    SwapchainImage, ThreadToken, TypedBind, Viewport,
+    PresentMode, RenderingAttachment, RenderingDesc, Sampler, SamplerAddressMode, SamplerDesc,
+    SamplerFilter, Scissor, StoreOp, SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind,
+    Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -527,32 +529,323 @@ impl<'a> UiState<'a> {
     }
 }
 
-struct Model<'gpu> {
+enum SamplerRes {
+    Bilinear,
+}
+
+pub struct Samplers {
+    bilinear: Sampler,
+}
+
+impl Index<SamplerRes> for Samplers {
+    type Output = Sampler;
+
+    fn index(&self, index: SamplerRes) -> &Self::Output {
+        match index {
+            SamplerRes::Bilinear => &self.bilinear,
+        }
+    }
+}
+
+impl Samplers {
+    fn load(gpu: &Gpu) -> Samplers {
+        let bilinear = gpu.create_sampler(&SamplerDesc {
+            filter: SamplerFilter::Bilinear,
+            address_mode: SamplerAddressMode::Clamp,
+            compare_op: None,
+            mip_lod_bias: 0.0,
+            min_lod: 0.0,
+            max_lod: 0.0,
+        });
+        Samplers { bilinear }
+    }
+}
+
+struct Model<'a> {
     indices: u32,
-    vertex_buffer: PersistentBuffer<'gpu>,
-    index_buffer: PersistentBuffer<'gpu>,
+    vertex_buffer: PersistentBuffer<'a>,
+    index_buffer: PersistentBuffer<'a>,
 }
 
 enum ModelRes {
     Shark,
 }
 
-impl ModelRes {
-    const MAX_MODELS: usize = 1;
+struct Models<'a> {
+    shark: Model<'a>,
 }
 
-struct Models<'gpu>([Model<'gpu>; ModelRes::MAX_MODELS]);
+impl<'a> Index<ModelRes> for Models<'a> {
+    type Output = Model<'a>;
+
+    fn index(&self, index: ModelRes) -> &Self::Output {
+        match index {
+            ModelRes::Shark => &self.shark,
+        }
+    }
+}
+
+impl<'a> Models<'a> {
+    pub fn load(gpu: &'a Gpu) -> Models<'a> {
+        fn load_model<P>(gpu: &Gpu, path: P) -> Model
+        where
+            P: AsRef<Path>,
+        {
+            let (vertices, indices) = load_obj(path);
+            let vertex_buffer = gpu.create_persistent_buffer_with_data(
+                MemoryLocation::Device,
+                BufferUsageFlags::STORAGE,
+                vertices.as_slice(),
+            );
+            let index_buffer = gpu.create_persistent_buffer_with_data(
+                MemoryLocation::Device,
+                BufferUsageFlags::INDEX,
+                indices.as_slice(),
+            );
+
+            Model {
+                indices: indices.len() as u32,
+                vertex_buffer,
+                index_buffer,
+            }
+        }
+
+        Models {
+            shark: load_model(gpu, "title/shark/data/blåhaj.obj"),
+        }
+    }
+}
 
 enum ImageRes {
     TonyMcMapfaceLut,
     Shark,
 }
 
-impl ImageRes {
-    const MAX_IMAGES: usize = 2;
+struct Images {
+    tony_mc_mapface_lut: Image,
+    shark: Image,
 }
 
-struct Images([Image; ImageRes::MAX_IMAGES]);
+impl Index<ImageRes> for Images {
+    type Output = Image;
+
+    fn index(&self, index: ImageRes) -> &Self::Output {
+        match index {
+            ImageRes::TonyMcMapfaceLut => &self.tony_mc_mapface_lut,
+            ImageRes::Shark => &self.shark,
+        }
+    }
+}
+
+impl Images {
+    fn load(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
+        fn load_image<P>(
+            gpu: &Gpu,
+            frame: &Frame,
+            thread_token: &ThreadToken,
+            cmd_encoder: &mut CmdEncoder,
+            path: P,
+        ) -> Image
+        where
+            P: AsRef<Path>,
+        {
+            let image_data =
+                image::Image::from_buffer(std::fs::read(path.as_ref()).unwrap().as_slice())
+                    .unwrap();
+
+            let width = image_data.width() as u32;
+            let height = image_data.height() as u32;
+
+            let image = gpu.create_image(&ImageDesc {
+                memory_location: MemoryLocation::Device,
+                host_mapped: false,
+                usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+                dimension: ImageDimension::Type2d,
+                format: ImageFormat::RGBA8_SRGB,
+                tiling: ImageTiling::Optimal,
+                width,
+                height,
+                depth: 1,
+                layer_count: 1,
+                mip_levels: 1,
+            });
+
+            gpu.cmd_barrier(
+                cmd_encoder,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::None],
+                    &[Access::TransferWrite],
+                    image,
+                    ImageAspectFlags::COLOR,
+                )],
+            );
+
+            let buffer = gpu.request_transient_buffer_with_data(
+                frame,
+                thread_token,
+                BufferUsageFlags::TRANSFER,
+                image_data.as_slice(),
+            );
+
+            gpu.cmd_copy_buffer_to_image(
+                cmd_encoder,
+                buffer.to_arg(),
+                image,
+                ImageLayout::Optimal,
+                &[BufferImageCopy {
+                    image_extent: Extent3d {
+                        width,
+                        height,
+                        depth: 1,
+                    },
+                    ..default()
+                }],
+            );
+
+            gpu.cmd_barrier(
+                cmd_encoder,
+                None,
+                &[ImageBarrier::layout_optimal(
+                    &[Access::TransferWrite],
+                    &[Access::FragmentShaderSampledImageRead],
+                    image,
+                    ImageAspectFlags::COLOR,
+                )],
+            );
+
+            image
+        }
+
+        fn load_dds<P>(
+            gpu: &Gpu,
+            frame: &Frame,
+            thread_token: &ThreadToken,
+            cmd_encoder: &mut CmdEncoder,
+            path: P,
+        ) -> Image
+        where
+            P: AsRef<Path>,
+        {
+            let image_data = std::fs::read(path.as_ref()).unwrap();
+            let dds = dds::Dds::from_buffer(&image_data).unwrap();
+            let header_dxt10 = dds.header_dxt10.unwrap();
+
+            let width = dds.header.width;
+            let height = dds.header.height;
+            let depth = dds.header.depth;
+
+            let dimension = match header_dxt10.resource_dimension {
+                dds::D3D10ResourceDimension::Texture1d => ImageDimension::Type1d,
+                dds::D3D10ResourceDimension::Texture2d => ImageDimension::Type2d,
+                dds::D3D10ResourceDimension::Texture3d => ImageDimension::Type3d,
+                _ => panic!(),
+            };
+
+            let format = match header_dxt10.dxgi_format {
+                dds::DxgiFormat::R9G9B9E5_SHAREDEXP => ImageFormat::E5B9G9R9_UFLOAT,
+                _ => panic!(),
+            };
+
+            let image = gpu.create_image(&ImageDesc {
+                memory_location: MemoryLocation::Device,
+                host_mapped: false,
+                usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+                dimension,
+                format,
+                tiling: ImageTiling::Optimal,
+                width,
+                height,
+                depth,
+                layer_count: 1,
+                mip_levels: 1,
+            });
+
+            gpu.cmd_barrier(
+                cmd_encoder,
+                None,
+                &[ImageBarrier {
+                    prev_access: &[Access::None],
+                    next_access: &[Access::TransferWrite],
+                    prev_layout: ImageLayout::Optimal,
+                    next_layout: ImageLayout::Optimal,
+                    subresource_range: ImageSubresourceRange::default(),
+                    image,
+                }],
+            );
+
+            let buffer = gpu.request_transient_buffer_with_data(
+                frame,
+                thread_token,
+                BufferUsageFlags::TRANSFER,
+                dds.data,
+            );
+
+            gpu.cmd_copy_buffer_to_image(
+                cmd_encoder,
+                buffer.to_arg(),
+                image,
+                ImageLayout::Optimal,
+                &[BufferImageCopy {
+                    image_extent: Extent3d {
+                        width,
+                        height,
+                        depth,
+                    },
+                    ..default()
+                }],
+            );
+
+            gpu.cmd_barrier(
+                cmd_encoder,
+                None,
+                &[ImageBarrier {
+                    prev_access: &[Access::TransferWrite],
+                    next_access: &[Access::ShaderSampledImageRead],
+                    prev_layout: ImageLayout::Optimal,
+                    next_layout: ImageLayout::Optimal,
+                    subresource_range: ImageSubresourceRange::default(),
+                    image,
+                }],
+            );
+
+            image
+        }
+
+        let images;
+        let frame = gpu.begin_frame();
+        {
+            let frame = &frame;
+
+            let mut cmd_encoder = gpu.request_cmd_encoder(frame, thread_token);
+            {
+                let cmd_encoder = &mut cmd_encoder;
+
+                images = Images {
+                    tony_mc_mapface_lut: load_dds(
+                        gpu,
+                        frame,
+                        thread_token,
+                        cmd_encoder,
+                        "title/shark/data/tony_mc_mapface.dds",
+                    ),
+                    shark: load_image(
+                        gpu,
+                        frame,
+                        thread_token,
+                        cmd_encoder,
+                        "title/shark/data/blåhaj.png",
+                    ),
+                };
+            }
+
+            gpu.submit(frame, cmd_encoder);
+        }
+        gpu.end_frame(frame);
+
+        images
+    }
+}
 
 type Gpu = dyn Device + 'static;
 
@@ -571,244 +864,11 @@ struct DrawState<'gpu> {
 
     glyph_atlas_image: Image,
 
+    samplers: Samplers,
     models: Models<'gpu>,
     images: Images,
 
     transforms: Vec<Affine3>,
-}
-
-fn load_models(gpu: &Gpu) -> Models {
-    fn load_model<P>(gpu: &Gpu, path: P) -> Model
-    where
-        P: AsRef<Path>,
-    {
-        let (vertices, indices) = load_obj(path);
-        let vertex_buffer = gpu.create_persistent_buffer_with_data(
-            MemoryLocation::Device,
-            BufferUsageFlags::STORAGE,
-            vertices.as_slice(),
-        );
-        let index_buffer = gpu.create_persistent_buffer_with_data(
-            MemoryLocation::Device,
-            BufferUsageFlags::INDEX,
-            indices.as_slice(),
-        );
-
-        Model {
-            indices: indices.len() as u32,
-            vertex_buffer,
-            index_buffer,
-        }
-    }
-
-    Models([load_model(gpu, "title/shark/data/blåhaj.obj")])
-}
-
-fn load_images(gpu: &Gpu, thread_token: &ThreadToken) -> Images {
-    fn load_image<P>(
-        gpu: &Gpu,
-        frame: &Frame,
-        thread_token: &ThreadToken,
-        cmd_encoder: &mut CmdEncoder,
-        path: P,
-    ) -> Image
-    where
-        P: AsRef<Path>,
-    {
-        let image_data =
-            image::Image::from_buffer(std::fs::read(path.as_ref()).unwrap().as_slice()).unwrap();
-
-        let width = image_data.width() as u32;
-        let height = image_data.height() as u32;
-
-        let image = gpu.create_image(&ImageDesc {
-            memory_location: MemoryLocation::Device,
-            host_mapped: false,
-            usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-            dimension: ImageDimension::Type2d,
-            format: ImageFormat::RGBA8_SRGB,
-            tiling: ImageTiling::Optimal,
-            width,
-            height,
-            depth: 1,
-            layer_count: 1,
-            mip_levels: 1,
-        });
-
-        gpu.cmd_barrier(
-            cmd_encoder,
-            None,
-            &[ImageBarrier::layout_optimal(
-                &[Access::None],
-                &[Access::TransferWrite],
-                image,
-                ImageAspectFlags::COLOR,
-            )],
-        );
-
-        let buffer = gpu.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::TRANSFER,
-            image_data.as_slice(),
-        );
-
-        gpu.cmd_copy_buffer_to_image(
-            cmd_encoder,
-            buffer.to_arg(),
-            image,
-            ImageLayout::Optimal,
-            &[BufferImageCopy {
-                image_extent: Extent3d {
-                    width,
-                    height,
-                    depth: 1,
-                },
-                ..default()
-            }],
-        );
-
-        gpu.cmd_barrier(
-            cmd_encoder,
-            None,
-            &[ImageBarrier::layout_optimal(
-                &[Access::TransferWrite],
-                &[Access::FragmentShaderSampledImageRead],
-                image,
-                ImageAspectFlags::COLOR,
-            )],
-        );
-
-        image
-    }
-
-    fn load_dds<P>(
-        gpu: &Gpu,
-        frame: &Frame,
-        thread_token: &ThreadToken,
-        cmd_encoder: &mut CmdEncoder,
-        path: P,
-    ) -> Image
-    where
-        P: AsRef<Path>,
-    {
-        let image_data = std::fs::read(path.as_ref()).unwrap();
-        let dds = dds::Dds::from_buffer(&image_data).unwrap();
-        let header_dxt10 = dds.header_dxt10.unwrap();
-
-        let width = dds.header.width;
-        let height = dds.header.height;
-        let depth = dds.header.depth;
-
-        let dimension = match header_dxt10.resource_dimension {
-            dds::D3D10ResourceDimension::Texture1d => ImageDimension::Type1d,
-            dds::D3D10ResourceDimension::Texture2d => ImageDimension::Type2d,
-            dds::D3D10ResourceDimension::Texture3d => ImageDimension::Type3d,
-            _ => panic!(),
-        };
-
-        let format = match header_dxt10.dxgi_format {
-            dds::DxgiFormat::R9G9B9E5_SHAREDEXP => ImageFormat::E5B9G9R9_UFLOAT,
-            _ => panic!(),
-        };
-
-        let image = gpu.create_image(&ImageDesc {
-            memory_location: MemoryLocation::Device,
-            host_mapped: false,
-            usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-            dimension,
-            format,
-            tiling: ImageTiling::Optimal,
-            width,
-            height,
-            depth,
-            layer_count: 1,
-            mip_levels: 1,
-        });
-
-        gpu.cmd_barrier(
-            cmd_encoder,
-            None,
-            &[ImageBarrier {
-                prev_access: &[Access::None],
-                next_access: &[Access::TransferWrite],
-                prev_layout: ImageLayout::Optimal,
-                next_layout: ImageLayout::Optimal,
-                subresource_range: ImageSubresourceRange::default(),
-                image,
-            }],
-        );
-
-        let buffer = gpu.request_transient_buffer_with_data(
-            frame,
-            thread_token,
-            BufferUsageFlags::TRANSFER,
-            dds.data,
-        );
-
-        gpu.cmd_copy_buffer_to_image(
-            cmd_encoder,
-            buffer.to_arg(),
-            image,
-            ImageLayout::Optimal,
-            &[BufferImageCopy {
-                image_extent: Extent3d {
-                    width,
-                    height,
-                    depth,
-                },
-                ..default()
-            }],
-        );
-
-        gpu.cmd_barrier(
-            cmd_encoder,
-            None,
-            &[ImageBarrier {
-                prev_access: &[Access::TransferWrite],
-                next_access: &[Access::ShaderSampledImageRead],
-                prev_layout: ImageLayout::Optimal,
-                next_layout: ImageLayout::Optimal,
-                subresource_range: ImageSubresourceRange::default(),
-                image,
-            }],
-        );
-
-        image
-    }
-
-    let images;
-    let frame = gpu.begin_frame();
-    {
-        let frame = &frame;
-
-        let mut cmd_encoder = gpu.request_cmd_encoder(frame, thread_token);
-        {
-            let cmd_encoder = &mut cmd_encoder;
-
-            images = Images([
-                load_dds(
-                    gpu,
-                    frame,
-                    thread_token,
-                    cmd_encoder,
-                    "title/shark/data/tony_mc_mapface.dds",
-                ),
-                load_image(
-                    gpu,
-                    frame,
-                    thread_token,
-                    cmd_encoder,
-                    "title/shark/data/blåhaj.png",
-                ),
-            ]);
-        }
-
-        gpu.submit(frame, cmd_encoder);
-    }
-    gpu.end_frame(frame);
-
-    images
 }
 
 impl<'gpu> DrawState<'gpu> {
@@ -817,8 +877,9 @@ impl<'gpu> DrawState<'gpu> {
         let ui_pipeline = UiPipeline::new(gpu);
         let primitive_pipeline = DisplayTransformPipeline::new(gpu);
 
-        let models = load_models(gpu);
-        let images = load_images(gpu, thread_token);
+        let samplers = Samplers::load(gpu);
+        let models = Models::load(gpu);
+        let images = Images::load(gpu, thread_token);
 
         Self {
             gpu,
@@ -830,6 +891,7 @@ impl<'gpu> DrawState<'gpu> {
             depth_image: default(),
             render_target_image: default(),
             glyph_atlas_image: default(),
+            samplers,
             models,
             images,
             transforms: vec![],
@@ -1110,8 +1172,8 @@ impl<'gpu> DrawState<'gpu> {
                 );
 
                 {
-                    let model = &self.models.0[ModelRes::Shark as usize];
-                    let image = self.images.0[ImageRes::Shark as usize];
+                    let model = &self.models[ModelRes::Shark];
+                    let image = self.images[ImageRes::Shark];
 
                     let transform_buffer = gpu.request_transient_buffer_with_data(
                         frame,
@@ -1139,7 +1201,7 @@ impl<'gpu> DrawState<'gpu> {
                             Bind {
                                 binding: 2,
                                 array_element: 0,
-                                typed: TypedBind::Sampler(&[self.basic_pipeline.sampler]),
+                                typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
                             },
                             Bind {
                                 binding: 3,
@@ -1238,7 +1300,7 @@ impl<'gpu> DrawState<'gpu> {
                             Bind {
                                 binding: 4,
                                 array_element: 0,
-                                typed: TypedBind::Sampler(&[self.ui_pipeline.sampler]),
+                                typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
                             },
                             Bind {
                                 binding: 5,
@@ -1292,14 +1354,14 @@ impl<'gpu> DrawState<'gpu> {
                     Bind {
                         binding: 0,
                         array_element: 0,
-                        typed: TypedBind::Sampler(&[self.display_transform_pipeline.sampler]),
+                        typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
                     },
                     Bind {
                         binding: 1,
                         array_element: 0,
                         typed: TypedBind::SampledImage(&[(
                             ImageLayout::Optimal,
-                            self.images.0[ImageRes::TonyMcMapfaceLut as usize],
+                            self.images[ImageRes::TonyMcMapfaceLut],
                         )]),
                     },
                     Bind {

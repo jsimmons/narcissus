@@ -2,8 +2,7 @@ use narcissus_core::default;
 use narcissus_gpu::{
     BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
     CompareOp, CullingMode, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat,
-    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
-    ShaderStageFlags, Topology,
+    Pipeline, PolygonMode, ShaderDesc, ShaderStageFlags, Topology,
 };
 use narcissus_maths::Mat4;
 
@@ -26,7 +25,6 @@ pub struct Vertex {
 pub struct BasicPipeline {
     pub uniforms_bind_group_layout: BindGroupLayout,
     pub storage_bind_group_layout: BindGroupLayout,
-    pub sampler: Sampler,
     pub pipeline: Pipeline,
 }
 
@@ -70,15 +68,6 @@ impl BasicPipeline {
             ],
         });
 
-        let sampler = gpu.create_sampler(&SamplerDesc {
-            filter: SamplerFilter::Point,
-            address_mode: SamplerAddressMode::Clamp,
-            compare_op: None,
-            mip_lod_bias: 0.0,
-            min_lod: 0.0,
-            max_lod: 1000.0,
-        });
-
         let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
@@ -112,7 +101,6 @@ impl BasicPipeline {
         Self {
             uniforms_bind_group_layout,
             storage_bind_group_layout,
-            sampler,
             pipeline,
         }
     }

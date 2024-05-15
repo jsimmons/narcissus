@@ -3,8 +3,7 @@ use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
     BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
     CompareOp, CullingMode, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat,
-    Pipeline, PolygonMode, Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc,
-    ShaderStageFlags, Topology,
+    Pipeline, PolygonMode, ShaderDesc, ShaderStageFlags, Topology,
 };
 
 use crate::Gpu;
@@ -46,7 +45,6 @@ pub struct PrimitiveInstance {
 
 pub struct UiPipeline {
     pub bind_group_layout: BindGroupLayout,
-    pub sampler: Sampler,
     pub pipeline: Pipeline,
 }
 
@@ -93,15 +91,6 @@ impl UiPipeline {
             ],
         });
 
-        let sampler = gpu.create_sampler(&SamplerDesc {
-            filter: SamplerFilter::Bilinear,
-            address_mode: SamplerAddressMode::Clamp,
-            compare_op: None,
-            mip_lod_bias: 0.0,
-            min_lod: 0.0,
-            max_lod: 0.0,
-        });
-
         let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
@@ -134,7 +123,6 @@ impl UiPipeline {
 
         Self {
             bind_group_layout,
-            sampler,
             pipeline,
         }
     }
