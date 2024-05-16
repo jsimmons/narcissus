@@ -24,11 +24,10 @@ use narcissus_image as image;
 use narcissus_maths::{
     clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
-use pipelines::{
-    BasicPipeline, BasicUniforms, DisplayTransformPipeline, PrimitiveInstance, PrimitiveVertex,
-    UiPipeline,
-};
+use pipelines::{BasicPipeline, BasicUniforms, DisplayTransformPipeline, PrimitiveInstance};
 use spring::simple_spring_damper_exact;
+
+use crate::pipelines::DisplayTransformUniforms;
 
 mod fonts;
 mod helpers;
@@ -450,7 +449,6 @@ struct UiState<'a> {
     tmp_string: String,
 
     primitive_instances: Vec<PrimitiveInstance>,
-    primitive_vertices: Vec<PrimitiveVertex>,
 }
 
 impl<'a> UiState<'a> {
@@ -463,7 +461,6 @@ impl<'a> UiState<'a> {
             glyph_cache,
             tmp_string: default(),
             primitive_instances: vec![],
-            primitive_vertices: vec![],
         }
     }
 
@@ -507,22 +504,12 @@ impl<'a> UiState<'a> {
 
             x += advance * scale;
 
-            let instance_index = self.primitive_instances.len() as u32;
             self.primitive_instances.push(PrimitiveInstance {
                 x,
                 y,
                 touched_glyph_index,
                 color: 0xff000000,
             });
-            let glyph_vertices = &[
-                PrimitiveVertex::glyph(0, instance_index),
-                PrimitiveVertex::glyph(1, instance_index),
-                PrimitiveVertex::glyph(2, instance_index),
-                PrimitiveVertex::glyph(2, instance_index),
-                PrimitiveVertex::glyph(1, instance_index),
-                PrimitiveVertex::glyph(3, instance_index),
-            ];
-            self.primitive_vertices.extend_from_slice(glyph_vertices);
 
             x += advance_width * scale;
         }
@@ -853,7 +840,6 @@ struct DrawState<'gpu> {
     gpu: &'gpu Gpu,
 
     basic_pipeline: BasicPipeline,
-    ui_pipeline: UiPipeline,
     display_transform_pipeline: DisplayTransformPipeline,
 
     width: u32,
@@ -874,8 +860,7 @@ struct DrawState<'gpu> {
 impl<'gpu> DrawState<'gpu> {
     fn new(gpu: &'gpu Gpu, thread_token: &ThreadToken) -> Self {
         let basic_pipeline = BasicPipeline::new(gpu);
-        let ui_pipeline = UiPipeline::new(gpu);
-        let primitive_pipeline = DisplayTransformPipeline::new(gpu);
+        let display_transform_pipeline = DisplayTransformPipeline::new(gpu);
 
         let samplers = Samplers::load(gpu);
         let models = Models::load(gpu);
@@ -884,8 +869,7 @@ impl<'gpu> DrawState<'gpu> {
         Self {
             gpu,
             basic_pipeline,
-            ui_pipeline,
-            display_transform_pipeline: primitive_pipeline,
+            display_transform_pipeline,
             width: 0,
             height: 0,
             depth_image: default(),
@@ -1232,100 +1216,6 @@ impl<'gpu> DrawState<'gpu> {
                 self.transforms.clear();
             }
 
-            // Render UI stuff.
-            {
-                let ui_uniforms = &pipelines::UiUniforms {
-                    screen_width: width,
-                    screen_height: height,
-                    atlas_width,
-                    atlas_height,
-                };
-                let primitive_vertices = ui_state.primitive_vertices.as_slice();
-                let primitive_instances = ui_state.primitive_instances.as_slice();
-                let uniforms_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::UNIFORM,
-                    ui_uniforms,
-                );
-                let primitive_vertex_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::STORAGE,
-                    primitive_vertices,
-                );
-                let cached_glyphs_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::STORAGE,
-                    touched_glyphs,
-                );
-                let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::STORAGE,
-                    primitive_instances,
-                );
-
-                {
-                    gpu.cmd_set_pipeline(cmd_encoder, self.ui_pipeline.pipeline);
-                    gpu.cmd_set_bind_group(
-                        frame,
-                        cmd_encoder,
-                        self.ui_pipeline.bind_group_layout,
-                        0,
-                        &[
-                            Bind {
-                                binding: 0,
-                                array_element: 0,
-                                typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 1,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(
-                                    &[primitive_vertex_buffer.to_arg()],
-                                ),
-                            },
-                            Bind {
-                                binding: 2,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(&[cached_glyphs_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 3,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 4,
-                                array_element: 0,
-                                typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
-                            },
-                            Bind {
-                                binding: 5,
-                                array_element: 0,
-                                typed: TypedBind::SampledImage(&[(
-                                    ImageLayout::Optimal,
-                                    self.glyph_atlas_image,
-                                )]),
-                            },
-                        ],
-                    );
-                };
-
-                gpu.cmd_draw(
-                    cmd_encoder,
-                    ui_state.primitive_vertices.len() as u32,
-                    1,
-                    0,
-                    0,
-                );
-
-                ui_state.primitive_instances.clear();
-                ui_state.primitive_vertices.clear();
-            }
-
             gpu.cmd_end_rendering(cmd_encoder);
 
             gpu.cmd_barrier(
@@ -1345,6 +1235,33 @@ impl<'gpu> DrawState<'gpu> {
 
             gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline.pipeline);
 
+            let uniforms_buffer = gpu.request_transient_buffer_with_data(
+                frame,
+                thread_token,
+                BufferUsageFlags::UNIFORM,
+                &DisplayTransformUniforms {
+                    screen_width: width,
+                    screen_height: height,
+                    atlas_width,
+                    atlas_height,
+                    num_primitives: ui_state.primitive_instances.len() as u32,
+                },
+            );
+            let cached_glyphs_buffer = gpu.request_transient_buffer_with_data(
+                frame,
+                thread_token,
+                BufferUsageFlags::STORAGE,
+                touched_glyphs,
+            );
+            let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
+                frame,
+                thread_token,
+                BufferUsageFlags::STORAGE,
+                ui_state.primitive_instances.as_slice(),
+            );
+
+            ui_state.primitive_instances.clear();
+
             gpu.cmd_set_bind_group(
                 frame,
                 cmd_encoder,
@@ -1354,18 +1271,10 @@ impl<'gpu> DrawState<'gpu> {
                     Bind {
                         binding: 0,
                         array_element: 0,
-                        typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                        typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
                     },
                     Bind {
                         binding: 1,
-                        array_element: 0,
-                        typed: TypedBind::SampledImage(&[(
-                            ImageLayout::Optimal,
-                            self.images[ImageRes::TonyMcMapfaceLut],
-                        )]),
-                    },
-                    Bind {
-                        binding: 2,
                         array_element: 0,
                         typed: TypedBind::StorageImage(&[(
                             ImageLayout::General,
@@ -1373,9 +1282,40 @@ impl<'gpu> DrawState<'gpu> {
                         )]),
                     },
                     Bind {
-                        binding: 3,
+                        binding: 2,
                         array_element: 0,
                         typed: TypedBind::StorageImage(&[(ImageLayout::General, swapchain_image)]),
+                    },
+                    Bind {
+                        binding: 3,
+                        array_element: 0,
+                        typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                    },
+                    Bind {
+                        binding: 4,
+                        array_element: 0,
+                        typed: TypedBind::SampledImage(&[(
+                            ImageLayout::Optimal,
+                            self.glyph_atlas_image,
+                        )]),
+                    },
+                    Bind {
+                        binding: 5,
+                        array_element: 0,
+                        typed: TypedBind::SampledImage(&[(
+                            ImageLayout::Optimal,
+                            self.images[ImageRes::TonyMcMapfaceLut],
+                        )]),
+                    },
+                    Bind {
+                        binding: 6,
+                        array_element: 0,
+                        typed: TypedBind::StorageBuffer(&[cached_glyphs_buffer.to_arg()]),
+                    },
+                    Bind {
+                        binding: 7,
+                        array_element: 0,
+                        typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
                     },
                 ],
             );
@@ -1553,17 +1493,17 @@ pub fn main() {
 
             ui_state.text_fmt(
                 5.0,
-                30.0,
+                40.0,
                 FontFamily::RobotoRegular,
-                22.0,
+                30.0,
                 format_args!("tick: {:?}", tick_duration),
             );
 
             ui_state.text_fmt(
                 5.0,
-                60.0,
+                90.0,
                 FontFamily::NotoSansJapanese,
-                18.0,
+                30.0,
                 format_args!("お握り The Quick Brown Fox Jumped Over The Lazy Dog"),
             );
 

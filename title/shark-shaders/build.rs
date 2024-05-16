@@ -26,7 +26,7 @@ struct Shader {
     name: &'static str,
 }
 
-const SHADERS: [Shader; 5] = [
+const SHADERS: [Shader; 3] = [
     Shader {
         stage: ShaderStage::Vertex,
         name: "basic",
@@ -38,14 +38,6 @@ const SHADERS: [Shader; 5] = [
     Shader {
         stage: ShaderStage::Compute,
         name: "display_transform",
-    },
-    Shader {
-        stage: ShaderStage::Vertex,
-        name: "ui",
-    },
-    Shader {
-        stage: ShaderStage::Fragment,
-        name: "ui",
     },
 ];
 
