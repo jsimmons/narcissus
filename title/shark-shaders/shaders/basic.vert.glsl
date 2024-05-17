@@ -28,17 +28,18 @@ layout(location = 0) out vec2 out_texcoord;
 layout(location = 1) out vec3 out_normal;
 
 void main() {
-    TransformData td = transforms[gl_InstanceIndex];
-    VertexData vd = vertices[gl_VertexIndex];
+    const TransformData td = transforms[gl_InstanceIndex];
+    const VertexData vd = vertices[gl_VertexIndex];
 
-    mat4 camera_from_model = mat4(
+    const mat4 camera_from_model = mat4(
         td.transform[0].x, td.transform[0].w, td.transform[1].z, 0.0,
         td.transform[0].y, td.transform[1].x, td.transform[1].w, 0.0, 
         td.transform[0].z, td.transform[1].y, td.transform[2].x, 0.0, 
         td.transform[2].y, td.transform[2].z, td.transform[2].w, 1.0
     );
 
-    vec4 position_clip = clip_from_camera * camera_from_model * vec4(vd.position.xyz, 1.0);
+    const vec4 position_clip = clip_from_camera * camera_from_model * vec4(vd.position.xyz, 1.0);
+
     gl_Position = position_clip;
 
     out_normal = vd.normal.xyz;

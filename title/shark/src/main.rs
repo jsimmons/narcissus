@@ -1148,11 +1148,18 @@ impl<'gpu> DrawState<'gpu> {
                     cmd_encoder,
                     self.basic_pipeline.uniforms_bind_group_layout,
                     0,
-                    &[Bind {
-                        binding: 0,
-                        array_element: 0,
-                        typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
-                    }],
+                    &[
+                        Bind {
+                            binding: 0,
+                            array_element: 0,
+                            typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 1,
+                            array_element: 0,
+                            typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                        },
+                    ],
                 );
 
                 {
@@ -1184,11 +1191,6 @@ impl<'gpu> DrawState<'gpu> {
                             },
                             Bind {
                                 binding: 2,
-                                array_element: 0,
-                                typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
-                            },
-                            Bind {
-                                binding: 3,
                                 array_element: 0,
                                 typed: TypedBind::SampledImage(&[(ImageLayout::Optimal, image)]),
                             },
@@ -1276,20 +1278,20 @@ impl<'gpu> DrawState<'gpu> {
                     Bind {
                         binding: 1,
                         array_element: 0,
+                        typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                    },
+                    Bind {
+                        binding: 2,
+                        array_element: 0,
                         typed: TypedBind::StorageImage(&[(
                             ImageLayout::General,
                             self.render_target_image,
                         )]),
                     },
                     Bind {
-                        binding: 2,
-                        array_element: 0,
-                        typed: TypedBind::StorageImage(&[(ImageLayout::General, swapchain_image)]),
-                    },
-                    Bind {
                         binding: 3,
                         array_element: 0,
-                        typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                        typed: TypedBind::StorageImage(&[(ImageLayout::General, swapchain_image)]),
                     },
                     Bind {
                         binding: 4,

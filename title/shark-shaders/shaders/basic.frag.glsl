@@ -1,14 +1,14 @@
 #version 460
 
-layout(set = 1, binding = 2) uniform sampler texSampler;
-layout(set = 1, binding = 3) uniform texture2D tex;
+layout(set = 0, binding = 1) uniform sampler bilinear_sampler;
+layout(set = 1, binding = 2) uniform texture2D albedo;
 
-layout(location = 0) in vec2 texcoord;
+layout(location = 0) in vec2 tex_coord;
 layout(location = 1) in vec3 normal;
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 out_color;
 
 void main() {
-    float NdotL = max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.1);
-    vec3 rgb = texture(sampler2D(tex, texSampler), vec2(texcoord.x, texcoord.y)).rgb;
-    outColor = vec4(rgb * NdotL, 1.0);
+    const float n_dot_l = max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.1);
+    const vec3 rgb = texture(sampler2D(albedo, bilinear_sampler), vec2(tex_coord.x, tex_coord.y)).rgb;
+    out_color = vec4(rgb * n_dot_l, 1.0);
 }

@@ -1,8 +1,8 @@
 use narcissus_core::default;
 use narcissus_gpu::{
-    BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType, BlendMode,
-    CompareOp, CullingMode, FrontFace, GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat,
-    Pipeline, PolygonMode, ShaderDesc, ShaderStageFlags, Topology,
+    BindDesc, BindGroupLayout, BindingType, BlendMode, CompareOp, CullingMode, FrontFace,
+    GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat, Pipeline, PolygonMode, ShaderDesc,
+    ShaderStageFlags, Topology,
 };
 use narcissus_maths::Mat4;
 
@@ -30,43 +30,21 @@ pub struct BasicPipeline {
 
 impl BasicPipeline {
     pub fn new(gpu: &Gpu) -> Self {
-        let uniforms_bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
-            entries: &[BindGroupLayoutEntryDesc {
-                slot: 0,
-                stages: ShaderStageFlags::ALL,
-                binding_type: BindingType::UniformBuffer,
-                count: 1,
-            }],
-        });
+        let uniforms_bind_group_layout = gpu.create_bind_group_layout(&[
+            // Uniforms
+            BindDesc::new(ShaderStageFlags::ALL, BindingType::UniformBuffer),
+            // Bilinear Sampler
+            BindDesc::new(ShaderStageFlags::ALL, BindingType::Sampler),
+        ]);
 
-        let storage_bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
-            entries: &[
-                BindGroupLayoutEntryDesc {
-                    slot: 0,
-                    stages: ShaderStageFlags::ALL,
-                    binding_type: BindingType::StorageBuffer,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    slot: 1,
-                    stages: ShaderStageFlags::ALL,
-                    binding_type: BindingType::StorageBuffer,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    slot: 2,
-                    stages: ShaderStageFlags::ALL,
-                    binding_type: BindingType::Sampler,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    slot: 3,
-                    stages: ShaderStageFlags::ALL,
-                    binding_type: BindingType::SampledImage,
-                    count: 1,
-                },
-            ],
-        });
+        let storage_bind_group_layout = gpu.create_bind_group_layout(&[
+            // Vertex Buffer
+            BindDesc::new(ShaderStageFlags::ALL, BindingType::StorageBuffer),
+            // Transform Buffer
+            BindDesc::new(ShaderStageFlags::ALL, BindingType::StorageBuffer),
+            // Albedo
+            BindDesc::new(ShaderStageFlags::ALL, BindingType::SampledImage),
+        ]);
 
         let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {

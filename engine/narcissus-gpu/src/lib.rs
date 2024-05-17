@@ -479,15 +479,22 @@ pub enum BindingType {
     DynamicStorageBuffer,
 }
 
-pub struct BindGroupLayoutEntryDesc {
+pub struct BindDesc {
     pub slot: u32,
     pub stages: ShaderStageFlags,
     pub binding_type: BindingType,
     pub count: u32,
 }
 
-pub struct BindGroupLayoutDesc<'a> {
-    pub entries: &'a [BindGroupLayoutEntryDesc],
+impl BindDesc {
+    pub const fn new(stages: ShaderStageFlags, binding_type: BindingType) -> BindDesc {
+        BindDesc {
+            slot: !0,
+            stages,
+            binding_type,
+            count: 1,
+        }
+    }
 }
 
 pub struct Bind<'a> {
@@ -735,12 +742,12 @@ pub trait Device {
         &'device self,
         desc: &BufferDesc,
     ) -> PersistentBuffer<'device>;
-    fn create_image(&self, desc: &ImageDesc) -> Image;
-    fn create_image_view(&self, desc: &ImageViewDesc) -> Image;
-    fn create_sampler(&self, desc: &SamplerDesc) -> Sampler;
-    fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> BindGroupLayout;
-    fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline;
-    fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline;
+    fn create_image(&self, image_desc: &ImageDesc) -> Image;
+    fn create_image_view(&self, image_view_desc: &ImageViewDesc) -> Image;
+    fn create_sampler(&self, sampler_desc: &SamplerDesc) -> Sampler;
+    fn create_bind_group_layout(&self, bindings_desc: &[BindDesc]) -> BindGroupLayout;
+    fn create_graphics_pipeline(&self, pipeline_desc: &GraphicsPipelineDesc) -> Pipeline;
+    fn create_compute_pipeline(&self, pipeline_desc: &ComputePipelineDesc) -> Pipeline;
 
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
     fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer);

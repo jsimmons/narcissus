@@ -1,7 +1,7 @@
 use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
-    BindGroupLayout, BindGroupLayoutDesc, BindGroupLayoutEntryDesc, BindingType,
-    ComputePipelineDesc, Pipeline, ShaderDesc, ShaderStageFlags,
+    BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, ShaderDesc,
+    ShaderStageFlags,
 };
 
 use crate::Gpu;
@@ -32,66 +32,24 @@ pub struct DisplayTransformPipeline {
 
 impl DisplayTransformPipeline {
     pub fn new(gpu: &Gpu) -> Self {
-        let bind_group_layout = gpu.create_bind_group_layout(&BindGroupLayoutDesc {
-            entries: &[
-                BindGroupLayoutEntryDesc {
-                    // uniforms
-                    slot: 0,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::UniformBuffer,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // rt
-                    slot: 1,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::StorageImage,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // swapchain
-                    slot: 2,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::StorageImage,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // sampler
-                    slot: 3,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::Sampler,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // glyph atlas
-                    slot: 4,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::SampledImage,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // lut
-                    slot: 5,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::SampledImage,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // glyphs
-                    slot: 6,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::StorageBuffer,
-                    count: 1,
-                },
-                BindGroupLayoutEntryDesc {
-                    // glyph instances
-                    slot: 7,
-                    stages: ShaderStageFlags::COMPUTE,
-                    binding_type: BindingType::StorageBuffer,
-                    count: 1,
-                },
-            ],
-        });
+        let bind_group_layout = gpu.create_bind_group_layout(&[
+            // Uniforms
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::UniformBuffer),
+            // Sampler
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::Sampler),
+            // RT
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
+            // Swapchain
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
+            // Glyph Atlas
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
+            // Tony Mc'mapface LUT
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
+            // Glyphs
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
+            // Glyph Instances
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
+        ]);
 
         let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {

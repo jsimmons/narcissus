@@ -16,13 +16,13 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    frame_counter::FrameCounter, Bind, BindGroupLayout, BindGroupLayoutDesc, Buffer, BufferArg,
-    BufferDesc, BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device,
-    Extent2d, Extent3d, Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image,
-    ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc,
-    IndexType, MemoryLocation, Offset2d, Offset3d, PersistentBuffer, Pipeline, Sampler,
-    SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter, SwapchainConfigurator,
-    SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
+    frame_counter::FrameCounter, Bind, BindDesc, BindGroupLayout, Buffer, BufferArg, BufferDesc,
+    BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d,
+    Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit,
+    ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation,
+    Offset2d, Offset3d, PersistentBuffer, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp,
+    SamplerDesc, SamplerFilter, SwapchainConfigurator, SwapchainImage, SwapchainOutOfDateError,
+    ThreadToken, TransientBuffer, TypedBind,
 };
 
 mod allocator;
@@ -941,44 +941,44 @@ impl Device for VulkanDevice {
         Buffer(handle)
     }
 
-    fn create_image(&self, desc: &ImageDesc) -> Image {
-        debug_assert_ne!(desc.layer_count, 0, "layers must be at least one");
-        debug_assert_ne!(desc.width, 0, "width must be at least one");
-        debug_assert_ne!(desc.height, 0, "height must be at least one");
-        debug_assert_ne!(desc.depth, 0, "depth must be at least one");
+    fn create_image(&self, image_desc: &ImageDesc) -> Image {
+        debug_assert_ne!(image_desc.layer_count, 0, "layers must be at least one");
+        debug_assert_ne!(image_desc.width, 0, "width must be at least one");
+        debug_assert_ne!(image_desc.height, 0, "height must be at least one");
+        debug_assert_ne!(image_desc.depth, 0, "depth must be at least one");
 
-        if desc.dimension == ImageDimension::Type3d {
-            debug_assert_eq!(desc.layer_count, 1, "3d image arrays are illegal");
+        if image_desc.dimension == ImageDimension::Type3d {
+            debug_assert_eq!(image_desc.layer_count, 1, "3d image arrays are illegal");
         }
 
-        if desc.dimension == ImageDimension::TypeCube {
+        if image_desc.dimension == ImageDimension::TypeCube {
             debug_assert!(
-                desc.layer_count % 6 == 0,
+                image_desc.layer_count % 6 == 0,
                 "cubemaps must have 6 layers each"
             );
-            debug_assert_eq!(desc.depth, 1, "cubemap faces must be 2d");
+            debug_assert_eq!(image_desc.depth, 1, "cubemap faces must be 2d");
         }
 
         let mut flags = vk::ImageCreateFlags::default();
-        if desc.dimension == ImageDimension::TypeCube {
+        if image_desc.dimension == ImageDimension::TypeCube {
             flags |= vk::ImageCreateFlags::CUBE_COMPATIBLE
         }
 
-        let image_type = match desc.dimension {
+        let image_type = match image_desc.dimension {
             ImageDimension::Type1d => vk::ImageType::Type1d,
             ImageDimension::Type2d => vk::ImageType::Type2d,
             ImageDimension::Type3d => vk::ImageType::Type3d,
             ImageDimension::TypeCube => vk::ImageType::Type2d,
         };
-        let format = vulkan_format(desc.format);
+        let format = vulkan_format(image_desc.format);
         let extent = vk::Extent3d {
-            width: desc.width,
-            height: desc.height,
-            depth: desc.depth,
+            width: image_desc.width,
+            height: image_desc.height,
+            depth: image_desc.depth,
         };
 
-        let tiling = vulkan_image_tiling(desc.tiling);
-        let usage = vulkan_image_usage_flags(desc.usage);
+        let tiling = vulkan_image_tiling(image_desc.tiling);
+        let usage = vulkan_image_usage_flags(image_desc.usage);
 
         let queue_family_indices = &[self.universal_queue_family_index];
         let create_info = vk::ImageCreateInfo {
@@ -986,8 +986,8 @@ impl Device for VulkanDevice {
             image_type,
             format,
             extent,
-            mip_levels: desc.mip_levels,
-            array_layers: desc.layer_count,
+            mip_levels: image_desc.mip_levels,
+            array_layers: image_desc.layer_count,
             samples: vk::SampleCountFlags::SAMPLE_COUNT_1,
             tiling,
             usage,
@@ -1003,9 +1003,9 @@ impl Device for VulkanDevice {
             .create_image(self.device, &create_info, None, &mut image));
 
         let memory = self.allocate_memory(
-            desc.memory_location,
-            desc.tiling == ImageTiling::Optimal,
-            desc.host_mapped,
+            image_desc.memory_location,
+            image_desc.tiling == ImageTiling::Optimal,
+            image_desc.host_mapped,
             allocator::VulkanAllocationResource::Image(image),
         );
 
@@ -1021,8 +1021,8 @@ impl Device for VulkanDevice {
             )
         };
 
-        let view_type = vulkan_image_view_type(desc.layer_count, desc.dimension);
-        let aspect_mask = vulkan_aspect_for_format(desc.format);
+        let view_type = vulkan_image_view_type(image_desc.layer_count, image_desc.dimension);
+        let aspect_mask = vulkan_aspect_for_format(image_desc.format);
         let create_info = vk::ImageViewCreateInfo {
             image,
             view_type,
@@ -1030,9 +1030,9 @@ impl Device for VulkanDevice {
             subresource_range: vk::ImageSubresourceRange {
                 aspect_mask,
                 base_mip_level: 0,
-                level_count: desc.mip_levels,
+                level_count: image_desc.mip_levels,
                 base_array_layer: 0,
-                layer_count: desc.layer_count,
+                layer_count: image_desc.layer_count,
             },
             ..default()
         };
@@ -1055,9 +1055,9 @@ impl Device for VulkanDevice {
         Image(handle)
     }
 
-    fn create_image_view(&self, desc: &ImageViewDesc) -> Image {
+    fn create_image_view(&self, image_view_desc: &ImageViewDesc) -> Image {
         let mut image_pool = self.image_pool.lock();
-        let image = image_pool.get_mut(desc.image.0).unwrap();
+        let image = image_pool.get_mut(image_view_desc.image.0).unwrap();
 
         let arc_image;
         match image {
@@ -1076,10 +1076,12 @@ impl Device for VulkanDevice {
             }
         }
 
-        let subresource_range = vulkan_subresource_range(&desc.subresource_range);
-        let view_type =
-            vulkan_image_view_type(desc.subresource_range.array_layer_count, desc.dimension);
-        let format = vulkan_format(desc.format);
+        let subresource_range = vulkan_subresource_range(&image_view_desc.subresource_range);
+        let view_type = vulkan_image_view_type(
+            image_view_desc.subresource_range.array_layer_count,
+            image_view_desc.dimension,
+        );
+        let format = vulkan_format(image_view_desc.format);
 
         let create_info = vk::ImageViewCreateInfo {
             image: arc_image.image,
@@ -1102,8 +1104,8 @@ impl Device for VulkanDevice {
         Image(handle)
     }
 
-    fn create_sampler(&self, desc: &SamplerDesc) -> Sampler {
-        let (filter, mipmap_mode, anisotropy_enable) = match desc.filter {
+    fn create_sampler(&self, sampler_desc: &SamplerDesc) -> Sampler {
+        let (filter, mipmap_mode, anisotropy_enable) = match sampler_desc.filter {
             SamplerFilter::Point => (
                 vk::Filter::Nearest,
                 vk::SamplerMipmapMode::Nearest,
@@ -1126,12 +1128,12 @@ impl Device for VulkanDevice {
             ),
         };
 
-        let address_mode = match desc.address_mode {
+        let address_mode = match sampler_desc.address_mode {
             SamplerAddressMode::Wrap => vk::SamplerAddressMode::Repeat,
             SamplerAddressMode::Clamp => vk::SamplerAddressMode::ClampToEdge,
         };
 
-        let (compare_enable, compare_op) = match desc.compare_op {
+        let (compare_enable, compare_op) = match sampler_desc.compare_op {
             None => (vk::Bool32::False, vk::CompareOp::Always),
             Some(SamplerCompareOp::Less) => (vk::Bool32::True, vk::CompareOp::Less),
             Some(SamplerCompareOp::LessEq) => (vk::Bool32::True, vk::CompareOp::LessOrEqual),
@@ -1143,9 +1145,9 @@ impl Device for VulkanDevice {
         vk_check!(self.device_fn.create_sampler(
             self.device,
             &vk::SamplerCreateInfo {
-                max_lod: desc.max_lod,
-                min_lod: desc.min_lod,
-                mip_lod_bias: desc.mip_lod_bias,
+                max_lod: sampler_desc.max_lod,
+                min_lod: sampler_desc.min_lod,
+                mip_lod_bias: sampler_desc.mip_lod_bias,
                 min_filter: filter,
                 mag_filter: filter,
                 mipmap_mode,
@@ -1166,17 +1168,21 @@ impl Device for VulkanDevice {
         Sampler(handle)
     }
 
-    fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> BindGroupLayout {
+    fn create_bind_group_layout(&self, bindings_desc: &[BindDesc]) -> BindGroupLayout {
         let arena = HybridArena::<256>::new();
-        let layout_bindings = arena.alloc_slice_fill_iter(desc.entries.iter().map(|x| {
-            vk::DescriptorSetLayoutBinding {
-                binding: x.slot,
-                descriptor_type: vulkan_descriptor_type(x.binding_type),
-                descriptor_count: x.count,
-                stage_flags: vulkan_shader_stage_flags(x.stages),
+        let layout_bindings = arena.alloc_slice_fill_iter(bindings_desc.iter().enumerate().map(
+            |(i, binding_desc)| vk::DescriptorSetLayoutBinding {
+                binding: if binding_desc.slot != !0 {
+                    binding_desc.slot
+                } else {
+                    i as u32
+                },
+                descriptor_type: vulkan_descriptor_type(binding_desc.binding_type),
+                descriptor_count: binding_desc.count,
+                stage_flags: vulkan_shader_stage_flags(binding_desc.stages),
                 immutable_samplers: std::ptr::null(),
-            }
-        }));
+            },
+        ));
         let create_info = &vk::DescriptorSetLayoutCreateInfo {
             bindings: layout_bindings.into(),
             ..default()
@@ -1196,10 +1202,10 @@ impl Device for VulkanDevice {
         BindGroupLayout(bind_group_layout)
     }
 
-    fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc) -> Pipeline {
+    fn create_graphics_pipeline(&self, pipeline_desc: &GraphicsPipelineDesc) -> Pipeline {
         let arena = HybridArena::<1024>::new();
         let bind_group_layout_pool = self.bind_group_layout_pool.lock();
-        let set_layouts_iter = desc
+        let set_layouts_iter = pipeline_desc
             .bind_group_layouts
             .iter()
             .map(|bind_group_layout| bind_group_layout_pool.get(bind_group_layout.0).unwrap().0);
@@ -1220,37 +1226,43 @@ impl Device for VulkanDevice {
             pipeline_layout
         };
 
-        let vertex_module =
-            vulkan_shader_module(&self.device_fn, self.device, desc.vertex_shader.code);
-        let fragment_module =
-            vulkan_shader_module(&self.device_fn, self.device, desc.fragment_shader.code);
+        let vertex_module = vulkan_shader_module(
+            &self.device_fn,
+            self.device,
+            pipeline_desc.vertex_shader.code,
+        );
+        let fragment_module = vulkan_shader_module(
+            &self.device_fn,
+            self.device,
+            pipeline_desc.fragment_shader.code,
+        );
 
         let stages = &[
             vk::PipelineShaderStageCreateInfo {
                 stage: vk::ShaderStageFlags::VERTEX,
-                name: desc.vertex_shader.entry.as_ptr(),
+                name: pipeline_desc.vertex_shader.entry.as_ptr(),
                 module: vertex_module,
                 ..default()
             },
             vk::PipelineShaderStageCreateInfo {
                 stage: vk::ShaderStageFlags::FRAGMENT,
-                name: desc.fragment_shader.entry.as_ptr(),
+                name: pipeline_desc.fragment_shader.entry.as_ptr(),
                 module: fragment_module,
                 ..default()
             },
         ];
 
-        let topology = vulkan_primitive_topology(desc.topology);
-        let primitive_restart_enable = vulkan_bool32(desc.primitive_restart);
-        let polygon_mode = vulkan_polygon_mode(desc.polygon_mode);
-        let cull_mode = vulkan_cull_mode(desc.culling_mode);
-        let front_face = vulkan_front_face(desc.front_face);
+        let topology = vulkan_primitive_topology(pipeline_desc.topology);
+        let primitive_restart_enable = vulkan_bool32(pipeline_desc.primitive_restart);
+        let polygon_mode = vulkan_polygon_mode(pipeline_desc.polygon_mode);
+        let cull_mode = vulkan_cull_mode(pipeline_desc.culling_mode);
+        let front_face = vulkan_front_face(pipeline_desc.front_face);
         let (
             depth_bias_enable,
             depth_bias_constant_factor,
             depth_bias_clamp,
             depth_bias_slope_factor,
-        ) = if let Some(depth_bias) = &desc.depth_bias {
+        ) = if let Some(depth_bias) = &pipeline_desc.depth_bias {
             (
                 vk::Bool32::True,
                 depth_bias.constant_factor,
@@ -1260,12 +1272,12 @@ impl Device for VulkanDevice {
         } else {
             (vk::Bool32::False, 0.0, 0.0, 0.0)
         };
-        let depth_compare_op = vulkan_compare_op(desc.depth_compare_op);
-        let depth_test_enable = vulkan_bool32(desc.depth_test_enable);
-        let depth_write_enable = vulkan_bool32(desc.depth_write_enable);
-        let stencil_test_enable = vulkan_bool32(desc.stencil_test_enable);
-        let back = vulkan_stencil_op_state(desc.stencil_back);
-        let front = vulkan_stencil_op_state(desc.stencil_front);
+        let depth_compare_op = vulkan_compare_op(pipeline_desc.depth_compare_op);
+        let depth_test_enable = vulkan_bool32(pipeline_desc.depth_test_enable);
+        let depth_write_enable = vulkan_bool32(pipeline_desc.depth_write_enable);
+        let stencil_test_enable = vulkan_bool32(pipeline_desc.stencil_test_enable);
+        let back = vulkan_stencil_op_state(pipeline_desc.stencil_back);
+        let front = vulkan_stencil_op_state(pipeline_desc.stencil_front);
 
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default();
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
@@ -1300,7 +1312,7 @@ impl Device for VulkanDevice {
             front,
             ..default()
         };
-        let color_blend_attachments = &[vulkan_blend_mode(desc.blend_mode)];
+        let color_blend_attachments = &[vulkan_blend_mode(pipeline_desc.blend_mode)];
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo {
             attachments: color_blend_attachments.into(),
             ..default()
@@ -1314,7 +1326,8 @@ impl Device for VulkanDevice {
             ..default()
         };
         let color_attachment_formats = arena.alloc_slice_fill_iter(
-            desc.layout
+            pipeline_desc
+                .layout
                 .color_attachment_formats
                 .iter()
                 .copied()
@@ -1323,11 +1336,11 @@ impl Device for VulkanDevice {
         let pipeline_rendering_create_info = vk::PipelineRenderingCreateInfo {
             view_mask: 0,
             color_attachment_formats: color_attachment_formats.into(),
-            depth_attachment_format: desc
+            depth_attachment_format: pipeline_desc
                 .layout
                 .depth_attachment_format
                 .map_or(vk::Format::Undefined, vulkan_format),
-            stencil_attachment_format: desc
+            stencil_attachment_format: pipeline_desc
                 .layout
                 .stencil_attachment_format
                 .map_or(vk::Format::Undefined, vulkan_format),
@@ -1377,10 +1390,10 @@ impl Device for VulkanDevice {
         Pipeline(handle)
     }
 
-    fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Pipeline {
+    fn create_compute_pipeline(&self, pipeline_desc: &ComputePipelineDesc) -> Pipeline {
         let arena = HybridArena::<1024>::new();
         let bind_group_layout_pool = self.bind_group_layout_pool.lock();
-        let set_layouts_iter = desc
+        let set_layouts_iter = pipeline_desc
             .bind_group_layouts
             .iter()
             .map(|bind_group_layout| bind_group_layout_pool.get(bind_group_layout.0).unwrap().0);
@@ -1401,11 +1414,11 @@ impl Device for VulkanDevice {
             pipeline_layout
         };
 
-        let module = vulkan_shader_module(&self.device_fn, self.device, desc.shader.code);
+        let module = vulkan_shader_module(&self.device_fn, self.device, pipeline_desc.shader.code);
 
         let stage = vk::PipelineShaderStageCreateInfo {
             stage: vk::ShaderStageFlags::COMPUTE,
-            name: desc.shader.entry.as_ptr(),
+            name: pipeline_desc.shader.entry.as_ptr(),
             module,
             ..default()
         };

@@ -30,10 +30,10 @@ layout(std430, set = 0, binding = 0) uniform uniformBuffer {
     uint num_primitives;
 };
 
-layout (set = 0, binding = 1, rgba16f) uniform readonly image2D render_target;
-layout (set = 0, binding = 2, rgba16f) uniform writeonly image2D swapchain_image;
+layout (set = 0, binding = 1) uniform sampler bilinear_sampler;
 
-layout (set = 0, binding = 3) uniform sampler bilinear_sampler;
+layout (set = 0, binding = 2, rgba16f) uniform readonly image2D render_target;
+layout (set = 0, binding = 3, rgba16f) uniform writeonly image2D swapchain_image;
 
 layout (set = 0, binding = 4) uniform texture2D glyph_atlas;
 layout (set = 0, binding = 5) uniform texture3D tony_mc_mapface_lut;
@@ -86,9 +86,9 @@ void main() {
         }
     }
 
-    vec3 stimulus = imageLoad(render_target, ivec2(gl_GlobalInvocationID.xy)).rgb;
-    vec3 transformed = tony_mc_mapface(stimulus);
-    vec3 srgb = srgb_oetf(transformed);
-    vec3 composited = accum.rgb + (srgb * (1.0 - accum.a));
+    const vec3 stimulus = imageLoad(render_target, ivec2(gl_GlobalInvocationID.xy)).rgb;
+    const vec3 transformed = tony_mc_mapface(stimulus);
+    const vec3 srgb = srgb_oetf(transformed);
+    const vec3 composited = accum.rgb + (srgb * (1.0 - accum.a));
     imageStore(swapchain_image, ivec2(gl_GlobalInvocationID.xy), vec4(composited, 1.0));
 }
