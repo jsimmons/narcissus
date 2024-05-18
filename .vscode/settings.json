@@ -1,0 +1,6 @@
+
+{
+    "files.associations": {
+      "**/shaders/*.h": "plaintext",
+    }
+}
