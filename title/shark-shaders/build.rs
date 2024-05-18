@@ -4,39 +4,22 @@ use std::process::Command;
 const SHADER_ROOT: &str = "shaders";
 
 #[derive(Clone, Copy)]
-enum ShaderStage {
-    Vertex,
-    Fragment,
-    Compute,
-}
-
-impl ShaderStage {
-    fn name(self) -> &'static str {
-        match self {
-            ShaderStage::Vertex => "vert",
-            ShaderStage::Fragment => "frag",
-            ShaderStage::Compute => "comp",
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
 struct Shader {
-    stage: ShaderStage,
+    stage: &'static str,
     name: &'static str,
 }
 
 const SHADERS: [Shader; 3] = [
     Shader {
-        stage: ShaderStage::Vertex,
+        stage: "vert",
         name: "basic",
     },
     Shader {
-        stage: ShaderStage::Fragment,
+        stage: "frag",
         name: "basic",
     },
     Shader {
-        stage: ShaderStage::Compute,
+        stage: "comp",
         name: "display_transform",
     },
 ];
@@ -48,19 +31,14 @@ fn main() {
         _ => "0",
     };
 
-    let commands = SHADERS.map(|shader| {
+    let commands = SHADERS.map(|Shader { stage, name }| {
         Command::new("glslangValidator")
             .args(["--target-env", "vulkan1.3"])
+            .arg("--quiet")
             .arg(&format!("-g{debug}"))
-            .args([
-                "-o",
-                &format!("{out_dir}/{}.{}.spv", shader.name, shader.stage.name()),
-            ])
-            .arg(&format!(
-                "{SHADER_ROOT}/{}.{}.glsl",
-                shader.name,
-                shader.stage.name()
-            ))
+            .args(["--depfile", &format!("{out_dir}/{name}.{stage}.d")])
+            .args(["-o", &format!("{out_dir}/{name}.{stage}.spv")])
+            .arg(&format!("{SHADER_ROOT}/{name}.{stage}.glsl"))
             .spawn()
             .unwrap()
     });
@@ -74,14 +52,12 @@ fn main() {
     )
     .unwrap();
 
-    for shader in SHADERS {
+    for Shader { stage, name } in SHADERS {
         writeln!(
             file,
-            "pub const {}_{}_SPV: &[u8] = &SpirvBytes(*include_bytes!(\"{out_dir}/{}.{}.spv\")).0;",
-            shader.name.to_ascii_uppercase(),
-            shader.stage.name().to_ascii_uppercase(),
-            shader.name,
-            shader.stage.name()
+            "pub const {}_{}_SPV: &[u8] = &SpirvBytes(*include_bytes!(\"{out_dir}/{name}.{stage}.spv\")).0;",
+            name.to_ascii_uppercase(),
+            stage.to_ascii_uppercase(),
         )
         .unwrap();
     }
@@ -91,12 +67,84 @@ fn main() {
         assert!(status.success());
     }
 
-    for shader in SHADERS {
-        println!(
-            "cargo::rerun-if-changed={SHADER_ROOT}/{}.{}.glsl",
-            shader.name,
-            shader.stage.name()
-        )
+    for Shader { stage, name } in SHADERS {
+        let depfile = std::fs::read_to_string(format!("{out_dir}/{name}.{stage}.d")).unwrap();
+
+        struct Lexer<'a> {
+            bytes: &'a [u8],
+            index: usize,
+        }
+
+        impl<'a> Lexer<'a> {
+            fn new(bytes: &'a [u8]) -> Self {
+                Self { bytes, index: 0 }
+            }
+
+            fn is_empty(&self) -> bool {
+                self.index >= self.bytes.len()
+            }
+
+            fn skip(&mut self, b: u8) -> bool {
+                if self.bytes.get(self.index).is_some_and(|&x| x == b) {
+                    self.index += 1;
+                    true
+                } else {
+                    false
+                }
+            }
+
+            fn skip_to(&mut self, escape: u8, needle: u8) -> bool {
+                let mut escape_count = 0;
+                while let Some(&b) = self.bytes.get(self.index) {
+                    if b == escape {
+                        escape_count += 1;
+                    } else if b == needle {
+                        if escape_count & 1 == 0 {
+                            self.index += 1;
+                            return true;
+                        }
+                        escape_count = 0;
+                    } else {
+                        escape_count = 0;
+                    }
+                    self.index += 1;
+                }
+                false
+            }
+
+            fn read_to(&mut self, escape: u8, needle: u8) -> &[u8] {
+                let start = self.index;
+                let mut escape_count = 0;
+                while let Some(&b) = self.bytes.get(self.index) {
+                    if b == escape {
+                        escape_count += 1;
+                    } else if b == needle {
+                        if escape_count & 1 == 0 {
+                            break;
+                        }
+                        escape_count = 0;
+                    } else {
+                        escape_count = 0;
+                    }
+                    self.index += 1;
+                }
+                &self.bytes[start..self.index]
+            }
+        }
+
+        for line in depfile.lines() {
+            let mut lexer = Lexer::new(line.as_bytes());
+            if lexer.skip_to(b'\\', b':') {
+                lexer.skip(b' ');
+                while !lexer.is_empty() {
+                    let path = lexer.read_to(b'\\', b' ');
+                    if let Ok(path) = std::str::from_utf8(path) {
+                        println!("cargo::rerun-if-changed={path}");
+                    }
+                    lexer.skip(b' ');
+                }
+            }
+        }
     }
 
     println!("cargo::rerun-if-changed=build.rs");

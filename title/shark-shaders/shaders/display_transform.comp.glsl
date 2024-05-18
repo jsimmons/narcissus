@@ -1,26 +1,11 @@
 #version 460
 
+#extension GL_GOOGLE_include_directive : require
+
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
 
-struct CachedGlyph {
-    uint x0;
-    uint x1;
-    uint y0;
-    uint y1;
-
-    float offset_x0;
-    float offset_x1;
-    float offset_y0;
-    float offset_y1;
-};
-
-struct GlyphInstance {
-    float x;
-    float y;
-    uint index;
-    uint color;
-};
+#include "primitive_types.h"
 
 layout(std430, set = 0, binding = 0) uniform uniformBuffer {
     uint screen_width;
