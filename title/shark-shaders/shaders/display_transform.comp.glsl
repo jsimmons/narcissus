@@ -1,35 +1,13 @@
 #version 460
 
-#extension GL_GOOGLE_include_directive : require
+layout (set = 0, binding = 0) uniform sampler bilinear_sampler;
 
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_control_flow_attributes : require
+layout (set = 0, binding = 1) uniform texture3D tony_mc_mapface_lut;
 
-#include "primitive_types.h"
+layout (set = 0, binding = 2, rgba16f) uniform readonly image2D layer_rt;
+layout (set = 0, binding = 3, rgba16f) uniform readonly image2D layer_ui;
 
-layout(std430, set = 0, binding = 0) uniform uniformBuffer {
-    uint screen_width;
-    uint screen_height;
-    uint atlas_width;
-    uint atlas_height;
-    uint num_primitives;
-};
-
-layout (set = 0, binding = 1) uniform sampler bilinear_sampler;
-
-layout (set = 0, binding = 2, rgba16f) uniform readonly image2D render_target;
-layout (set = 0, binding = 3, rgba16f) uniform writeonly image2D swapchain_image;
-
-layout (set = 0, binding = 4) uniform texture2D glyph_atlas;
-layout (set = 0, binding = 5) uniform texture3D tony_mc_mapface_lut;
-
-layout(std430, set = 0, binding = 6) readonly buffer glyphBuffer {
-    CachedGlyph cached_glyphs[];
-};
-
-layout(std430, set = 0, binding = 7) readonly buffer glyphInstanceBuffer {
-    GlyphInstance glyph_instances[];
-};
+layout (set = 0, binding = 4, rgba16f) uniform writeonly image2D composited_output;
 
 float srgb_oetf(float a) {
     return (.0031308f >= a) ? 12.92f * a : 1.055f * pow(a, .4166666666666667f) - .055f;
@@ -49,31 +27,10 @@ vec3 tony_mc_mapface(vec3 stimulus) {
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
-    vec4 accum = vec4(0.0);
-
-    for (int i = 0; i < num_primitives; i++) {
-        const GlyphInstance gi = glyph_instances[i];
-        const CachedGlyph cg = cached_glyphs[gi.index];
-        const vec4 color = unpackUnorm4x8(gi.color).bgra;
-        const vec2 glyph_top_left = vec2(gi.x + cg.offset_x0, gi.y + cg.offset_y0);
-        const vec2 glyph_bottom_right = vec2(gi.x + cg.offset_x1, gi.y + cg.offset_y1);
-        const vec2 glyph_size = vec2(cg.offset_x1 - cg.offset_x0, cg.offset_y1 - cg.offset_y0);
-        const vec2 sample_center = gl_GlobalInvocationID.xy; // half pixel offset goes here?
-        if (sample_center.x >= glyph_top_left.x &&
-            sample_center.x <= glyph_bottom_right.x &&
-            sample_center.y >= glyph_top_left.y &&
-            sample_center.y <= glyph_bottom_right.y) {
-            const vec2 uv = mix(vec2(cg.x0, cg.y0), vec2(cg.x1, cg.y1), (sample_center - glyph_top_left) / glyph_size) / vec2(atlas_width, atlas_height);
-            const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r;
-            accum = coverage * color;
-            accum.a = coverage;
-            break;
-        }
-    }
-
-    const vec3 stimulus = imageLoad(render_target, ivec2(gl_GlobalInvocationID.xy)).rgb;
+    const vec3 stimulus = imageLoad(layer_rt, ivec2(gl_GlobalInvocationID.xy)).rgb;
     const vec3 transformed = tony_mc_mapface(stimulus);
     const vec3 srgb = srgb_oetf(transformed);
-    const vec3 composited = accum.rgb + (srgb * (1.0 - accum.a));
-    imageStore(swapchain_image, ivec2(gl_GlobalInvocationID.xy), vec4(composited, 1.0));
+    const vec4 ui = imageLoad(layer_ui, ivec2(gl_GlobalInvocationID.xy)).rgba;
+    const vec3 composited = ui.rgb + (srgb * (1.0 - ui.a));
+    imageStore(composited_output, ivec2(gl_GlobalInvocationID.xy), vec4(composited, 1.0));
 }

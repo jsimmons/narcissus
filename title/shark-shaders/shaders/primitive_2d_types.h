@@ -1,5 +1,5 @@
 
-struct CachedGlyph {
+struct Glyph {
     uint x0;
     uint x1;
     uint y0;
@@ -16,4 +16,14 @@ struct GlyphInstance {
     float y;
     uint index;
     uint color;
+};
+
+struct PrimitiveInstance {
+    uint type;
+    uint index;
+};
+
+struct Tile {
+    uint index;
+    uint count;
 };

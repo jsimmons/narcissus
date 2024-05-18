@@ -24,10 +24,12 @@ use narcissus_image as image;
 use narcissus_maths::{
     clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
 };
-use pipelines::{BasicPipeline, BasicUniforms, DisplayTransformPipeline, PrimitiveInstance};
+use pipelines::{
+    BasicPipeline, BasicUniforms, DisplayTransformPipeline, GlyphInstance, Primitive2dPipeline,
+};
 use spring::simple_spring_damper_exact;
 
-use crate::pipelines::DisplayTransformUniforms;
+use crate::pipelines::PrimitiveUniforms;
 
 mod fonts;
 mod helpers;
@@ -448,7 +450,7 @@ struct UiState<'a> {
 
     tmp_string: String,
 
-    primitive_instances: Vec<PrimitiveInstance>,
+    primitive_instances: Vec<GlyphInstance>,
 }
 
 impl<'a> UiState<'a> {
@@ -504,7 +506,7 @@ impl<'a> UiState<'a> {
 
             x += advance * scale;
 
-            self.primitive_instances.push(PrimitiveInstance {
+            self.primitive_instances.push(GlyphInstance {
                 x,
                 y,
                 touched_glyph_index,
@@ -840,13 +842,15 @@ struct DrawState<'gpu> {
     gpu: &'gpu Gpu,
 
     basic_pipeline: BasicPipeline,
+    primitive_2d_pipeline: Primitive2dPipeline,
     display_transform_pipeline: DisplayTransformPipeline,
 
     width: u32,
     height: u32,
 
     depth_image: Image,
-    render_target_image: Image,
+    rt_image: Image,
+    ui_image: Image,
 
     glyph_atlas_image: Image,
 
@@ -860,6 +864,7 @@ struct DrawState<'gpu> {
 impl<'gpu> DrawState<'gpu> {
     fn new(gpu: &'gpu Gpu, thread_token: &ThreadToken) -> Self {
         let basic_pipeline = BasicPipeline::new(gpu);
+        let primitive_2d_pipeline = Primitive2dPipeline::new(gpu);
         let display_transform_pipeline = DisplayTransformPipeline::new(gpu);
 
         let samplers = Samplers::load(gpu);
@@ -869,11 +874,13 @@ impl<'gpu> DrawState<'gpu> {
         Self {
             gpu,
             basic_pipeline,
+            primitive_2d_pipeline,
             display_transform_pipeline,
             width: 0,
             height: 0,
             depth_image: default(),
-            render_target_image: default(),
+            rt_image: default(),
+            ui_image: default(),
             glyph_atlas_image: default(),
             samplers,
             models,
@@ -981,7 +988,8 @@ impl<'gpu> DrawState<'gpu> {
 
             if width != self.width || height != self.height {
                 gpu.destroy_image(frame, self.depth_image);
-                gpu.destroy_image(frame, self.render_target_image);
+                gpu.destroy_image(frame, self.rt_image);
+                gpu.destroy_image(frame, self.ui_image);
 
                 self.depth_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
@@ -997,10 +1005,24 @@ impl<'gpu> DrawState<'gpu> {
                     mip_levels: 1,
                 });
 
-                self.render_target_image = gpu.create_image(&ImageDesc {
+                self.rt_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
                     host_mapped: false,
                     usage: ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::STORAGE,
+                    dimension: ImageDimension::Type2d,
+                    format: ImageFormat::RGBA16_FLOAT,
+                    tiling: ImageTiling::Optimal,
+                    width,
+                    height,
+                    depth: 1,
+                    layer_count: 1,
+                    mip_levels: 1,
+                });
+
+                self.ui_image = gpu.create_image(&ImageDesc {
+                    memory_location: MemoryLocation::Device,
+                    host_mapped: false,
+                    usage: ImageUsageFlags::STORAGE,
                     dimension: ImageDimension::Type2d,
                     format: ImageFormat::RGBA16_FLOAT,
                     tiling: ImageTiling::Optimal,
@@ -1078,12 +1100,22 @@ impl<'gpu> DrawState<'gpu> {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::None],
-                    &[Access::ColorAttachmentWrite],
-                    self.render_target_image,
-                    ImageAspectFlags::COLOR,
-                )],
+                &[
+                    ImageBarrier::layout_optimal(
+                        &[Access::None],
+                        &[Access::ColorAttachmentWrite],
+                        self.rt_image,
+                        ImageAspectFlags::COLOR,
+                    ),
+                    ImageBarrier {
+                        prev_access: &[Access::None],
+                        next_access: &[Access::ShaderWrite],
+                        prev_layout: ImageLayout::Optimal,
+                        next_layout: ImageLayout::General,
+                        image: self.ui_image,
+                        subresource_range: default(),
+                    },
+                ],
             );
 
             gpu.cmd_begin_rendering(
@@ -1094,7 +1126,7 @@ impl<'gpu> DrawState<'gpu> {
                     width,
                     height,
                     color_attachments: &[RenderingAttachment {
-                        image: self.render_target_image,
+                        image: self.rt_image,
                         load_op: LoadOp::Clear(ClearValue::ColorF32([1.0, 1.0, 1.0, 1.0])),
                         store_op: StoreOp::Store,
                     }],
@@ -1220,109 +1252,184 @@ impl<'gpu> DrawState<'gpu> {
 
             gpu.cmd_end_rendering(cmd_encoder);
 
-            gpu.cmd_barrier(
-                cmd_encoder,
-                None,
-                &[ImageBarrier {
-                    prev_access: &[Access::ColorAttachmentWrite],
-                    prev_layout: ImageLayout::Optimal,
-                    next_access: &[Access::ShaderOtherRead],
-                    next_layout: ImageLayout::General,
-                    image: self.render_target_image,
-                    subresource_range: ImageSubresourceRange::default(),
-                }],
-            );
+            // Render UI
+            {
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.pipeline);
 
-            gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
+                let uniforms_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::UNIFORM,
+                    &PrimitiveUniforms {
+                        screen_width: width,
+                        screen_height: height,
+                        atlas_width,
+                        atlas_height,
+                        num_primitives: ui_state.primitive_instances.len() as u32,
+                    },
+                );
+                let glyph_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    touched_glyphs,
+                );
+                let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    ui_state.primitive_instances.as_slice(),
+                );
+                let primitive_instance_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    &[0u32],
+                );
+                let tile_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    &[0u32],
+                );
 
-            gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline.pipeline);
+                ui_state.primitive_instances.clear();
 
-            let uniforms_buffer = gpu.request_transient_buffer_with_data(
-                frame,
-                thread_token,
-                BufferUsageFlags::UNIFORM,
-                &DisplayTransformUniforms {
-                    screen_width: width,
-                    screen_height: height,
-                    atlas_width,
-                    atlas_height,
-                    num_primitives: ui_state.primitive_instances.len() as u32,
-                },
-            );
-            let cached_glyphs_buffer = gpu.request_transient_buffer_with_data(
-                frame,
-                thread_token,
-                BufferUsageFlags::STORAGE,
-                touched_glyphs,
-            );
-            let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
-                frame,
-                thread_token,
-                BufferUsageFlags::STORAGE,
-                ui_state.primitive_instances.as_slice(),
-            );
+                gpu.cmd_set_bind_group(
+                    frame,
+                    cmd_encoder,
+                    self.primitive_2d_pipeline.bind_group_layout,
+                    0,
+                    &[
+                        Bind {
+                            binding: 0,
+                            array_element: 0,
+                            typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 1,
+                            array_element: 0,
+                            typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                        },
+                        Bind {
+                            binding: 2,
+                            array_element: 0,
+                            typed: TypedBind::SampledImage(&[(
+                                ImageLayout::Optimal,
+                                self.glyph_atlas_image,
+                            )]),
+                        },
+                        Bind {
+                            binding: 3,
+                            array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[glyph_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 4,
+                            array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 5,
+                            array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[primitive_instance_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 6,
+                            array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[tile_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 7,
+                            array_element: 0,
+                            typed: TypedBind::StorageImage(&[(
+                                ImageLayout::General,
+                                self.ui_image,
+                            )]),
+                        },
+                    ],
+                );
 
-            ui_state.primitive_instances.clear();
+                gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+            }
 
-            gpu.cmd_set_bind_group(
-                frame,
-                cmd_encoder,
-                self.display_transform_pipeline.bind_group_layout,
-                0,
-                &[
-                    Bind {
-                        binding: 0,
-                        array_element: 0,
-                        typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
-                    },
-                    Bind {
-                        binding: 1,
-                        array_element: 0,
-                        typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
-                    },
-                    Bind {
-                        binding: 2,
-                        array_element: 0,
-                        typed: TypedBind::StorageImage(&[(
-                            ImageLayout::General,
-                            self.render_target_image,
-                        )]),
-                    },
-                    Bind {
-                        binding: 3,
-                        array_element: 0,
-                        typed: TypedBind::StorageImage(&[(ImageLayout::General, swapchain_image)]),
-                    },
-                    Bind {
-                        binding: 4,
-                        array_element: 0,
-                        typed: TypedBind::SampledImage(&[(
-                            ImageLayout::Optimal,
-                            self.glyph_atlas_image,
-                        )]),
-                    },
-                    Bind {
-                        binding: 5,
-                        array_element: 0,
-                        typed: TypedBind::SampledImage(&[(
-                            ImageLayout::Optimal,
-                            self.images[ImageRes::TonyMcMapfaceLut],
-                        )]),
-                    },
-                    Bind {
-                        binding: 6,
-                        array_element: 0,
-                        typed: TypedBind::StorageBuffer(&[cached_glyphs_buffer.to_arg()]),
-                    },
-                    Bind {
-                        binding: 7,
-                        array_element: 0,
-                        typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
-                    },
-                ],
-            );
+            // Display transform and composite
+            {
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    None,
+                    &[
+                        ImageBarrier {
+                            prev_access: &[Access::ColorAttachmentWrite],
+                            prev_layout: ImageLayout::Optimal,
+                            next_access: &[Access::ShaderOtherRead],
+                            next_layout: ImageLayout::General,
+                            image: self.rt_image,
+                            subresource_range: ImageSubresourceRange::default(),
+                        },
+                        ImageBarrier {
+                            prev_access: &[Access::ShaderWrite],
+                            prev_layout: ImageLayout::General,
+                            next_access: &[Access::ShaderOtherRead],
+                            next_layout: ImageLayout::General,
+                            image: self.ui_image,
+                            subresource_range: ImageSubresourceRange::default(),
+                        },
+                    ],
+                );
 
-            gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+                gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline.pipeline);
+
+                gpu.cmd_set_bind_group(
+                    frame,
+                    cmd_encoder,
+                    self.display_transform_pipeline.bind_group_layout,
+                    0,
+                    &[
+                        Bind {
+                            binding: 0,
+                            array_element: 0,
+                            typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
+                        },
+                        Bind {
+                            binding: 1,
+                            array_element: 0,
+                            typed: TypedBind::SampledImage(&[(
+                                ImageLayout::Optimal,
+                                self.images[ImageRes::TonyMcMapfaceLut],
+                            )]),
+                        },
+                        Bind {
+                            binding: 2,
+                            array_element: 0,
+                            typed: TypedBind::StorageImage(&[(
+                                ImageLayout::General,
+                                self.rt_image,
+                            )]),
+                        },
+                        Bind {
+                            binding: 3,
+                            array_element: 0,
+                            typed: TypedBind::StorageImage(&[(
+                                ImageLayout::General,
+                                self.ui_image,
+                            )]),
+                        },
+                        Bind {
+                            binding: 4,
+                            array_element: 0,
+                            typed: TypedBind::StorageImage(&[(
+                                ImageLayout::General,
+                                swapchain_image,
+                            )]),
+                        },
+                    ],
+                );
+
+                gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+            }
         }
         gpu.submit(frame, cmd_encoder);
     }

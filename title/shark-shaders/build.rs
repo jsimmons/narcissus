@@ -9,7 +9,7 @@ struct Shader {
     name: &'static str,
 }
 
-const SHADERS: [Shader; 3] = [
+const SHADERS: &[Shader] = &[
     Shader {
         stage: "vert",
         name: "basic",
@@ -17,6 +17,10 @@ const SHADERS: [Shader; 3] = [
     Shader {
         stage: "frag",
         name: "basic",
+    },
+    Shader {
+        stage: "comp",
+        name: "primitive_2d_tiled",
     },
     Shader {
         stage: "comp",
@@ -31,17 +35,20 @@ fn main() {
         _ => "0",
     };
 
-    let commands = SHADERS.map(|Shader { stage, name }| {
-        Command::new("glslangValidator")
-            .args(["--target-env", "vulkan1.3"])
-            .arg("--quiet")
-            .arg(&format!("-g{debug}"))
-            .args(["--depfile", &format!("{out_dir}/{name}.{stage}.d")])
-            .args(["-o", &format!("{out_dir}/{name}.{stage}.spv")])
-            .arg(&format!("{SHADER_ROOT}/{name}.{stage}.glsl"))
-            .spawn()
-            .unwrap()
-    });
+    let commands = SHADERS
+        .iter()
+        .map(|Shader { stage, name }| {
+            Command::new("glslangValidator")
+                .args(["--target-env", "vulkan1.3"])
+                .arg("--quiet")
+                .arg(&format!("-g{debug}"))
+                .args(["--depfile", &format!("{out_dir}/{name}.{stage}.d")])
+                .args(["-o", &format!("{out_dir}/{name}.{stage}.spv")])
+                .arg(&format!("{SHADER_ROOT}/{name}.{stage}.glsl"))
+                .spawn()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
 
     let dst_path = std::path::Path::new(&out_dir).join("shaders.rs");
     let mut file = std::fs::File::create(dst_path).unwrap();
