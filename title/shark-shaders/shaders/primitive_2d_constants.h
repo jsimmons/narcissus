@@ -1,4 +1,4 @@
-#define MAX_PRIMS 0x8000u
+#define MAX_PRIMS 0x10000u
 #define TILE_SIZE 16
 #define TILE_STRIDE (MAX_PRIMS / 32u)
 #define MAX_TILES_X 180

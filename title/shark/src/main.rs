@@ -873,7 +873,7 @@ impl<'gpu> DrawState<'gpu> {
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
-        const MAX_PRIMS: usize = 0x8000;
+        const MAX_PRIMS: usize = 0x10000;
         const TILE_STRIDE: usize = MAX_PRIMS / 32;
         const MAX_TILES_X: usize = 180;
         const MAX_TILES_Y: usize = 113;
@@ -1639,19 +1639,29 @@ pub fn main() {
                 let i = i as f32;
                 ui_state.text_fmt(
                     5.0,
-                    i * 20.0,
+                    i * 15.0 * scale,
                     FontFamily::RobotoRegular,
                     40.0,
                     format_args!("tick: {:?}", tick_duration),
                 );
+            }
 
-                ui_state.text_fmt(
-                    200.0,
-                    i * 20.0,
-                    FontFamily::NotoSansJapanese,
-                    40.0,
-                    format_args!("お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████"),
-                );
+            for i in 0..80 {
+                for j in 0..11 {
+                    let i = i as f32;
+                    let j = j as f32;
+                    let x = 200.0 + j * 200.0;
+                    let y = 100.0 + j * 100.0;
+                    ui_state.text_fmt(
+                        x * scale,
+                        (y + i * 15.0) * scale,
+                        FontFamily::NotoSansJapanese,
+                        15.0,
+                        format_args!(
+                            "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████"
+                        ),
+                    );
+                }
             }
 
             draw_state.draw(
