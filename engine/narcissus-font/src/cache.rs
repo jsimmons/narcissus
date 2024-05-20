@@ -24,16 +24,16 @@ pub struct TouchedGlyphIndex(u32);
 #[repr(C)]
 pub struct TouchedGlyph {
     // Bitmap coordinates in texture atlas.
-    pub x0: i32,
-    pub x1: i32,
-    pub y0: i32,
-    pub y1: i32,
+    pub atlas_min_x: i32,
+    pub atlas_min_y: i32,
+    pub atlas_max_x: i32,
+    pub atlas_max_y: i32,
 
     // Glyph bounding box relative to glyph origin.
-    pub offset_x0: f32,
-    pub offset_x1: f32,
-    pub offset_y0: f32,
-    pub offset_y1: f32,
+    pub offset_min_x: f32,
+    pub offset_min_y: f32,
+    pub offset_max_x: f32,
+    pub offset_max_y: f32,
 }
 
 struct CachedGlyph<F> {
@@ -169,15 +169,15 @@ where
 
                         let touched_glyph = &mut self.touched_glyphs[touched_glyph_index.0.widen()];
 
-                        touched_glyph.x0 = rect.x;
-                        touched_glyph.x1 = rect.x + rect.w;
-                        touched_glyph.y0 = rect.y;
-                        touched_glyph.y1 = rect.y + rect.h;
+                        touched_glyph.atlas_min_x = rect.x;
+                        touched_glyph.atlas_min_y = rect.y;
+                        touched_glyph.atlas_max_x = rect.x + rect.w;
+                        touched_glyph.atlas_max_y = rect.y + rect.h;
 
-                        touched_glyph.offset_x0 = cached_glyph.offset_x0;
-                        touched_glyph.offset_y0 = cached_glyph.offset_y0;
-                        touched_glyph.offset_x1 = cached_glyph.offset_x1;
-                        touched_glyph.offset_y1 = cached_glyph.offset_y1;
+                        touched_glyph.offset_min_x = cached_glyph.offset_x0;
+                        touched_glyph.offset_min_y = cached_glyph.offset_y0;
+                        touched_glyph.offset_max_x = cached_glyph.offset_x1;
+                        touched_glyph.offset_max_y = cached_glyph.offset_y1;
                     }
                     // This glyph isn't cached, so we must prepare to pack and
                     // render it.
@@ -291,15 +291,15 @@ where
 
                 let touched_glyph = &mut self.touched_glyphs[rect.id as usize];
 
-                touched_glyph.x0 = rect.x;
-                touched_glyph.x1 = rect.x + rect.w;
-                touched_glyph.y0 = rect.y;
-                touched_glyph.y1 = rect.y + rect.h;
+                touched_glyph.atlas_min_x = rect.x;
+                touched_glyph.atlas_min_y = rect.y;
+                touched_glyph.atlas_max_x = rect.x + rect.w;
+                touched_glyph.atlas_max_y = rect.y + rect.h;
 
-                touched_glyph.offset_x0 = offset_x0;
-                touched_glyph.offset_y0 = offset_y0;
-                touched_glyph.offset_x1 = offset_x1;
-                touched_glyph.offset_y1 = offset_y1;
+                touched_glyph.offset_min_x = offset_x0;
+                touched_glyph.offset_min_y = offset_y0;
+                touched_glyph.offset_max_x = offset_x1;
+                touched_glyph.offset_max_y = offset_y1;
             }
 
             // The `cached_glyphs` and `rects` arrays need to be sorted for the

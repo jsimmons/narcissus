@@ -27,7 +27,8 @@ pub struct GlyphInstance {
 
 pub struct Primitive2dPipeline {
     pub bind_group_layout: BindGroupLayout,
-    pub pipeline: Pipeline,
+    pub bin_pipeline: Pipeline,
+    pub rasterize_pipeline: Pipeline,
 }
 
 impl Primitive2dPipeline {
@@ -51,17 +52,26 @@ impl Primitive2dPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
         ]);
 
-        let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+        let bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
-                code: shark_shaders::PRIMITIVE_2D_TILED_COMP_SPV,
+                code: shark_shaders::PRIMITIVE_2D_BIN_COMP_SPV,
+            },
+            bind_group_layouts: &[bind_group_layout],
+        });
+
+        let rasterize_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_RASTERIZE_COMP_SPV,
             },
             bind_group_layouts: &[bind_group_layout],
         });
 
         Self {
             bind_group_layout,
-            pipeline,
+            bin_pipeline,
+            rasterize_pipeline,
         }
     }
 }

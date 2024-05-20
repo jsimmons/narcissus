@@ -1,19 +1,14 @@
 
 struct Glyph {
-    uint x0;
-    uint x1;
-    uint y0;
-    uint y1;
+    ivec2 atlas_min;
+    ivec2 atlas_max;
 
-    float offset_x0;
-    float offset_x1;
-    float offset_y0;
-    float offset_y1;
+    vec2 offset_min;
+    vec2 offset_max;
 };
 
 struct GlyphInstance {
-    float x;
-    float y;
+    vec2 position;
     uint index;
     uint color;
 };
@@ -21,9 +16,4 @@ struct GlyphInstance {
 struct PrimitiveInstance {
     uint type;
     uint index;
-};
-
-struct Tile {
-    uint index;
-    uint count;
 };

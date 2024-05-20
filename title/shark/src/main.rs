@@ -12,13 +12,13 @@ use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder,
-    ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, Image, ImageAspectFlags,
-    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange,
-    ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer,
-    PresentMode, RenderingAttachment, RenderingDesc, Sampler, SamplerAddressMode, SamplerDesc,
-    SamplerFilter, Scissor, StoreOp, SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind,
-    Viewport,
+    create_device, Access, Bind, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue,
+    CmdEncoder, ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Image,
+    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
+    ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation,
+    Offset2d, PersistentBuffer, PresentMode, RenderingAttachment, RenderingDesc, Sampler,
+    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, StoreOp, SwapchainConfigurator,
+    SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -510,7 +510,7 @@ impl<'a> UiState<'a> {
                 x,
                 y,
                 touched_glyph_index,
-                color: 0xff000000,
+                color: 0x880000ff,
             });
 
             x += advance_width * scale;
@@ -852,6 +852,8 @@ struct DrawState<'gpu> {
     rt_image: Image,
     ui_image: Image,
 
+    tile_bitmap_buffer: PersistentBuffer<'gpu>,
+
     glyph_atlas_image: Image,
 
     samplers: Samplers,
@@ -871,6 +873,20 @@ impl<'gpu> DrawState<'gpu> {
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
+        const MAX_PRIMS: usize = 0x8000;
+        const TILE_STRIDE: usize = MAX_PRIMS / 32;
+        const MAX_TILES_X: usize = 180;
+        const MAX_TILES_Y: usize = 113;
+
+        const BITMAP_SIZE: usize = (MAX_TILES_X * MAX_TILES_Y * TILE_STRIDE) * 4;
+
+        let tile_bitmap_buffer = gpu.create_persistent_buffer(&BufferDesc {
+            memory_location: MemoryLocation::Device,
+            host_mapped: true,
+            usage: BufferUsageFlags::STORAGE,
+            size: BITMAP_SIZE,
+        });
+
         Self {
             gpu,
             basic_pipeline,
@@ -881,6 +897,7 @@ impl<'gpu> DrawState<'gpu> {
             depth_image: default(),
             rt_image: default(),
             ui_image: default(),
+            tile_bitmap_buffer,
             glyph_atlas_image: default(),
             samplers,
             models,
@@ -1254,8 +1271,6 @@ impl<'gpu> DrawState<'gpu> {
 
             // Render UI
             {
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.pipeline);
-
                 let uniforms_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
@@ -1286,14 +1301,8 @@ impl<'gpu> DrawState<'gpu> {
                     BufferUsageFlags::STORAGE,
                     &[0u32],
                 );
-                let tile_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::STORAGE,
-                    &[0u32],
-                );
 
-                ui_state.primitive_instances.clear();
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_pipeline);
 
                 gpu.cmd_set_bind_group(
                     frame,
@@ -1337,7 +1346,7 @@ impl<'gpu> DrawState<'gpu> {
                         Bind {
                             binding: 6,
                             array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[tile_buffer.to_arg()]),
+                            typed: TypedBind::StorageBuffer(&[self.tile_bitmap_buffer.to_arg()]),
                         },
                         Bind {
                             binding: 7,
@@ -1350,7 +1359,33 @@ impl<'gpu> DrawState<'gpu> {
                     ],
                 );
 
-                gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    (ui_state.primitive_instances.len() as u32 + 63) / 64,
+                    (self.width + 15) / 16,
+                    (self.height + 15) / 16,
+                );
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    Some(&GlobalBarrier {
+                        prev_access: &[Access::ShaderWrite],
+                        next_access: &[Access::ShaderOtherRead],
+                    }),
+                    &[],
+                );
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.rasterize_pipeline);
+
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    (self.width + 15) / 16,
+                    (self.height + 15) / 16,
+                    1,
+                );
+
+                // Cleanup
+                ui_state.primitive_instances.clear();
             }
 
             // Display transform and composite
@@ -1600,21 +1635,24 @@ pub fn main() {
 
             let tick_duration = Instant::now() - tick_start;
 
-            ui_state.text_fmt(
-                5.0,
-                40.0,
-                FontFamily::RobotoRegular,
-                30.0,
-                format_args!("tick: {:?}", tick_duration),
-            );
+            for i in 0..80 {
+                let i = i as f32;
+                ui_state.text_fmt(
+                    5.0,
+                    i * 20.0,
+                    FontFamily::RobotoRegular,
+                    40.0,
+                    format_args!("tick: {:?}", tick_duration),
+                );
 
-            ui_state.text_fmt(
-                5.0,
-                90.0,
-                FontFamily::NotoSansJapanese,
-                30.0,
-                format_args!("お握り The Quick Brown Fox Jumped Over The Lazy Dog"),
-            );
+                ui_state.text_fmt(
+                    200.0,
+                    i * 20.0,
+                    FontFamily::NotoSansJapanese,
+                    40.0,
+                    format_args!("お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████"),
+                );
+            }
 
             draw_state.draw(
                 thread_token,
