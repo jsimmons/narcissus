@@ -155,11 +155,6 @@ impl BlockLink {
             next: block_index,
         }
     }
-
-    /// Returns true if the given link is not inserted into any list.
-    fn is_unlinked(&self) -> bool {
-        self.prev == self.next
-    }
 }
 
 /// Insert the node at index `$insert` before the node at index `$x` for the
@@ -188,7 +183,7 @@ macro_rules! list_insert_after {
     };
 }
 
-/// Unlink the node`$x` for the list given by `$storage` and `$link_name`.
+/// Unlink the node `$x` for the list given by `$storage` and `$link_name`.
 macro_rules! list_unlink {
     ($storage:expr, $link_name:ident, $x:expr) => {
         let prev_index = $storage[$x].$link_name.prev;
@@ -198,6 +193,26 @@ macro_rules! list_unlink {
         $storage[$x].$link_name.prev = $x;
         $storage[$x].$link_name.next = $x;
     };
+}
+
+/// Returns true if the node `$x` for the list given by `$storage` and
+/// `$link_name` is not linked to any other nodes.
+macro_rules! list_is_unlinked {
+    ($storage:expr, $link_name:ident, $x:expr) => {{
+        let prev_index = $storage[$x].$link_name.prev;
+        let next_index = $storage[$x].$link_name.next;
+        prev_index == $x && next_index == $x
+    }};
+}
+
+/// Returns true if the node `$x` for the list given by `$storage` and
+/// `$link_name` is linked to any other node.
+macro_rules! list_is_linked {
+    ($storage:expr, $link_name:ident, $x:expr) => {{
+        let prev_index = $storage[$x].$link_name.prev;
+        let next_index = $storage[$x].$link_name.next;
+        prev_index != $x || next_index != $x
+    }};
 }
 
 struct Block {
@@ -408,7 +423,8 @@ where
     #[inline(always)]
     fn insert_block(&mut self, block_index: BlockIndex) {
         debug_assert!(self.blocks[block_index].is_free());
-        debug_assert!(self.blocks[block_index].free_link.is_unlinked());
+        debug_assert!(self.blocks[block_index].size != 0xffff_ffff);
+        debug_assert!(list_is_unlinked!(self.blocks, free_link, block_index));
 
         let (_, bin) = Bin::from_size_round_down(self.blocks[block_index].size);
         let bin_index = bin.index();
@@ -426,6 +442,7 @@ where
     #[inline(always)]
     fn extract_block(&mut self, block_index: BlockIndex) {
         debug_assert!(self.blocks[block_index].is_free());
+        debug_assert!(self.blocks[block_index].size != 0xffff_ffff);
 
         let (_, bin) = Bin::from_size_round_down(self.blocks[block_index].size);
 
@@ -433,6 +450,8 @@ where
 
         debug_assert!(self.empty_block_heads[bin_index].is_some());
 
+        // If we're the head of the current empty list, then we need to remove
+        // ourselves.
         if self.empty_block_heads[bin_index] == Some(block_index) {
             let next_index = self.blocks[block_index].free_link.next;
             if next_index != block_index {
@@ -441,6 +460,8 @@ where
                 self.empty_block_heads[bin_index] = None;
                 self.clear_metadata_bit(bin);
             }
+        } else {
+            debug_assert!(list_is_linked!(self.blocks, free_link, block_index));
         }
 
         list_unlink!(self.blocks, free_link, block_index);
@@ -479,6 +500,8 @@ where
         size: u32,
         super_block_index: SuperBlockIndex,
     ) -> BlockIndex {
+        debug_assert!(size != 0 && size < i32::MAX as u32);
+
         #[cold]
         fn create_block(blocks: &mut Vec<Block>) -> BlockIndex {
             assert!(blocks.len() < i32::MAX as usize);
@@ -507,8 +530,10 @@ where
             create_block(&mut self.blocks)
         };
 
-        let block = &mut self.blocks[block_index];
+        debug_assert!(list_is_unlinked!(self.blocks, phys_link, block_index));
+        debug_assert!(list_is_unlinked!(self.blocks, free_link, block_index));
 
+        let block = &mut self.blocks[block_index];
         debug_assert!(block.is_free());
         debug_assert!(block.size == 0xffff_ffff);
         debug_assert!(block.offset == 0xffff_ffff);
@@ -523,10 +548,10 @@ where
 
     /// Recycles the block indicated by `block_index` for re-use.
     fn recycle_block(&mut self, block_index: BlockIndex) {
-        let block = &mut self.blocks[block_index];
-        debug_assert!(block.free_link.is_unlinked());
-        debug_assert!(block.phys_link.is_unlinked());
+        debug_assert!(list_is_unlinked!(self.blocks, phys_link, block_index));
+        debug_assert!(list_is_unlinked!(self.blocks, free_link, block_index));
 
+        let block = &mut self.blocks[block_index];
         block.size = 0xffff_ffff;
         block.offset = 0xffff_ffff;
         block.super_block_index = SuperBlockIndex(0xffff_ffff);
@@ -541,9 +566,14 @@ where
     fn recycle_super_block(&mut self, super_block_index: SuperBlockIndex) {
         let super_block = &self.super_blocks[super_block_index];
 
+        debug_assert!(list_is_unlinked!(
+            self.blocks,
+            phys_link,
+            super_block.first_block_index
+        ));
+
         let block = &self.blocks[super_block.first_block_index];
         debug_assert!(block.is_free());
-        debug_assert!(block.phys_link.is_unlinked());
         let block_index = super_block.first_block_index;
 
         // Block is free so we always need to extract it first.
@@ -604,10 +634,10 @@ where
                     return None;
                 }
 
-                let block = &self.blocks[super_block.first_block_index];
-
                 // Check whether this block is unallocated, and also not split.
-                if block.is_free() && block.phys_link.is_unlinked() {
+                if self.blocks[super_block.first_block_index].is_free()
+                    && list_is_unlinked!(self.blocks, phys_link, super_block.first_block_index)
+                {
                     Some(SuperBlockIndex(super_block_index as u32))
                 } else {
                     None
@@ -640,9 +670,9 @@ where
         let (rounded_size, bin) = self.search_non_empty_bin(size)?;
         let block_index = self.empty_block_heads[bin.index()].unwrap();
 
-        debug_assert!(
-            self.blocks[block_index].is_free() && self.blocks[block_index].size >= rounded_size
-        );
+        debug_assert!(self.blocks[block_index].is_free());
+        debug_assert!(self.blocks[block_index].size >= rounded_size);
+        debug_assert!(self.blocks[block_index].size != 0xffff_ffff);
 
         self.extract_block(block_index);
 
@@ -689,6 +719,9 @@ where
         let mut block_index = allocation.block_index;
         let generation = self.blocks[block_index].generation;
         assert_eq!(generation, allocation.generation, "double-free");
+        debug_assert!(self.blocks[block_index].is_used());
+        debug_assert!(list_is_unlinked!(self.blocks, free_link, block_index));
+
         self.blocks[block_index].generation = generation.wrapping_add(1);
 
         // Merge next block into the current block.
@@ -720,7 +753,7 @@ where
 
         // If this block is now the only block left in the super block, flag this
         // so we can attempt to free unused blocks.
-        self.super_block_free_dirty |= self.blocks[block_index].phys_link.is_unlinked();
+        self.super_block_free_dirty |= list_is_unlinked!(self.blocks, phys_link, block_index);
 
         // Insert the merged free block.
         self.insert_block(block_index);
