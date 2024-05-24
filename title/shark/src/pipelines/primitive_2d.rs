@@ -6,14 +6,31 @@ use narcissus_gpu::{
 
 use crate::Gpu;
 
+pub const MAX_PRIMS: u32 = 0x20000;
+pub const TILE_SIZE_COARSE: u32 = 128;
+pub const TILE_SIZE_FINE: u32 = 16;
+pub const TILE_BITMAP_WORDS_L1: u32 = MAX_PRIMS / 32 / 32;
+pub const TILE_BITMAP_WORDS_L0: u32 = MAX_PRIMS / 32;
+pub const TILE_STRIDE_COARSE: u32 = TILE_BITMAP_WORDS_L0;
+pub const TILE_STRIDE_FINE: u32 = TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1;
+
 #[allow(unused)]
 #[repr(C)]
 pub struct PrimitiveUniforms {
-    pub screen_width: u32,
-    pub screen_height: u32,
-    pub atlas_width: u32,
-    pub atlas_height: u32,
+    pub screen_resolution_x: u32,
+    pub screen_resolution_y: u32,
+    pub tile_resolution_coarse_x: u32,
+    pub tile_resolution_coarse_y: u32,
+    pub tile_resolution_fine_x: u32,
+    pub tile_resolution_fine_y: u32,
+    pub atlas_resolution_x: u32,
+    pub atlas_resolution_y: u32,
+
     pub num_primitives: u32,
+    pub num_primitives_32: u32,
+    pub num_primitives_1024: u32,
+
+    pub _pad0: u32,
 }
 
 #[allow(unused)]
@@ -27,7 +44,8 @@ pub struct GlyphInstance {
 
 pub struct Primitive2dPipeline {
     pub bind_group_layout: BindGroupLayout,
-    pub bin_pipeline: Pipeline,
+    pub coarse_bin_pipeline: Pipeline,
+    pub fine_bin_pipeline: Pipeline,
     pub rasterize_pipeline: Pipeline,
 }
 
@@ -46,16 +64,26 @@ impl Primitive2dPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
             // Primitive Instances
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
-            // Tiles
+            // Coarse Tiles
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
-            // UI
+            // Fine Tiles
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
+            // UI Image Output
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
         ]);
 
-        let bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+        let coarse_bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
-                code: shark_shaders::PRIMITIVE_2D_BIN_COMP_SPV,
+                code: shark_shaders::PRIMITIVE_2D_BIN_COARSE_COMP_SPV,
+            },
+            bind_group_layouts: &[bind_group_layout],
+        });
+
+        let fine_bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_BIN_FINE_COMP_SPV,
             },
             bind_group_layouts: &[bind_group_layout],
         });
@@ -70,7 +98,8 @@ impl Primitive2dPipeline {
 
         Self {
             bind_group_layout,
-            bin_pipeline,
+            coarse_bin_pipeline,
+            fine_bin_pipeline,
             rasterize_pipeline,
         }
     }

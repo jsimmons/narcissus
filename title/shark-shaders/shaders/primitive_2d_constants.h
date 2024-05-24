@@ -1,6 +1,0 @@
-#define MAX_PRIMS 0x10000u
-#define TILE_SIZE 16
-#define TILE_STRIDE (MAX_PRIMS / 32u)
-#define MAX_TILES_X 180
-#define MAX_TILES_Y 113
-#define NUM_TILES (MAX_TILES_X * MAX_TILES_Y)

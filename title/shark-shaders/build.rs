@@ -20,7 +20,11 @@ const SHADERS: &[Shader] = &[
     },
     Shader {
         stage: "comp",
-        name: "primitive_2d_bin",
+        name: "primitive_2d_bin_coarse",
+    },
+    Shader {
+        stage: "comp",
+        name: "primitive_2d_bin_fine",
     },
     Shader {
         stage: "comp",
@@ -78,7 +82,7 @@ fn main() {
         assert!(status.success());
     }
 
-    for Shader { stage, name } in SHADERS {
+    for &Shader { stage, name } in SHADERS {
         let depfile = std::fs::read_to_string(format!("{out_dir}/{name}.{stage}.d")).unwrap();
 
         struct Lexer<'a> {

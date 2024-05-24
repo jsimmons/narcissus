@@ -1,0 +1,49 @@
+#define MAX_PRIMS 0x20000u
+#define TILE_SIZE_COARSE 128
+#define TILE_SIZE_FINE 16
+#define TILE_SIZE_SHIFT 3
+#define TILE_BITMAP_WORDS_L1 (MAX_PRIMS / 32 / 32)
+#define TILE_BITMAP_WORDS_L0 (MAX_PRIMS / 32)
+#define TILE_STRIDE_COARSE TILE_BITMAP_WORDS_L0
+#define TILE_STRIDE_FINE (TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1)
+
+struct PrimitiveUniforms {
+    uvec2 screen_resolution;
+    uvec2 tile_resolution_coarse;
+    uvec2 tile_resolution_fine;
+    uvec2 atlas_resolution;
+
+    uint num_primitives;
+    uint num_primitives_32;
+    uint num_primitives_1024;
+    uint pad_1;
+};
+
+struct Glyph {
+    ivec2 atlas_min;
+    ivec2 atlas_max;
+
+    vec2 offset_min;
+    vec2 offset_max;
+};
+
+struct GlyphInstance {
+    vec2 position;
+    uint index;
+    uint color;
+};
+
+struct PrimitiveInstance {
+    uint type;
+    uint index;
+};
+
+#include "primitive_2d_bindings.h"
+
+bool test_glyph(uint index, uvec2 tile_min, uvec2 tile_max) {
+    const GlyphInstance gi = glyph_instances[index];
+    const Glyph gl = glyphs[gi.index];
+    const vec2 glyph_min = gi.position + gl.offset_min;
+    const vec2 glyph_max = gi.position + gl.offset_max;
+    return !(any(lessThan(tile_max, glyph_min)) || any(greaterThan(tile_min, glyph_max)));
+}
