@@ -29,8 +29,8 @@ void main() {
     uvec4 ballot_result = subgroupBallot(intersects);
     if (subgroupElect()) { // managed democracy wins again
         const uint tile_index = tile_coord.y * primitive_uniforms.tile_resolution_coarse.x + tile_coord.x;
-        const uint bitmap_offset = tile_index * TILE_STRIDE_COARSE;
-        coarse_bitmap_wo[bitmap_offset + 2 * gl_WorkGroupID.x + 0] = ballot_result.x;
-        coarse_bitmap_wo[bitmap_offset + 2 * gl_WorkGroupID.x + 1] = ballot_result.y;
+        const uint tile_offset = tile_index * TILE_STRIDE_COARSE;
+        coarse_bitmap_wo[tile_offset + 2 * gl_WorkGroupID.x + 0] = ballot_result.x;
+        coarse_bitmap_wo[tile_offset + 2 * gl_WorkGroupID.x + 1] = ballot_result.y;
     }
 }

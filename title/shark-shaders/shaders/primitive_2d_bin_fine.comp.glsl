@@ -20,34 +20,38 @@ void main() {
     const uvec2 tile_max = min(tile_min + tile_size, primitive_uniforms.screen_resolution);
     const uint tile_index = tile_coord.y * primitive_uniforms.tile_resolution_fine.x + tile_coord.x;
 
-    const uint bitmap_index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
+    const uint index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
 
     uint bitmap_l0 = 0;
-    if (bitmap_index < primitive_uniforms.num_primitives_32) {
+    if (index < primitive_uniforms.num_primitives_32) {
         const uvec2 tile_coord_coarse = tile_coord >> TILE_SIZE_SHIFT;
         const uint tile_index_coarse = tile_coord_coarse.y * primitive_uniforms.tile_resolution_coarse.x + tile_coord_coarse.x;
-        const uint bitmap_offset_coarse = tile_index_coarse * TILE_STRIDE_COARSE + bitmap_index;
+        const uint tile_base_coarse = tile_index_coarse * TILE_STRIDE_COARSE;
+        const uint tile_bitmap_base_coarse = tile_base_coarse + TILE_BITMAP_OFFSET_COARSE;
 
-        uint bitmap_coarse = coarse_bitmap_ro[bitmap_offset_coarse];
+        uint bitmap_coarse = coarse_bitmap_ro[tile_bitmap_base_coarse + index];
         while (bitmap_coarse != 0) {
             const uint i = findLSB(bitmap_coarse);
-            const uint primitive_index = bitmap_index * 32 + i;
             bitmap_coarse ^= bitmap_coarse & -bitmap_coarse;
 
+            const uint primitive_index = index * 32 + i;
             if (test_glyph(primitive_index, tile_min, tile_max)) {
                 bitmap_l0 |= 1 << i;
             }
         }
     }
 
-    const uint fine_bitmap_l0_offset = tile_index * TILE_STRIDE_FINE + TILE_BITMAP_WORDS_L1 + bitmap_index;
-    fine_bitmap_wo[fine_bitmap_l0_offset] = bitmap_l0;
+    const uint tile_base_fine = tile_index * TILE_STRIDE_FINE;
 
-    const bool bit_l1 = bitmap_l0 != 0;
-    uvec4 ballot_result = subgroupBallot(bit_l1);
+    // Write the L0 per-primitive bitmap.
+    const uint tile_bitmap_l0_base_fine = tile_base_fine + TILE_BITMAP_L0_OFFSET_FINE;
+    fine_bitmap_wo[tile_bitmap_l0_base_fine + index] = bitmap_l0;
+
+    // Write the L1 per-bitmap-word bitmap.
+    uvec4 ballot_result = subgroupBallot(bitmap_l0 != 0);
     if (subgroupElect()) {
-        const uint fine_bitmap_l1_offset = tile_index * TILE_STRIDE_FINE;
-        fine_bitmap_wo[fine_bitmap_l1_offset + 2 * gl_WorkGroupID.x + 0] = ballot_result.x;
-        fine_bitmap_wo[fine_bitmap_l1_offset + 2 * gl_WorkGroupID.x + 1] = ballot_result.y;
+        const uint tile_bitmap_l1_base_fine = tile_base_fine + TILE_BITMAP_L1_OFFSET_FINE;
+        fine_bitmap_wo[tile_bitmap_l1_base_fine + 2 * gl_WorkGroupID.x + 0] = ballot_result.x;
+        fine_bitmap_wo[tile_bitmap_l1_base_fine + 2 * gl_WorkGroupID.x + 1] = ballot_result.y;
     }
 }
