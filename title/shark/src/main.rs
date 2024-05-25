@@ -19,8 +19,8 @@ use narcissus_gpu::{
     ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
     ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation,
     Offset2d, PersistentBuffer, PresentMode, RenderingAttachment, RenderingDesc, Sampler,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, StoreOp, SwapchainConfigurator,
-    SwapchainImage, ThreadToken, TypedBind, Viewport,
+    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderStageFlags, StoreOp,
+    SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -1314,13 +1314,16 @@ impl<'gpu> DrawState<'gpu> {
 
             // Render UI
             {
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.coarse_bin_pipeline);
+
                 let num_primitives = ui_state.primitive_instances.len() as u32;
                 let num_primitives_32 = (num_primitives + 31) / 32;
                 let num_primitives_1024 = (num_primitives_32 + 31) / 32;
-                let uniforms_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::UNIFORM,
+
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
                     &PrimitiveUniforms {
                         screen_resolution_x: self.width,
                         screen_resolution_y: self.height,
@@ -1336,6 +1339,7 @@ impl<'gpu> DrawState<'gpu> {
                         _pad0: 0,
                     },
                 );
+
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
@@ -1355,8 +1359,6 @@ impl<'gpu> DrawState<'gpu> {
                     &[0u32],
                 );
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.coarse_bin_pipeline);
-
                 gpu.cmd_set_bind_group(
                     frame,
                     cmd_encoder,
@@ -1366,15 +1368,10 @@ impl<'gpu> DrawState<'gpu> {
                         Bind {
                             binding: 0,
                             array_element: 0,
-                            typed: TypedBind::UniformBuffer(&[uniforms_buffer.to_arg()]),
-                        },
-                        Bind {
-                            binding: 1,
-                            array_element: 0,
                             typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
                         },
                         Bind {
-                            binding: 2,
+                            binding: 1,
                             array_element: 0,
                             typed: TypedBind::SampledImage(&[(
                                 ImageLayout::Optimal,
@@ -1382,36 +1379,36 @@ impl<'gpu> DrawState<'gpu> {
                             )]),
                         },
                         Bind {
-                            binding: 3,
+                            binding: 2,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[glyph_buffer.to_arg()]),
                         },
                         Bind {
-                            binding: 4,
+                            binding: 3,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
                         },
                         Bind {
-                            binding: 5,
+                            binding: 4,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[primitive_instance_buffer.to_arg()]),
                         },
                         Bind {
-                            binding: 6,
+                            binding: 5,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[self
                                 .coarse_tile_bitmap_buffer
                                 .to_arg()]),
                         },
                         Bind {
-                            binding: 7,
+                            binding: 6,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[self
                                 .fine_tile_bitmap_buffer
                                 .to_arg()]),
                         },
                         Bind {
-                            binding: 8,
+                            binding: 7,
                             array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
