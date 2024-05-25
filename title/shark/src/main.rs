@@ -1738,7 +1738,7 @@ pub fn main() {
                         FontFamily::NotoSansJapanese,
                         15.0,
                         format_args!(
-                            "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████"
+                            "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████"
                         ),
                     );
                 }
