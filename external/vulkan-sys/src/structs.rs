@@ -1703,7 +1703,7 @@ pub struct PipelineLayoutCreateInfo<'a> {
     pub _next: *const c_void,
     pub flags: PipelineLayoutCreateFlags,
     pub set_layouts: VulkanSlice1<'a, u32, DescriptorSetLayout, 0>,
-    pub push_constant_ranges: VulkanSlice1<'a, u32, DescriptorSetLayout, 4>,
+    pub push_constant_ranges: VulkanSlice1<'a, u32, PushConstantRange, 4>,
 }
 
 impl<'a> Default for PipelineLayoutCreateInfo<'a> {
