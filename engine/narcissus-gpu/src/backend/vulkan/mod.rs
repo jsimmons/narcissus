@@ -21,8 +21,8 @@ use crate::{
     Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit,
     ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation,
     Offset2d, Offset3d, PersistentBuffer, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp,
-    SamplerDesc, SamplerFilter, SwapchainConfigurator, SwapchainImage, SwapchainOutOfDateError,
-    ThreadToken, TransientBuffer, TypedBind,
+    SamplerDesc, SamplerFilter, ShaderStageFlags, SwapchainConfigurator, SwapchainImage,
+    SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
 };
 
 mod allocator;
@@ -1686,6 +1686,37 @@ impl Device for VulkanDevice {
                 },
             )
         }
+    }
+
+    unsafe fn cmd_push_constants_unchecked(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        stage_flags: ShaderStageFlags,
+        offset: u32,
+        size: u32,
+        src: *const u8,
+    ) {
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+        let command_buffer = cmd_encoder.command_buffer;
+
+        let VulkanBoundPipeline {
+            pipeline_layout,
+            pipeline_bind_point: _,
+        } = cmd_encoder
+            .bound_pipeline
+            .as_ref()
+            .expect("cannot push constants without a pipeline bound")
+            .clone();
+
+        let stage_flags = vulkan_shader_stage_flags(stage_flags);
+        self.device_fn.cmd_push_constants(
+            command_buffer,
+            pipeline_layout,
+            stage_flags,
+            offset,
+            size,
+            src as *const std::ffi::c_void,
+        )
     }
 
     fn cmd_copy_buffer_to_image(

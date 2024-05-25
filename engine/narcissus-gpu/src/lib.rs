@@ -830,6 +830,15 @@ pub trait Device {
         image_barriers: &[ImageBarrier],
     );
 
+    unsafe fn cmd_push_constants_unchecked(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        stage_flags: ShaderStageFlags,
+        offset: u32,
+        size: u32,
+        src: *const u8,
+    );
+
     fn cmd_copy_buffer_to_image(
         &self,
         cmd_encoder: &mut CmdEncoder,
@@ -887,7 +896,44 @@ pub trait Device {
     fn end_frame<'device>(&'device self, frame: Frame<'device>);
 }
 
+#[cold]
+fn overflow() -> ! {
+    panic!("overflow")
+}
+
 pub trait DeviceExt: Device {
+    fn cmd_push_constants<T: ?Sized>(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        stage_flags: ShaderStageFlags,
+        offset: usize,
+        data: &T,
+    ) {
+        let size = std::mem::size_of_val(data);
+        let src = data as *const _ as *const u8;
+
+        // # Safety
+        //
+        // The memory region from `src` through `src` + `size` must be valid as it's
+        // directly derived from `data`.
+        //
+        // This function will propagate undefined values from T, for example, padding
+        // bytes, however we promise not to materialize a rust reference to any such
+        // data.
+        unsafe {
+            if size >= u32::MAX as usize || offset >= u32::MAX as usize {
+                overflow();
+            }
+            self.cmd_push_constants_unchecked(
+                cmd_encoder,
+                stage_flags,
+                offset as u32,
+                size as u32,
+                src,
+            )
+        }
+    }
+
     fn create_persistent_buffer_with_data<'a, T: ?Sized>(
         &'a self,
         memory_location: MemoryLocation,
