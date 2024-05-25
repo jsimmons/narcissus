@@ -48,6 +48,7 @@ impl BasicPipeline {
 
         let layout = &PipelineLayout {
             bind_group_layouts: &[uniforms_bind_group_layout, storage_bind_group_layout],
+            push_constant_ranges: &[],
         };
 
         let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {

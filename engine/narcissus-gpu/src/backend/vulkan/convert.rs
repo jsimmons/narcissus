@@ -7,7 +7,7 @@ use crate::{
     BindingType, BlendMode, BufferUsageFlags, ClearValue, ColorSpace, CompareOp, CullingMode,
     FrontFace, ImageAspectFlags, ImageDimension, ImageFormat, ImageSubresourceLayers,
     ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, PolygonMode,
-    PresentMode, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Topology,
+    PresentMode, PushConstantRange, ShaderStageFlags, StencilOp, StencilOpState, StoreOp, Topology,
 };
 
 #[must_use]
@@ -188,6 +188,15 @@ pub fn vulkan_shader_stage_flags(stage_flags: ShaderStageFlags) -> vk::ShaderSta
         flags |= vk::ShaderStageFlags::VERTEX;
     }
     flags
+}
+
+#[must_use]
+pub fn vulkan_push_constant_range(push_constant_range: PushConstantRange) -> vk::PushConstantRange {
+    vk::PushConstantRange {
+        stage_flags: vulkan_shader_stage_flags(push_constant_range.stage_flags),
+        offset: push_constant_range.offset,
+        size: push_constant_range.size,
+    }
 }
 
 #[must_use]

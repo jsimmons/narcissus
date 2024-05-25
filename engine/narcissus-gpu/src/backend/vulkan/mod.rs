@@ -2692,6 +2692,19 @@ impl VulkanDevice {
                         .as_bytes(),
                 );
             }
+            for push_constant_range in pipeline_layout.push_constant_ranges {
+                assert!(
+                    push_constant_range.offset & 3 == 0,
+                    "push constant offsets must be 4 byte aligned"
+                );
+                assert!(
+                    push_constant_range.size & 3 == 0,
+                    "push constant sizes must be 4 byte aligned"
+                );
+                hasher.update(&push_constant_range.stage_flags.as_raw().to_le_bytes());
+                hasher.update(&push_constant_range.offset.to_le_bytes());
+                hasher.update(&push_constant_range.size.to_le_bytes());
+            }
             hasher.finalize()
         };
 
@@ -2718,9 +2731,18 @@ impl VulkanDevice {
                             });
                     let set_layouts = arena.alloc_slice_fill_iter(set_layouts_iter);
 
+                    let push_constant_ranges_iter = pipeline_layout
+                        .push_constant_ranges
+                        .iter()
+                        .copied()
+                        .map(vulkan_push_constant_range);
+                    let push_constant_ranges =
+                        arena.alloc_slice_fill_iter(push_constant_ranges_iter);
+
                     let pipeline_layout = {
                         let create_info = vk::PipelineLayoutCreateInfo {
                             set_layouts: set_layouts.into(),
+                            push_constant_ranges: push_constant_ranges.into(),
                             ..default()
                         };
                         let mut pipeline_layout = vk::PipelineLayout::null();

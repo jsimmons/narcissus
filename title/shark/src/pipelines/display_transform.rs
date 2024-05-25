@@ -27,6 +27,7 @@ impl DisplayTransformPipeline {
 
         let layout = &PipelineLayout {
             bind_group_layouts: &[bind_group_layout],
+            push_constant_ranges: &[],
         };
 
         let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {

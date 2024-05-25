@@ -394,9 +394,17 @@ pub struct DepthBias {
     pub slope_factor: f32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PushConstantRange {
+    pub stage_flags: ShaderStageFlags,
+    pub offset: u32,
+    pub size: u32,
+}
+
 #[derive(PartialEq, Eq, Hash)]
 pub struct PipelineLayout<'a> {
     pub bind_group_layouts: &'a [BindGroupLayout],
+    pub push_constant_ranges: &'a [PushConstantRange],
 }
 
 pub struct GraphicsPipelineAttachments<'a> {

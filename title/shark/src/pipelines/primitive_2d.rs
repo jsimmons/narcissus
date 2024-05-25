@@ -74,6 +74,7 @@ impl Primitive2dPipeline {
 
         let layout = &PipelineLayout {
             bind_group_layouts: &[bind_group_layout],
+            push_constant_ranges: &[],
         };
 
         let coarse_bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
