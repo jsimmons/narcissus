@@ -1,7 +1,7 @@
 use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
-    BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, ShaderDesc,
-    ShaderStageFlags,
+    BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, PipelineLayout,
+    ShaderDesc, ShaderStageFlags,
 };
 
 use crate::Gpu;
@@ -72,12 +72,16 @@ impl Primitive2dPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
         ]);
 
+        let layout = &PipelineLayout {
+            bind_group_layouts: &[bind_group_layout],
+        };
+
         let coarse_bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
                 code: shark_shaders::PRIMITIVE_2D_BIN_COARSE_COMP_SPV,
             },
-            bind_group_layouts: &[bind_group_layout],
+            layout,
         });
 
         let fine_bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
@@ -85,7 +89,7 @@ impl Primitive2dPipeline {
                 entry: c"main",
                 code: shark_shaders::PRIMITIVE_2D_BIN_FINE_COMP_SPV,
             },
-            bind_group_layouts: &[bind_group_layout],
+            layout,
         });
 
         let rasterize_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
@@ -93,7 +97,7 @@ impl Primitive2dPipeline {
                 entry: c"main",
                 code: shark_shaders::PRIMITIVE_2D_RASTERIZE_COMP_SPV,
             },
-            bind_group_layouts: &[bind_group_layout],
+            layout,
         });
 
         Self {

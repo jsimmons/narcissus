@@ -394,7 +394,12 @@ pub struct DepthBias {
     pub slope_factor: f32,
 }
 
-pub struct GraphicsPipelineLayout<'a> {
+#[derive(PartialEq, Eq, Hash)]
+pub struct PipelineLayout<'a> {
+    pub bind_group_layouts: &'a [BindGroupLayout],
+}
+
+pub struct GraphicsPipelineAttachments<'a> {
     pub color_attachment_formats: &'a [ImageFormat],
     pub depth_attachment_format: Option<ImageFormat>,
     pub stencil_attachment_format: Option<ImageFormat>,
@@ -403,8 +408,8 @@ pub struct GraphicsPipelineLayout<'a> {
 pub struct GraphicsPipelineDesc<'a> {
     pub vertex_shader: ShaderDesc<'a>,
     pub fragment_shader: ShaderDesc<'a>,
-    pub bind_group_layouts: &'a [BindGroupLayout],
-    pub layout: GraphicsPipelineLayout<'a>,
+    pub layout: &'a PipelineLayout<'a>,
+    pub attachments: GraphicsPipelineAttachments<'a>,
     pub topology: Topology,
     pub primitive_restart: bool,
     pub polygon_mode: PolygonMode,
@@ -422,7 +427,7 @@ pub struct GraphicsPipelineDesc<'a> {
 
 pub struct ComputePipelineDesc<'a> {
     pub shader: ShaderDesc<'a>,
-    pub bind_group_layouts: &'a [BindGroupLayout],
+    pub layout: &'a PipelineLayout<'a>,
 }
 
 #[derive(Clone, Copy, Debug)]

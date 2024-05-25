@@ -1,8 +1,8 @@
 use narcissus_core::default;
 use narcissus_gpu::{
     BindDesc, BindGroupLayout, BindingType, BlendMode, CompareOp, CullingMode, FrontFace,
-    GraphicsPipelineDesc, GraphicsPipelineLayout, ImageFormat, Pipeline, PolygonMode, ShaderDesc,
-    ShaderStageFlags, Topology,
+    GraphicsPipelineAttachments, GraphicsPipelineDesc, ImageFormat, Pipeline, PipelineLayout,
+    PolygonMode, ShaderDesc, ShaderStageFlags, Topology,
 };
 use narcissus_maths::Mat4;
 
@@ -46,6 +46,10 @@ impl BasicPipeline {
             BindDesc::new(ShaderStageFlags::ALL, BindingType::SampledImage),
         ]);
 
+        let layout = &PipelineLayout {
+            bind_group_layouts: &[uniforms_bind_group_layout, storage_bind_group_layout],
+        };
+
         let pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
                 entry: c"main",
@@ -55,8 +59,8 @@ impl BasicPipeline {
                 entry: c"main",
                 code: shark_shaders::BASIC_FRAG_SPV,
             },
-            bind_group_layouts: &[uniforms_bind_group_layout, storage_bind_group_layout],
-            layout: GraphicsPipelineLayout {
+            layout,
+            attachments: GraphicsPipelineAttachments {
                 color_attachment_formats: &[ImageFormat::RGBA16_FLOAT],
                 depth_attachment_format: Some(ImageFormat::DEPTH_F32),
                 stencil_attachment_format: None,

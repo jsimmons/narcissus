@@ -1,6 +1,6 @@
 use narcissus_gpu::{
-    BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, ShaderDesc,
-    ShaderStageFlags,
+    BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, PipelineLayout,
+    ShaderDesc, ShaderStageFlags,
 };
 
 use crate::Gpu;
@@ -25,12 +25,16 @@ impl DisplayTransformPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
         ]);
 
+        let layout = &PipelineLayout {
+            bind_group_layouts: &[bind_group_layout],
+        };
+
         let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
                 code: shark_shaders::DISPLAY_TRANSFORM_COMP_SPV,
             },
-            bind_group_layouts: &[bind_group_layout],
+            layout,
         });
 
         Self {

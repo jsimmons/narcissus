@@ -9,8 +9,10 @@ use std::{
 };
 
 use narcissus_core::{
-    box_assume_init, default, is_aligned_to, manual_arc, manual_arc::ManualArc,
-    raw_window::AsRawWindow, zeroed_box, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
+    box_assume_init, default, is_aligned_to,
+    manual_arc::{self, ManualArc},
+    raw_window::AsRawWindow,
+    zeroed_box, Arc, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
 use vulkan_sys as vk;
@@ -20,9 +22,9 @@ use crate::{
     BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d,
     Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit,
     ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation,
-    Offset2d, Offset3d, PersistentBuffer, Pipeline, Sampler, SamplerAddressMode, SamplerCompareOp,
-    SamplerDesc, SamplerFilter, ShaderStageFlags, SwapchainConfigurator, SwapchainImage,
-    SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
+    Offset2d, Offset3d, PersistentBuffer, Pipeline, PipelineLayout, Sampler, SamplerAddressMode,
+    SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, SwapchainConfigurator,
+    SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
 };
 
 mod allocator;
@@ -232,11 +234,18 @@ impl VulkanImageHolder {
 
 struct VulkanSampler(vk::Sampler);
 
-struct VulkanBindGroupLayout(vk::DescriptorSetLayout);
+struct VulkanBindGroupLayout {
+    hash: blake3_smol::Hash,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+}
+
+struct VulkanPipelineLayout {
+    pipeline_layout: vk::PipelineLayout,
+}
 
 struct VulkanPipeline {
     pipeline: vk::Pipeline,
-    pipeline_layout: vk::PipelineLayout,
+    pipeline_layout: Arc<VulkanPipelineLayout>,
     pipeline_bind_point: vk::PipelineBindPoint,
 }
 
@@ -321,7 +330,6 @@ pub(crate) struct VulkanFrame {
     destroyed_image_views: Mutex<VecDeque<vk::ImageView>>,
     destroyed_samplers: Mutex<VecDeque<vk::Sampler>>,
     destroyed_descriptor_set_layouts: Mutex<VecDeque<vk::DescriptorSetLayout>>,
-    destroyed_pipeline_layouts: Mutex<VecDeque<vk::PipelineLayout>>,
     destroyed_pipelines: Mutex<VecDeque<vk::Pipeline>>,
 
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
@@ -360,6 +368,8 @@ pub(crate) struct VulkanDevice {
     sampler_pool: Mutex<Pool<VulkanSampler>>,
     bind_group_layout_pool: Mutex<Pool<VulkanBindGroupLayout>>,
     pipeline_pool: Mutex<Pool<VulkanPipeline>>,
+
+    pipeline_layout_cache: Mutex<HashMap<blake3_smol::Hash, Arc<VulkanPipelineLayout>>>,
 
     recycled_fences: Mutex<VecDeque<vk::Fence>>,
     recycled_semaphores: Mutex<VecDeque<vk::Semaphore>>,
@@ -704,7 +714,6 @@ impl VulkanDevice {
                 destroyed_image_views: default(),
                 destroyed_samplers: default(),
                 destroyed_descriptor_set_layouts: default(),
-                destroyed_pipeline_layouts: default(),
                 destroyed_pipelines: default(),
                 recycled_semaphores: default(),
                 recycled_descriptor_pools: default(),
@@ -748,6 +757,8 @@ impl VulkanDevice {
             sampler_pool: default(),
             bind_group_layout_pool: default(),
             pipeline_pool: default(),
+
+            pipeline_layout_cache: default(),
 
             recycled_fences: default(),
             recycled_semaphores: default(),
@@ -870,9 +881,6 @@ impl VulkanDevice {
         device: vk::Device,
         frame: &mut VulkanFrame,
     ) {
-        for pipeline_layout in frame.destroyed_pipeline_layouts.get_mut().drain(..) {
-            unsafe { device_fn.destroy_pipeline_layout(device, pipeline_layout, None) }
-        }
         for pipeline in frame.destroyed_pipelines.get_mut().drain(..) {
             unsafe { device_fn.destroy_pipeline(device, pipeline, None) }
         }
@@ -1169,6 +1177,15 @@ impl Device for VulkanDevice {
     }
 
     fn create_bind_group_layout(&self, bindings_desc: &[BindDesc]) -> BindGroupLayout {
+        let mut hasher = blake3_smol::Hasher::new();
+        for binding in bindings_desc {
+            hasher.update(&binding.slot.to_le_bytes());
+            hasher.update(&binding.stages.as_raw().to_le_bytes());
+            hasher.update(&(binding.binding_type as u32).to_le_bytes());
+            hasher.update(&binding.count.to_le_bytes());
+        }
+        let hash = hasher.finalize();
+
         let arena = HybridArena::<256>::new();
         let layout_bindings = arena.alloc_slice_fill_iter(bindings_desc.iter().enumerate().map(
             |(i, binding_desc)| vk::DescriptorSetLayoutBinding {
@@ -1187,44 +1204,28 @@ impl Device for VulkanDevice {
             bindings: layout_bindings.into(),
             ..default()
         };
-        let mut set_layout = vk::DescriptorSetLayout::null();
+        let mut descriptor_set_layout = vk::DescriptorSetLayout::null();
         vk_check!(self.device_fn.create_descriptor_set_layout(
             self.device,
             create_info,
             None,
-            &mut set_layout,
+            &mut descriptor_set_layout,
         ));
         let bind_group_layout = self
             .bind_group_layout_pool
             .lock()
-            .insert(VulkanBindGroupLayout(set_layout));
+            .insert(VulkanBindGroupLayout {
+                hash,
+                descriptor_set_layout,
+            });
 
         BindGroupLayout(bind_group_layout)
     }
 
     fn create_graphics_pipeline(&self, pipeline_desc: &GraphicsPipelineDesc) -> Pipeline {
-        let arena = HybridArena::<1024>::new();
-        let bind_group_layout_pool = self.bind_group_layout_pool.lock();
-        let set_layouts_iter = pipeline_desc
-            .bind_group_layouts
-            .iter()
-            .map(|bind_group_layout| bind_group_layout_pool.get(bind_group_layout.0).unwrap().0);
-        let set_layouts = arena.alloc_slice_fill_iter(set_layouts_iter);
+        let pipeline_layout = self.cache_pipeline_layout(pipeline_desc.layout);
 
-        let layout = {
-            let create_info = vk::PipelineLayoutCreateInfo {
-                set_layouts: set_layouts.into(),
-                ..default()
-            };
-            let mut pipeline_layout = vk::PipelineLayout::null();
-            vk_check!(self.device_fn.create_pipeline_layout(
-                self.device,
-                &create_info,
-                None,
-                &mut pipeline_layout,
-            ));
-            pipeline_layout
-        };
+        let arena = HybridArena::<1024>::new();
 
         let vertex_module = vulkan_shader_module(
             &self.device_fn,
@@ -1327,7 +1328,7 @@ impl Device for VulkanDevice {
         };
         let color_attachment_formats = arena.alloc_slice_fill_iter(
             pipeline_desc
-                .layout
+                .attachments
                 .color_attachment_formats
                 .iter()
                 .copied()
@@ -1337,11 +1338,11 @@ impl Device for VulkanDevice {
             view_mask: 0,
             color_attachment_formats: color_attachment_formats.into(),
             depth_attachment_format: pipeline_desc
-                .layout
+                .attachments
                 .depth_attachment_format
                 .map_or(vk::Format::Undefined, vulkan_format),
             stencil_attachment_format: pipeline_desc
-                .layout
+                .attachments
                 .stencil_attachment_format
                 .map_or(vk::Format::Undefined, vulkan_format),
             ..default()
@@ -1360,7 +1361,7 @@ impl Device for VulkanDevice {
             depth_stencil_state: Some(&depth_stencil_state),
             color_blend_state: Some(&color_blend_state),
             dynamic_state: Some(&dynamic_state),
-            layout,
+            layout: pipeline_layout.pipeline_layout,
             ..default()
         }];
         let mut pipelines = [vk::Pipeline::null()];
@@ -1383,7 +1384,7 @@ impl Device for VulkanDevice {
 
         let handle = self.pipeline_pool.lock().insert(VulkanPipeline {
             pipeline: pipelines[0],
-            pipeline_layout: layout,
+            pipeline_layout,
             pipeline_bind_point: vk::PipelineBindPoint::Graphics,
         });
 
@@ -1391,28 +1392,7 @@ impl Device for VulkanDevice {
     }
 
     fn create_compute_pipeline(&self, pipeline_desc: &ComputePipelineDesc) -> Pipeline {
-        let arena = HybridArena::<1024>::new();
-        let bind_group_layout_pool = self.bind_group_layout_pool.lock();
-        let set_layouts_iter = pipeline_desc
-            .bind_group_layouts
-            .iter()
-            .map(|bind_group_layout| bind_group_layout_pool.get(bind_group_layout.0).unwrap().0);
-        let set_layouts = arena.alloc_slice_fill_iter(set_layouts_iter);
-
-        let layout = {
-            let create_info = vk::PipelineLayoutCreateInfo {
-                set_layouts: set_layouts.into(),
-                ..default()
-            };
-            let mut pipeline_layout = vk::PipelineLayout::null();
-            vk_check!(self.device_fn.create_pipeline_layout(
-                self.device,
-                &create_info,
-                None,
-                &mut pipeline_layout,
-            ));
-            pipeline_layout
-        };
+        let pipeline_layout = self.cache_pipeline_layout(pipeline_desc.layout);
 
         let module = vulkan_shader_module(&self.device_fn, self.device, pipeline_desc.shader.code);
 
@@ -1424,7 +1404,7 @@ impl Device for VulkanDevice {
         };
 
         let create_infos = &[vk::ComputePipelineCreateInfo {
-            layout,
+            layout: pipeline_layout.pipeline_layout,
             stage,
             ..default()
         }];
@@ -1445,7 +1425,7 @@ impl Device for VulkanDevice {
 
         let handle = self.pipeline_pool.lock().insert(VulkanPipeline {
             pipeline: pipelines[0],
-            pipeline_layout: layout,
+            pipeline_layout,
             pipeline_bind_point: vk::PipelineBindPoint::Compute,
         });
 
@@ -1512,17 +1492,13 @@ impl Device for VulkanDevice {
             self.frame(frame)
                 .destroyed_descriptor_set_layouts
                 .lock()
-                .push_back(bind_group_layout.0)
+                .push_back(bind_group_layout.descriptor_set_layout)
         }
     }
 
     fn destroy_pipeline(&self, frame: &Frame, pipeline: Pipeline) {
         if let Some(pipeline) = self.pipeline_pool.lock().remove(pipeline.0) {
             let frame = self.frame(frame);
-            frame
-                .destroyed_pipeline_layouts
-                .lock()
-                .push_back(pipeline.pipeline_layout);
             frame
                 .destroyed_pipelines
                 .lock()
@@ -1830,7 +1806,12 @@ impl Device for VulkanDevice {
     ) {
         let arena = HybridArena::<4096>::new();
 
-        let descriptor_set_layout = self.bind_group_layout_pool.lock().get(layout.0).unwrap().0;
+        let descriptor_set_layout = self
+            .bind_group_layout_pool
+            .lock()
+            .get(layout.0)
+            .unwrap()
+            .descriptor_set_layout;
 
         let frame = self.frame(frame);
         let per_thread = frame.per_thread.get(cmd_encoder.thread_token);
@@ -2032,11 +2013,16 @@ impl Device for VulkanDevice {
     fn cmd_set_pipeline(&self, cmd_encoder: &mut CmdEncoder, pipeline: Pipeline) {
         let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
 
-        let VulkanPipeline {
-            pipeline,
-            pipeline_layout,
-            pipeline_bind_point,
-        } = *self.pipeline_pool.lock().get(pipeline.0).unwrap();
+        let vk_pipeline;
+        let pipeline_layout;
+        let pipeline_bind_point;
+        {
+            let pipeline_pool = self.pipeline_pool.lock();
+            let pipeline = pipeline_pool.get(pipeline.0).unwrap();
+            vk_pipeline = pipeline.pipeline;
+            pipeline_layout = pipeline.pipeline_layout.pipeline_layout;
+            pipeline_bind_point = pipeline.pipeline_bind_point;
+        }
 
         cmd_encoder.bound_pipeline = Some(VulkanBoundPipeline {
             pipeline_layout,
@@ -2047,7 +2033,7 @@ impl Device for VulkanDevice {
 
         unsafe {
             self.device_fn
-                .cmd_bind_pipeline(command_buffer, pipeline_bind_point, pipeline)
+                .cmd_bind_pipeline(command_buffer, pipeline_bind_point, vk_pipeline)
         };
     }
 
@@ -2692,6 +2678,66 @@ impl VulkanDevice {
             ),
         }
     }
+
+    fn cache_pipeline_layout(&self, pipeline_layout: &PipelineLayout) -> Arc<VulkanPipelineLayout> {
+        let hash = {
+            let mut hasher = blake3_smol::Hasher::new();
+            let bind_group_layout_pool = self.bind_group_layout_pool.lock();
+            for bind_group_layout in pipeline_layout.bind_group_layouts {
+                hasher.update(
+                    bind_group_layout_pool
+                        .get(bind_group_layout.0)
+                        .unwrap()
+                        .hash
+                        .as_bytes(),
+                );
+            }
+            hasher.finalize()
+        };
+
+        let mut cache = self.pipeline_layout_cache.lock();
+        let entry = cache.entry(hash);
+
+        entry
+            .or_insert_with(
+                #[cold]
+                || {
+                    let arena = HybridArena::<1024>::new();
+
+                    let bind_group_layout_pool = self.bind_group_layout_pool.lock();
+
+                    let set_layouts_iter =
+                        pipeline_layout
+                            .bind_group_layouts
+                            .iter()
+                            .map(|bind_group_layout| {
+                                bind_group_layout_pool
+                                    .get(bind_group_layout.0)
+                                    .unwrap()
+                                    .descriptor_set_layout
+                            });
+                    let set_layouts = arena.alloc_slice_fill_iter(set_layouts_iter);
+
+                    let pipeline_layout = {
+                        let create_info = vk::PipelineLayoutCreateInfo {
+                            set_layouts: set_layouts.into(),
+                            ..default()
+                        };
+                        let mut pipeline_layout = vk::PipelineLayout::null();
+                        vk_check!(self.device_fn.create_pipeline_layout(
+                            self.device,
+                            &create_info,
+                            None,
+                            &mut pipeline_layout,
+                        ));
+                        pipeline_layout
+                    };
+
+                    Arc::new(VulkanPipelineLayout { pipeline_layout })
+                },
+            )
+            .clone()
+    }
 }
 
 impl Drop for VulkanDevice {
@@ -2790,18 +2836,27 @@ impl Drop for VulkanDevice {
         for pipeline in self.pipeline_pool.get_mut().values() {
             unsafe {
                 self.device_fn
-                    .destroy_pipeline_layout(self.device, pipeline.pipeline_layout, None)
-            };
-            unsafe {
-                self.device_fn
                     .destroy_pipeline(device, pipeline.pipeline, None)
             }
         }
 
-        for descriptor_set_layout in self.bind_group_layout_pool.get_mut().values() {
+        for pipeline_layout in self.pipeline_layout_cache.get_mut().values() {
             unsafe {
-                self.device_fn
-                    .destroy_descriptor_set_layout(device, descriptor_set_layout.0, None)
+                self.device_fn.destroy_pipeline_layout(
+                    device,
+                    pipeline_layout.pipeline_layout,
+                    None,
+                );
+            }
+        }
+
+        for bind_group_layout in self.bind_group_layout_pool.get_mut().values() {
+            unsafe {
+                self.device_fn.destroy_descriptor_set_layout(
+                    device,
+                    bind_group_layout.descriptor_set_layout,
+                    None,
+                )
             }
         }
 

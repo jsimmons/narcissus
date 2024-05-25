@@ -91,6 +91,7 @@ dependencies = [
 name = "narcissus-gpu"
 version = "0.1.0"
 dependencies = [
+ "blake3-smol",
  "narcissus-core",
  "vulkan-sys",
 ]
