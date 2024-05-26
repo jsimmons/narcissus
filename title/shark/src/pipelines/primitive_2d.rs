@@ -14,6 +14,11 @@ pub const TILE_BITMAP_WORDS_L0: u32 = MAX_PRIMS / 32;
 pub const TILE_STRIDE_COARSE: u32 = TILE_BITMAP_WORDS_L0;
 pub const TILE_STRIDE_FINE: u32 = TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1;
 
+pub const TILE_DISPATCH_COARSE_X: u32 = 8;
+pub const TILE_DISPATCH_COARSE_Y: u32 = 5;
+pub const TILE_DISPATCH_FINE_X: u32 = TILE_DISPATCH_COARSE_X * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
+pub const TILE_DISPATCH_FINE_Y: u32 = TILE_DISPATCH_COARSE_Y * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
+
 #[allow(unused)]
 #[repr(C)]
 pub struct PrimitiveUniforms {
@@ -26,8 +31,10 @@ pub struct PrimitiveUniforms {
     pub num_primitives_32: u32,
     pub num_primitives_1024: u32,
 
-    pub tile_stride_coarse: u32,
     pub tile_stride_fine: u32,
+
+    pub tile_offset_x: u32,
+    pub tile_offset_y: u32,
 }
 
 #[allow(unused)]

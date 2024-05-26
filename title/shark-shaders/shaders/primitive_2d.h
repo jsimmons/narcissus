@@ -10,6 +10,8 @@
 #define TILE_BITMAP_L1_OFFSET_FINE 0
 #define TILE_BITMAP_L0_OFFSET_FINE TILE_BITMAP_L1_WORDS
 
+#define TILE_DISPATCH_X 8
+
 struct PrimitiveUniforms {
     uvec2 screen_resolution;
     uvec2 atlas_resolution;
@@ -17,9 +19,9 @@ struct PrimitiveUniforms {
     uint num_primitives;
     uint num_primitives_32;
     uint num_primitives_1024;
-
-    uint tile_stride_coarse;
     uint tile_stride_fine;
+
+    uvec2 tile_offset_coarse;
 };
 
 struct Glyph {

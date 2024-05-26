@@ -15,7 +15,9 @@ layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     const uvec2 tile_coord = gl_GlobalInvocationID.yz;
-    const uvec2 tile_min = tile_coord * TILE_SIZE_COARSE;
+    const uvec2 tile_coord_global = tile_coord + primitive_uniforms.tile_offset_coarse;
+
+    const uvec2 tile_min = tile_coord_global * TILE_SIZE_COARSE;
     const uvec2 tile_max = min(tile_min + TILE_SIZE_COARSE, primitive_uniforms.screen_resolution);
 
     const uint primitive_index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
@@ -27,7 +29,7 @@ void main() {
 
     uvec4 ballot_result = subgroupBallot(intersects);
     if (subgroupElect()) { // managed democracy wins again
-        const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride_coarse + tile_coord.x;
+        const uint tile_index = tile_coord.y * TILE_DISPATCH_X + tile_coord.x;
         const uint tile_offset = tile_index * TILE_STRIDE_COARSE;
         coarse_bitmap_wo[tile_offset + 2 * gl_WorkGroupID.x + 0] = ballot_result.x;
         coarse_bitmap_wo[tile_offset + 2 * gl_WorkGroupID.x + 1] = ballot_result.y;

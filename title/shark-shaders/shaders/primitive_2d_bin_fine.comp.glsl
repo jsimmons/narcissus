@@ -15,16 +15,20 @@ layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     const uvec2 tile_coord = gl_GlobalInvocationID.yz;
-    const uvec2 tile_min = tile_coord * TILE_SIZE_FINE;
+    const uint tile_index = tile_coord.y * (TILE_DISPATCH_X << TILE_SIZE_SHIFT) + tile_coord.x;
+
+    const uvec2 tile_coord_global = tile_coord + (primitive_uniforms.tile_offset_coarse << TILE_SIZE_SHIFT);
+    const uint tile_index_global = tile_coord_global.y * primitive_uniforms.tile_stride_fine + tile_coord_global.x;
+
+    const uvec2 tile_min = tile_coord_global * TILE_SIZE_FINE;
     const uvec2 tile_max = min(tile_min + TILE_SIZE_FINE, primitive_uniforms.screen_resolution);
-    const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride_fine + tile_coord.x;
 
     const uint index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
 
     uint bitmap_l0 = 0;
     if (index < primitive_uniforms.num_primitives_32) {
         const uvec2 tile_coord_coarse = tile_coord >> TILE_SIZE_SHIFT;
-        const uint tile_index_coarse = tile_coord_coarse.y * primitive_uniforms.tile_stride_coarse + tile_coord_coarse.x;
+        const uint tile_index_coarse = tile_coord_coarse.y * TILE_DISPATCH_X + tile_coord_coarse.x;
         const uint tile_base_coarse = tile_index_coarse * TILE_STRIDE_COARSE;
         const uint tile_bitmap_base_coarse = tile_base_coarse + TILE_BITMAP_OFFSET_COARSE;
 
@@ -55,7 +59,7 @@ void main() {
 
         const uint count = uint(ballot_result.x != 0) + uint(ballot_result.y != 0);
         if (count != 0) {
-            atomicAdd(fine_count_wo[tile_index], count);
+            atomicAdd(fine_count_wo[tile_index_global], count);
         }
     }
 }

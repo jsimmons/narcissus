@@ -32,7 +32,8 @@ use spring::simple_spring_damper_exact;
 
 use crate::pipelines::basic::BasicUniforms;
 use crate::pipelines::primitive_2d::{
-    PrimitiveUniforms, TILE_SIZE_COARSE, TILE_SIZE_FINE, TILE_STRIDE_COARSE, TILE_STRIDE_FINE,
+    PrimitiveUniforms, TILE_DISPATCH_COARSE_X, TILE_DISPATCH_COARSE_Y, TILE_DISPATCH_FINE_X,
+    TILE_DISPATCH_FINE_Y, TILE_SIZE_COARSE, TILE_SIZE_FINE, TILE_STRIDE_COARSE, TILE_STRIDE_FINE,
 };
 
 mod fonts;
@@ -884,6 +885,30 @@ impl<'gpu> DrawState<'gpu> {
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
+        let coarse_bitmap_buffer_size = TILE_DISPATCH_COARSE_X
+            * TILE_DISPATCH_COARSE_Y
+            * TILE_STRIDE_COARSE
+            * std::mem::size_of::<u32>() as u32;
+
+        let fine_bitmap_buffer_size = TILE_DISPATCH_FINE_X
+            * TILE_DISPATCH_FINE_Y
+            * TILE_STRIDE_FINE
+            * std::mem::size_of::<u32>() as u32;
+
+        let coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
+            memory_location: MemoryLocation::Device,
+            host_mapped: false,
+            usage: BufferUsageFlags::STORAGE,
+            size: coarse_bitmap_buffer_size.widen(),
+        });
+
+        let fine_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
+            memory_location: MemoryLocation::Device,
+            host_mapped: false,
+            usage: BufferUsageFlags::STORAGE,
+            size: fine_bitmap_buffer_size.widen(),
+        });
+
         Self {
             gpu,
             basic_pipeline,
@@ -898,8 +923,8 @@ impl<'gpu> DrawState<'gpu> {
             depth_image: default(),
             rt_image: default(),
             ui_image: default(),
-            coarse_tile_bitmap_buffer: default(),
-            fine_tile_bitmap_buffer: default(),
+            coarse_tile_bitmap_buffer,
+            fine_tile_bitmap_buffer,
             fine_tile_color_buffer: default(),
             glyph_atlas_image: default(),
             samplers,
@@ -1021,38 +1046,12 @@ impl<'gpu> DrawState<'gpu> {
                     || tile_resolution_fine_x != self.tile_resolution_fine_x
                     || tile_resolution_fine_y != self.tile_resolution_fine_y
                 {
-                    gpu.destroy_buffer(frame, self.coarse_tile_bitmap_buffer);
-                    gpu.destroy_buffer(frame, self.fine_tile_bitmap_buffer);
                     gpu.destroy_buffer(frame, self.fine_tile_color_buffer);
-
-                    let coarse_bitmap_buffer_size = tile_resolution_coarse_x
-                        * tile_resolution_coarse_y
-                        * TILE_STRIDE_COARSE
-                        * std::mem::size_of::<u32>() as u32;
-
-                    let fine_bitmap_buffer_size = tile_resolution_fine_x
-                        * tile_resolution_fine_y
-                        * TILE_STRIDE_FINE
-                        * std::mem::size_of::<u32>() as u32;
 
                     // align to the workgroup size to simplify shader
                     let fine_color_buffer_size =
                         ((tile_resolution_fine_x * tile_resolution_fine_y + 63) & !63)
                             * std::mem::size_of::<u32>() as u32;
-
-                    self.coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
-                        memory_location: MemoryLocation::Device,
-                        host_mapped: false,
-                        usage: BufferUsageFlags::STORAGE,
-                        size: coarse_bitmap_buffer_size.widen(),
-                    });
-
-                    self.fine_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
-                        memory_location: MemoryLocation::Device,
-                        host_mapped: false,
-                        usage: BufferUsageFlags::STORAGE,
-                        size: fine_bitmap_buffer_size.widen(),
-                    });
 
                     self.fine_tile_color_buffer = gpu.create_buffer(&BufferDesc {
                         memory_location: MemoryLocation::Device,
@@ -1419,7 +1418,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    (self.tile_resolution_coarse_x * self.tile_resolution_coarse_y + 63) / 64,
+                    (self.tile_resolution_fine_x * self.tile_resolution_fine_y + 63) / 64,
                     1,
                     1,
                 );
@@ -1430,8 +1429,33 @@ impl<'gpu> DrawState<'gpu> {
 
                 ui_state.primitive_instances.clear();
 
-                for _pass_y in 0..1 {
-                    for _pass_x in 0..1 {
+                for tile_offset_y in
+                    (0..self.tile_resolution_coarse_y).step_by(TILE_DISPATCH_COARSE_Y as usize)
+                {
+                    for tile_offset_x in
+                        (0..self.tile_resolution_coarse_x).step_by(TILE_DISPATCH_COARSE_X as usize)
+                    {
+                        let coarse_dispatch_x = (tile_offset_x + TILE_DISPATCH_COARSE_X)
+                            .min(self.tile_resolution_coarse_x)
+                            - tile_offset_x;
+                        let coarse_dispatch_y = (tile_offset_y + TILE_DISPATCH_COARSE_Y)
+                            .min(self.tile_resolution_coarse_y)
+                            - tile_offset_y;
+
+                        let tile_offset_fine_x =
+                            tile_offset_x * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
+
+                        let tile_offset_fine_y =
+                            tile_offset_y * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
+
+                        let fine_dispatch_x = (tile_offset_fine_x + TILE_DISPATCH_FINE_X)
+                            .min(self.tile_resolution_fine_x)
+                            - tile_offset_fine_x;
+
+                        let fine_dispatch_y = (tile_offset_fine_y + TILE_DISPATCH_FINE_Y)
+                            .min(self.tile_resolution_fine_y)
+                            - tile_offset_fine_y;
+
                         gpu.cmd_set_pipeline(
                             cmd_encoder,
                             self.primitive_2d_pipeline.coarse_bin_pipeline,
@@ -1449,16 +1473,17 @@ impl<'gpu> DrawState<'gpu> {
                                 num_primitives,
                                 num_primitives_32,
                                 num_primitives_1024,
-                                tile_stride_coarse: self.tile_resolution_coarse_x,
                                 tile_stride_fine: self.tile_resolution_fine_x,
+                                tile_offset_x,
+                                tile_offset_y,
                             },
                         );
 
                         gpu.cmd_dispatch(
                             cmd_encoder,
                             (num_primitives + 63) / 64,
-                            self.tile_resolution_coarse_x,
-                            self.tile_resolution_coarse_y,
+                            coarse_dispatch_x,
+                            coarse_dispatch_y,
                         );
 
                         gpu.cmd_barrier(
@@ -1478,8 +1503,8 @@ impl<'gpu> DrawState<'gpu> {
                         gpu.cmd_dispatch(
                             cmd_encoder,
                             (num_primitives_32 + 63) / 64,
-                            self.tile_resolution_fine_x,
-                            self.tile_resolution_fine_y,
+                            fine_dispatch_x,
+                            fine_dispatch_y,
                         );
 
                         gpu.cmd_barrier(
@@ -1496,12 +1521,7 @@ impl<'gpu> DrawState<'gpu> {
                             self.primitive_2d_pipeline.rasterize_pipeline,
                         );
 
-                        gpu.cmd_dispatch(
-                            cmd_encoder,
-                            self.tile_resolution_fine_x,
-                            self.tile_resolution_fine_y,
-                            1,
-                        );
+                        gpu.cmd_dispatch(cmd_encoder, fine_dispatch_x, fine_dispatch_y, 1);
                     }
                 }
             }

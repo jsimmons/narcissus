@@ -11,14 +11,18 @@ layout (local_size_x = TILE_SIZE_FINE, local_size_y = TILE_SIZE_FINE, local_size
 
 void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy;
-    const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride_fine + tile_coord.x;
+    const uint tile_index = tile_coord.y * (TILE_DISPATCH_X << TILE_SIZE_SHIFT) + tile_coord.x;
+
+    const uvec2 tile_coord_global = tile_coord + (primitive_uniforms.tile_offset_coarse << TILE_SIZE_SHIFT);
+    const uint tile_index_global = tile_coord_global.y * primitive_uniforms.tile_stride_fine + tile_coord_global.x;
+
     const uint tile_base_fine = tile_index * TILE_STRIDE_FINE;
     const uint tile_bitmap_l1_base_fine = tile_base_fine + TILE_BITMAP_L1_OFFSET_FINE;
     const uint tile_bitmap_l0_base_fine = tile_base_fine + TILE_BITMAP_L0_OFFSET_FINE;
 
     vec4 accum = vec4(0.0);
 
-    uint word_count = fine_count_ro[tile_index];
+    uint word_count = fine_count_ro[tile_index_global];
 
     // For each tile, iterate over all words in the L1 bitmap. 
     for (int index_l1 = 0; word_count != 0 && index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
@@ -47,7 +51,7 @@ void main() {
                 const Glyph gl = glyphs[gi.index];
                 const vec2 glyph_min = gi.position + gl.offset_min;
                 const vec2 glyph_max = gi.position + gl.offset_max;
-                const vec2 sample_center = gl_GlobalInvocationID.xy + vec2(0.5);
+                const vec2 sample_center = gl_GlobalInvocationID.xy + primitive_uniforms.tile_offset_coarse * TILE_SIZE_COARSE + vec2(0.5);
                 if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
                     const vec2 glyph_size = gl.offset_max - gl.offset_min;
                     const vec4 color = unpackUnorm4x8(gi.color).bgra;
@@ -60,5 +64,5 @@ void main() {
         }
     }
 
-    imageStore(ui_image, ivec2(gl_GlobalInvocationID.xy), accum);
+    imageStore(ui_image, ivec2(gl_GlobalInvocationID.xy + primitive_uniforms.tile_offset_coarse * TILE_SIZE_COARSE), accum);
 }
