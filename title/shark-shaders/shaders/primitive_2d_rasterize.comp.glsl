@@ -18,12 +18,16 @@ void main() {
 
     vec4 accum = vec4(0.0);
 
-    // For each tile, iterate over all words in the L1 bitmap.
-    //
-    // TODO: Count the non-zero words in the tile with atomics, so we can early out on empty tiles? 
-    for (int index_l1 = 0; index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
+    uint word_count = fine_count_ro[tile_index];
+
+    // For each tile, iterate over all words in the L1 bitmap. 
+    for (int index_l1 = 0; word_count != 0 && index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
         // For each word, iterate all set bits.
         uint bitmap_l1 = fine_bitmap_ro[tile_bitmap_l1_base_fine + index_l1];
+
+        if (bitmap_l1 != 0)
+            word_count -= 1;
+
         while (bitmap_l1 != 0) {
             const uint i = findLSB(bitmap_l1);
             bitmap_l1 ^= bitmap_l1 & -bitmap_l1;
@@ -43,7 +47,7 @@ void main() {
                 const Glyph gl = glyphs[gi.index];
                 const vec2 glyph_min = gi.position + gl.offset_min;
                 const vec2 glyph_max = gi.position + gl.offset_max;
-                const vec2 sample_center = gl_GlobalInvocationID.xy; // half pixel offset goes here?
+                const vec2 sample_center = gl_GlobalInvocationID.xy + vec2(0.5);
                 if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
                     const vec2 glyph_size = gl.offset_max - gl.offset_min;
                     const vec4 color = unpackUnorm4x8(gi.color).bgra;

@@ -24,7 +24,8 @@ use narcissus_gpu::{
 };
 use narcissus_image as image;
 use narcissus_maths::{
-    clamp, perlin_noise3, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4, Point3, Vec3,
+    clamp, perlin_noise3, sin_cos_pi_f32, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4,
+    Point3, Vec3,
 };
 use pipelines::primitive_2d::{GlyphInstance, Primitive2dPipeline};
 use spring::simple_spring_damper_exact;
@@ -862,6 +863,7 @@ struct DrawState<'gpu> {
 
     coarse_tile_bitmap_buffer: Buffer,
     fine_tile_bitmap_buffer: Buffer,
+    fine_tile_color_buffer: Buffer,
 
     glyph_atlas_image: Image,
 
@@ -898,6 +900,7 @@ impl<'gpu> DrawState<'gpu> {
             ui_image: default(),
             coarse_tile_bitmap_buffer: default(),
             fine_tile_bitmap_buffer: default(),
+            fine_tile_color_buffer: default(),
             glyph_atlas_image: default(),
             samplers,
             models,
@@ -1020,6 +1023,7 @@ impl<'gpu> DrawState<'gpu> {
                 {
                     gpu.destroy_buffer(frame, self.coarse_tile_bitmap_buffer);
                     gpu.destroy_buffer(frame, self.fine_tile_bitmap_buffer);
+                    gpu.destroy_buffer(frame, self.fine_tile_color_buffer);
 
                     let coarse_bitmap_buffer_size = tile_resolution_coarse_x
                         * tile_resolution_coarse_y
@@ -1029,6 +1033,10 @@ impl<'gpu> DrawState<'gpu> {
                     let fine_bitmap_buffer_size = tile_resolution_fine_x
                         * tile_resolution_fine_y
                         * TILE_STRIDE_FINE
+                        * std::mem::size_of::<u32>() as u32;
+
+                    let fine_color_buffer_size = tile_resolution_fine_x
+                        * tile_resolution_fine_y
                         * std::mem::size_of::<u32>() as u32;
 
                     self.coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
@@ -1043,6 +1051,13 @@ impl<'gpu> DrawState<'gpu> {
                         host_mapped: false,
                         usage: BufferUsageFlags::STORAGE,
                         size: fine_bitmap_buffer_size.widen(),
+                    });
+
+                    self.fine_tile_color_buffer = gpu.create_buffer(&BufferDesc {
+                        memory_location: MemoryLocation::Device,
+                        host_mapped: false,
+                        usage: BufferUsageFlags::STORAGE,
+                        size: fine_color_buffer_size.widen(),
                     });
 
                     self.tile_resolution_coarse_x = tile_resolution_coarse_x;
@@ -1410,6 +1425,13 @@ impl<'gpu> DrawState<'gpu> {
                         Bind {
                             binding: 7,
                             array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[self
+                                .fine_tile_color_buffer
+                                .to_arg()]),
+                        },
+                        Bind {
+                            binding: 8,
+                            array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
                                 self.ui_image,
@@ -1423,6 +1445,15 @@ impl<'gpu> DrawState<'gpu> {
                     (num_primitives + 63) / 64,
                     self.tile_resolution_coarse_x,
                     self.tile_resolution_coarse_y,
+                );
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.fine_clear_pipeline);
+
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    (self.tile_resolution_coarse_x * self.tile_resolution_coarse_y + 63) / 64,
+                    1,
+                    1,
                 );
 
                 gpu.cmd_barrier(
@@ -1536,6 +1567,13 @@ impl<'gpu> DrawState<'gpu> {
                                 ImageLayout::General,
                                 swapchain_image,
                             )]),
+                        },
+                        Bind {
+                            binding: 5,
+                            array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[self
+                                .fine_tile_color_buffer
+                                .to_arg()]),
                         },
                     ],
                 );
@@ -1712,11 +1750,15 @@ pub fn main() {
 
             let tick_duration = Instant::now() - tick_start;
 
+            let (base_x, base_y) = sin_cos_pi_f32(game_state.time);
+            let base_x = (base_x + 1.0) * 0.5;
+            let base_y = (base_y + 1.0) * 0.5;
+
             for i in 0..80 {
                 let i = i as f32;
                 ui_state.text_fmt(
-                    5.0,
-                    i * 15.0 * scale,
+                    base_x * 100.0 * scale + 5.0,
+                    base_y * 100.0 * scale + i * 15.0 * scale,
                     FontFamily::RobotoRegular,
                     40.0,
                     format_args!("tick: {:?}", tick_duration),
@@ -1730,8 +1772,8 @@ pub fn main() {
                     let x = 200.0 + j * 200.0;
                     let y = 100.0 + j * 100.0;
                     ui_state.text_fmt(
-                        x * scale,
-                        (y + i * 15.0) * scale,
+                        base_x * 100.0 * scale +x * scale,
+                        base_y * 100.0 * scale +(y + i * 15.0) * scale,
                         FontFamily::NotoSansJapanese,
                         15.0,
                         format_args!(

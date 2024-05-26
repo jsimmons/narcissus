@@ -46,6 +46,7 @@ pub struct Primitive2dPipeline {
     pub bind_group_layout: BindGroupLayout,
     pub coarse_bin_pipeline: Pipeline,
     pub fine_bin_pipeline: Pipeline,
+    pub fine_clear_pipeline: Pipeline,
     pub rasterize_pipeline: Pipeline,
 }
 
@@ -65,6 +66,8 @@ impl Primitive2dPipeline {
             // Coarse Tiles
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
             // Fine Tiles
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
+            // Fine Color
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
             // UI Image Output
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
@@ -95,6 +98,14 @@ impl Primitive2dPipeline {
             layout,
         });
 
+        let fine_clear_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_CLEAR_FINE_COMP_SPV,
+            },
+            layout,
+        });
+
         let rasterize_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
@@ -107,6 +118,7 @@ impl Primitive2dPipeline {
             bind_group_layout,
             coarse_bin_pipeline,
             fine_bin_pipeline,
+            fine_clear_pipeline,
             rasterize_pipeline,
         }
     }

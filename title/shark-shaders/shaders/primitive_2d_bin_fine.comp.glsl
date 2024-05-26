@@ -53,5 +53,10 @@ void main() {
         const uint tile_bitmap_l1_base_fine = tile_base_fine + TILE_BITMAP_L1_OFFSET_FINE;
         fine_bitmap_wo[tile_bitmap_l1_base_fine + 2 * gl_WorkGroupID.x + 0] = ballot_result.x;
         fine_bitmap_wo[tile_bitmap_l1_base_fine + 2 * gl_WorkGroupID.x + 1] = ballot_result.y;
+
+        const uint count = uint(ballot_result.x != 0) + uint(ballot_result.y != 0);
+        if (count != 0) {
+            atomicAdd(fine_count_wo[tile_index], count);
+        }
     }
 }

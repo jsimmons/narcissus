@@ -1,9 +1,11 @@
 use narcissus_gpu::{
     BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, PipelineLayout,
-    ShaderDesc, ShaderStageFlags,
+    PushConstantRange, ShaderDesc, ShaderStageFlags,
 };
 
 use crate::Gpu;
+
+use super::primitive_2d::PrimitiveUniforms;
 
 pub struct DisplayTransformPipeline {
     pub bind_group_layout: BindGroupLayout,
@@ -23,11 +25,17 @@ impl DisplayTransformPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
             // Composited Output
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
+            // Tile color buffer
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
         ]);
 
         let layout = &PipelineLayout {
             bind_group_layouts: &[bind_group_layout],
-            push_constant_ranges: &[],
+            push_constant_ranges: &[PushConstantRange {
+                stage_flags: ShaderStageFlags::COMPUTE,
+                offset: 0,
+                size: std::mem::size_of::<PrimitiveUniforms>() as u32,
+            }],
         };
 
         let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
