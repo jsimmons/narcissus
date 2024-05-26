@@ -4,14 +4,14 @@
 
 struct PrimitiveUniforms {
     uvec2 screen_resolution;
-    uvec2 tile_resolution_coarse;
-    uvec2 tile_resolution_fine;
     uvec2 atlas_resolution;
 
     uint num_primitives;
     uint num_primitives_32;
     uint num_primitives_1024;
-    uint pad_1;
+
+    uint tile_stride_coarse;
+    uint tile_stride_fine;
 };
 
 layout(std430, push_constant) uniform uniformBuffer {
@@ -50,7 +50,7 @@ layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy >> 1;
-    const uint tile_index = tile_coord.y * primitive_uniforms.tile_resolution_fine.x + tile_coord.x;
+    const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride_fine + tile_coord.x;
 
     const vec3 stimulus = imageLoad(layer_rt, ivec2(gl_GlobalInvocationID.xy)).rgb;
     const vec3 transformed = tony_mc_mapface(stimulus);

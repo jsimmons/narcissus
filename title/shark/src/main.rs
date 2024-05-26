@@ -1035,9 +1035,10 @@ impl<'gpu> DrawState<'gpu> {
                         * TILE_STRIDE_FINE
                         * std::mem::size_of::<u32>() as u32;
 
-                    let fine_color_buffer_size = tile_resolution_fine_x
-                        * tile_resolution_fine_y
-                        * std::mem::size_of::<u32>() as u32;
+                    // align to the workgroup size to simplify shader
+                    let fine_color_buffer_size =
+                        ((tile_resolution_fine_x * tile_resolution_fine_y + 63) & !63)
+                            * std::mem::size_of::<u32>() as u32;
 
                     self.coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
                         memory_location: MemoryLocation::Device,
@@ -1329,31 +1330,7 @@ impl<'gpu> DrawState<'gpu> {
 
             // Render UI
             {
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.coarse_bin_pipeline);
-
-                let num_primitives = ui_state.primitive_instances.len() as u32;
-                let num_primitives_32 = (num_primitives + 31) / 32;
-                let num_primitives_1024 = (num_primitives_32 + 31) / 32;
-
-                gpu.cmd_push_constants(
-                    cmd_encoder,
-                    ShaderStageFlags::COMPUTE,
-                    0,
-                    &PrimitiveUniforms {
-                        screen_resolution_x: self.width,
-                        screen_resolution_y: self.height,
-                        tile_resolution_coarse_x: self.tile_resolution_coarse_x,
-                        tile_resolution_coarse_y: self.tile_resolution_coarse_y,
-                        tile_resolution_fine_x: self.tile_resolution_fine_x,
-                        tile_resolution_fine_y: self.tile_resolution_fine_y,
-                        atlas_resolution_x: atlas_width,
-                        atlas_resolution_y: atlas_height,
-                        num_primitives,
-                        num_primitives_32,
-                        num_primitives_1024,
-                        _pad0: 0,
-                    },
-                );
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.fine_clear_pipeline);
 
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
@@ -1442,58 +1419,91 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    (num_primitives + 63) / 64,
-                    self.tile_resolution_coarse_x,
-                    self.tile_resolution_coarse_y,
-                );
-
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.fine_clear_pipeline);
-
-                gpu.cmd_dispatch(
-                    cmd_encoder,
                     (self.tile_resolution_coarse_x * self.tile_resolution_coarse_y + 63) / 64,
                     1,
                     1,
                 );
 
-                gpu.cmd_barrier(
-                    cmd_encoder,
-                    Some(&GlobalBarrier {
-                        prev_access: &[Access::ShaderWrite],
-                        next_access: &[Access::ShaderOtherRead],
-                    }),
-                    &[],
-                );
+                let num_primitives = ui_state.primitive_instances.len() as u32;
+                let num_primitives_32 = (num_primitives + 31) / 32;
+                let num_primitives_1024 = (num_primitives_32 + 31) / 32;
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.fine_bin_pipeline);
-
-                gpu.cmd_dispatch(
-                    cmd_encoder,
-                    (num_primitives_32 + 63) / 64,
-                    self.tile_resolution_fine_x,
-                    self.tile_resolution_fine_y,
-                );
-
-                gpu.cmd_barrier(
-                    cmd_encoder,
-                    Some(&GlobalBarrier {
-                        prev_access: &[Access::ShaderWrite],
-                        next_access: &[Access::ShaderOtherRead],
-                    }),
-                    &[],
-                );
-
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.rasterize_pipeline);
-
-                gpu.cmd_dispatch(
-                    cmd_encoder,
-                    self.tile_resolution_fine_x,
-                    self.tile_resolution_fine_y,
-                    1,
-                );
-
-                // Cleanup
                 ui_state.primitive_instances.clear();
+
+                for _pass_y in 0..1 {
+                    for _pass_x in 0..1 {
+                        gpu.cmd_set_pipeline(
+                            cmd_encoder,
+                            self.primitive_2d_pipeline.coarse_bin_pipeline,
+                        );
+
+                        gpu.cmd_push_constants(
+                            cmd_encoder,
+                            ShaderStageFlags::COMPUTE,
+                            0,
+                            &PrimitiveUniforms {
+                                screen_resolution_x: self.width,
+                                screen_resolution_y: self.height,
+                                atlas_resolution_x: atlas_width,
+                                atlas_resolution_y: atlas_height,
+                                num_primitives,
+                                num_primitives_32,
+                                num_primitives_1024,
+                                tile_stride_coarse: self.tile_resolution_coarse_x,
+                                tile_stride_fine: self.tile_resolution_fine_x,
+                            },
+                        );
+
+                        gpu.cmd_dispatch(
+                            cmd_encoder,
+                            (num_primitives + 63) / 64,
+                            self.tile_resolution_coarse_x,
+                            self.tile_resolution_coarse_y,
+                        );
+
+                        gpu.cmd_barrier(
+                            cmd_encoder,
+                            Some(&GlobalBarrier {
+                                prev_access: &[Access::ShaderWrite],
+                                next_access: &[Access::ShaderOtherRead],
+                            }),
+                            &[],
+                        );
+
+                        gpu.cmd_set_pipeline(
+                            cmd_encoder,
+                            self.primitive_2d_pipeline.fine_bin_pipeline,
+                        );
+
+                        gpu.cmd_dispatch(
+                            cmd_encoder,
+                            (num_primitives_32 + 63) / 64,
+                            self.tile_resolution_fine_x,
+                            self.tile_resolution_fine_y,
+                        );
+
+                        gpu.cmd_barrier(
+                            cmd_encoder,
+                            Some(&GlobalBarrier {
+                                prev_access: &[Access::ShaderWrite],
+                                next_access: &[Access::ShaderOtherRead],
+                            }),
+                            &[],
+                        );
+
+                        gpu.cmd_set_pipeline(
+                            cmd_encoder,
+                            self.primitive_2d_pipeline.rasterize_pipeline,
+                        );
+
+                        gpu.cmd_dispatch(
+                            cmd_encoder,
+                            self.tile_resolution_fine_x,
+                            self.tile_resolution_fine_y,
+                            1,
+                        );
+                    }
+                }
             }
 
             // Display transform and composite

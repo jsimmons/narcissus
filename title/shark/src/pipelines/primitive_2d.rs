@@ -19,10 +19,6 @@ pub const TILE_STRIDE_FINE: u32 = TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1;
 pub struct PrimitiveUniforms {
     pub screen_resolution_x: u32,
     pub screen_resolution_y: u32,
-    pub tile_resolution_coarse_x: u32,
-    pub tile_resolution_coarse_y: u32,
-    pub tile_resolution_fine_x: u32,
-    pub tile_resolution_fine_y: u32,
     pub atlas_resolution_x: u32,
     pub atlas_resolution_y: u32,
 
@@ -30,7 +26,8 @@ pub struct PrimitiveUniforms {
     pub num_primitives_32: u32,
     pub num_primitives_1024: u32,
 
-    pub _pad0: u32,
+    pub tile_stride_coarse: u32,
+    pub tile_stride_fine: u32,
 }
 
 #[allow(unused)]

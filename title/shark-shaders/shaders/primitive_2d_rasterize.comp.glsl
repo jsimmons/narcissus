@@ -11,7 +11,7 @@ layout (local_size_x = TILE_SIZE_FINE, local_size_y = TILE_SIZE_FINE, local_size
 
 void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy;
-    const uint tile_index = tile_coord.y * primitive_uniforms.tile_resolution_fine.x + tile_coord.x;
+    const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride_fine + tile_coord.x;
     const uint tile_base_fine = tile_index * TILE_STRIDE_FINE;
     const uint tile_bitmap_l1_base_fine = tile_base_fine + TILE_BITMAP_L1_OFFSET_FINE;
     const uint tile_bitmap_l0_base_fine = tile_base_fine + TILE_BITMAP_L0_OFFSET_FINE;

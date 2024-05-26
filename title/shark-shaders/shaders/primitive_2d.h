@@ -12,14 +12,14 @@
 
 struct PrimitiveUniforms {
     uvec2 screen_resolution;
-    uvec2 tile_resolution_coarse;
-    uvec2 tile_resolution_fine;
     uvec2 atlas_resolution;
 
     uint num_primitives;
     uint num_primitives_32;
     uint num_primitives_1024;
-    uint pad_1;
+
+    uint tile_stride_coarse;
+    uint tile_stride_fine;
 };
 
 struct Glyph {
