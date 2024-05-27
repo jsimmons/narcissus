@@ -5,6 +5,13 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+std = []
+no_avx512 = []
+no_avx2 = []
+no_sse41 = []
+no_sse2 = []
+
 [dependencies]
 constant_time_eq = "0.3.0"
 
