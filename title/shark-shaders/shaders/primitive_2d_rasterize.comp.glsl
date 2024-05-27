@@ -5,24 +5,74 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
 
+#extension GL_KHR_shader_subgroup_vote : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
 #include "primitive_2d.h"
 
 layout (local_size_x = TILE_SIZE_FINE, local_size_y = TILE_SIZE_FINE, local_size_z = 1) in;
 
+#define DEBUG_SHOW_TILES 0
+
+#if DEBUG_SHOW_TILES != 0
+
+vec3 plasma_quintic(float x)
+{
+	x = clamp(x, 0.0, 1.0);
+	vec4 x1 = vec4(1.0, x, x * x, x * x * x); // 1 x x2 x3
+	vec4 x2 = x1 * x1.w * x; // x4 x5 x6 x7
+	return vec3(
+		dot(x1.xyzw, vec4(+0.063861086, +1.992659096, -1.023901152, -0.490832805)) + dot(x2.xy, vec2(+1.308442123, -0.914547012)),
+		dot(x1.xyzw, vec4(+0.049718590, -0.791144343, +2.892305078, +0.811726816)) + dot(x2.xy, vec2(-4.686502417, +2.717794514)),
+		dot(x1.xyzw, vec4(+0.513275779, +1.580255060, -5.164414457, +4.559573646)) + dot(x2.xy, vec2(-1.916810682, +0.570638854))
+    );
+}
+
+#endif
+
 void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy;
-    const uint tile_index = tile_coord.y * (TILE_DISPATCH_X << TILE_SIZE_SHIFT) + tile_coord.x;
+    const uint tile_index = tile_coord.y * TILE_DISPATCH_X * TILE_SIZE_MUL + tile_coord.x;
 
-    const uvec2 tile_coord_global = tile_coord + (primitive_uniforms.tile_offset_coarse << TILE_SIZE_SHIFT);
+    const uvec2 tile_coord_global = tile_coord + primitive_uniforms.tile_offset_coarse * TILE_SIZE_MUL;
     const uint tile_index_global = tile_coord_global.y * primitive_uniforms.tile_stride_fine + tile_coord_global.x;
 
     const uint tile_base_fine = tile_index * TILE_STRIDE_FINE;
     const uint tile_bitmap_l1_base_fine = tile_base_fine + TILE_BITMAP_L1_OFFSET_FINE;
     const uint tile_bitmap_l0_base_fine = tile_base_fine + TILE_BITMAP_L0_OFFSET_FINE;
 
+#if DEBUG_SHOW_TILES == 1
+
+    uint count = 0;
+    // For each tile, iterate over all words in the L1 bitmap.
+    for (int index_l1 = 0; index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
+        // For each word, iterate all set bits.
+        uint bitmap_l1 = fine_bitmap_ro[tile_bitmap_l1_base_fine + index_l1];
+
+        while (bitmap_l1 != 0) {
+            const uint i = findLSB(bitmap_l1);
+            bitmap_l1 ^= bitmap_l1 & -bitmap_l1;
+
+            // For each set bit in the L1 bitmap, iterate the set bits in the
+            // corresponding L0 bitmap.
+            const uint index_l0 = index_l1 * 32 + i;
+            uint bitmap_l0 = fine_bitmap_ro[tile_bitmap_l0_base_fine + index_l0];
+
+            count += bitCount(bitmap_l0);
+        }
+    }
+
+    const vec3 color = plasma_quintic(float(count) / 50.0);
+    imageStore(ui_image, ivec2(gl_GlobalInvocationID.xy + primitive_uniforms.tile_offset_coarse * TILE_SIZE_COARSE), vec4(color, 1.0));
+
+#else
+
     vec4 accum = vec4(0.0);
 
     uint word_count = fine_count_ro[tile_index_global];
+    if (word_count == 0) {
+        return;
+    }
 
     // For each tile, iterate over all words in the L1 bitmap. 
     for (int index_l1 = 0; word_count != 0 && index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
@@ -65,4 +115,6 @@ void main() {
     }
 
     imageStore(ui_image, ivec2(gl_GlobalInvocationID.xy + primitive_uniforms.tile_offset_coarse * TILE_SIZE_COARSE), accum);
+
+#endif
 }

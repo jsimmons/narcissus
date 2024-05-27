@@ -1343,12 +1343,6 @@ impl<'gpu> DrawState<'gpu> {
                     BufferUsageFlags::STORAGE,
                     ui_state.primitive_instances.as_slice(),
                 );
-                let primitive_instance_buffer = gpu.request_transient_buffer_with_data(
-                    frame,
-                    thread_token,
-                    BufferUsageFlags::STORAGE,
-                    &[0u32],
-                );
 
                 gpu.cmd_set_bind_group(
                     frame,
@@ -1382,31 +1376,26 @@ impl<'gpu> DrawState<'gpu> {
                         Bind {
                             binding: 4,
                             array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[primitive_instance_buffer.to_arg()]),
-                        },
-                        Bind {
-                            binding: 5,
-                            array_element: 0,
                             typed: TypedBind::StorageBuffer(&[self
                                 .coarse_tile_bitmap_buffer
                                 .to_arg()]),
                         },
                         Bind {
-                            binding: 6,
+                            binding: 5,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[self
                                 .fine_tile_bitmap_buffer
                                 .to_arg()]),
                         },
                         Bind {
-                            binding: 7,
+                            binding: 6,
                             array_element: 0,
                             typed: TypedBind::StorageBuffer(&[self
                                 .fine_tile_color_buffer
                                 .to_arg()]),
                         },
                         Bind {
-                            binding: 8,
+                            binding: 7,
                             array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
@@ -1790,27 +1779,22 @@ pub fn main() {
                     base_x * 100.0 * scale + 5.0,
                     base_y * 100.0 * scale + i * 15.0 * scale,
                     FontFamily::RobotoRegular,
-                    40.0,
+                    20.0,
                     format_args!("tick: {:?}", tick_duration),
                 );
             }
 
-            for i in 0..80 {
-                for j in 0..11 {
-                    let i = i as f32;
-                    let j = j as f32;
-                    let x = 200.0 + j * 200.0;
-                    let y = 100.0 + j * 100.0;
-                    ui_state.text_fmt(
-                        base_x * 100.0 * scale +x * scale,
-                        base_y * 100.0 * scale +(y + i * 15.0) * scale,
+            for i in 0..120 {
+                let i = i as f32;
+                ui_state.text_fmt(
+                        5.0,
+                        (15.0 + i * 15.0) * scale,
                         FontFamily::NotoSansJapanese,
-                        15.0,
+                        8.0,
                         format_args!(
-                            "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████"
+                            "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████"
                         ),
                     );
-                }
             }
 
             draw_state.draw(

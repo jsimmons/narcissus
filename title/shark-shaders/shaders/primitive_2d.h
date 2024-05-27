@@ -1,7 +1,7 @@
 #define MAX_PRIMS 0x20000u
-#define TILE_SIZE_COARSE 128
+#define TILE_SIZE_COARSE 64
 #define TILE_SIZE_FINE 16
-#define TILE_SIZE_SHIFT 3
+#define TILE_SIZE_MUL (TILE_SIZE_COARSE / TILE_SIZE_FINE)
 #define TILE_BITMAP_L1_WORDS (MAX_PRIMS / 32 / 32)
 #define TILE_BITMAP_L0_WORDS (MAX_PRIMS / 32)
 #define TILE_STRIDE_COARSE TILE_BITMAP_L0_WORDS
@@ -10,7 +10,7 @@
 #define TILE_BITMAP_L1_OFFSET_FINE 0
 #define TILE_BITMAP_L0_OFFSET_FINE TILE_BITMAP_L1_WORDS
 
-#define TILE_DISPATCH_X 8
+#define TILE_DISPATCH_X 15
 
 struct PrimitiveUniforms {
     uvec2 screen_resolution;
@@ -36,11 +36,6 @@ struct GlyphInstance {
     vec2 position;
     uint index;
     uint color;
-};
-
-struct PrimitiveInstance {
-    uint type;
-    uint index;
 };
 
 #include "primitive_2d_bindings.h"

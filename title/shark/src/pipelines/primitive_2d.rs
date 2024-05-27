@@ -7,15 +7,15 @@ use narcissus_gpu::{
 use crate::Gpu;
 
 pub const MAX_PRIMS: u32 = 0x20000;
-pub const TILE_SIZE_COARSE: u32 = 128;
+pub const TILE_SIZE_COARSE: u32 = 64;
 pub const TILE_SIZE_FINE: u32 = 16;
 pub const TILE_BITMAP_WORDS_L1: u32 = MAX_PRIMS / 32 / 32;
 pub const TILE_BITMAP_WORDS_L0: u32 = MAX_PRIMS / 32;
 pub const TILE_STRIDE_COARSE: u32 = TILE_BITMAP_WORDS_L0;
 pub const TILE_STRIDE_FINE: u32 = TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1;
 
-pub const TILE_DISPATCH_COARSE_X: u32 = 8;
-pub const TILE_DISPATCH_COARSE_Y: u32 = 5;
+pub const TILE_DISPATCH_COARSE_X: u32 = 15;
+pub const TILE_DISPATCH_COARSE_Y: u32 = 15;
 pub const TILE_DISPATCH_FINE_X: u32 = TILE_DISPATCH_COARSE_X * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
 pub const TILE_DISPATCH_FINE_Y: u32 = TILE_DISPATCH_COARSE_Y * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
 
@@ -64,8 +64,6 @@ impl Primitive2dPipeline {
             // Glyphs
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
             // Glyph Instances
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
-            // Primitive Instances
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
             // Coarse Tiles
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),

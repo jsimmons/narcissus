@@ -16,32 +16,28 @@ layout(std430, set = 0, binding = 3) readonly buffer glyphInstanceBuffer {
     GlyphInstance glyph_instances[];
 };
 
-layout(std430, set = 0, binding = 4) readonly buffer primitiveInstanceBuffer {
-    PrimitiveInstance primitive_instances[];
-};
-
-layout(std430, set = 0, binding = 5) readonly buffer coarseTileBufferRead {
+layout(std430, set = 0, binding = 4) readonly buffer coarseTileBufferRead {
     uint coarse_bitmap_ro[];
 };
 
-layout(std430, set = 0, binding = 5) writeonly buffer coarseTileBufferWrite {
+layout(std430, set = 0, binding = 4) writeonly buffer coarseTileBufferWrite {
     uint coarse_bitmap_wo[];
 };
 
-layout(std430, set = 0, binding = 6) readonly buffer fineTileBitmapBufferRead {
+layout(std430, set = 0, binding = 5) readonly buffer fineTileBitmapBufferRead {
     uint fine_bitmap_ro[];
 };
 
-layout(std430, set = 0, binding = 6) writeonly buffer fineTileBitmapBufferWrite {
+layout(std430, set = 0, binding = 5) writeonly buffer fineTileBitmapBufferWrite {
     uint fine_bitmap_wo[];
 };
 
-layout(std430, set = 0, binding = 7) readonly buffer fineTileCountBufferRead {
+layout(std430, set = 0, binding = 6) readonly buffer fineTileCountBufferRead {
     uint fine_count_ro[];
 };
 
-layout(std430, set = 0, binding = 7) writeonly buffer fineTileCountBufferWrite {
+layout(std430, set = 0, binding = 6) writeonly buffer fineTileCountBufferWrite {
     uint fine_count_wo[];
 };
 
-layout (set = 0, binding = 8, rgba16f) uniform writeonly image2D ui_image;
+layout (set = 0, binding = 7, rgba16f) uniform writeonly image2D ui_image;
