@@ -885,22 +885,10 @@ impl<'gpu> DrawState<'gpu> {
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
-        let coarse_bitmap_buffer_size = TILE_DISPATCH_COARSE_X
-            * TILE_DISPATCH_COARSE_Y
-            * TILE_STRIDE_COARSE
-            * std::mem::size_of::<u32>() as u32;
-
         let fine_bitmap_buffer_size = TILE_DISPATCH_FINE_X
             * TILE_DISPATCH_FINE_Y
             * TILE_STRIDE_FINE
             * std::mem::size_of::<u32>() as u32;
-
-        let coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
-            memory_location: MemoryLocation::Device,
-            host_mapped: false,
-            usage: BufferUsageFlags::STORAGE,
-            size: coarse_bitmap_buffer_size.widen(),
-        });
 
         let fine_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
             memory_location: MemoryLocation::Device,
@@ -923,7 +911,7 @@ impl<'gpu> DrawState<'gpu> {
             depth_image: default(),
             rt_image: default(),
             ui_image: default(),
-            coarse_tile_bitmap_buffer,
+            coarse_tile_bitmap_buffer: default(),
             fine_tile_bitmap_buffer,
             fine_tile_color_buffer: default(),
             glyph_atlas_image: default(),
@@ -1047,6 +1035,19 @@ impl<'gpu> DrawState<'gpu> {
                     || tile_resolution_fine_y != self.tile_resolution_fine_y
                 {
                     gpu.destroy_buffer(frame, self.fine_tile_color_buffer);
+                    gpu.destroy_buffer(frame, self.coarse_tile_bitmap_buffer);
+
+                    let coarse_bitmap_buffer_size = tile_resolution_coarse_x
+                        * tile_resolution_coarse_y
+                        * TILE_STRIDE_COARSE
+                        * std::mem::size_of::<u32>() as u32;
+
+                    self.coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
+                        memory_location: MemoryLocation::Device,
+                        host_mapped: false,
+                        usage: BufferUsageFlags::STORAGE,
+                        size: coarse_bitmap_buffer_size.widen(),
+                    });
 
                     // align to the workgroup size to simplify shader
                     let fine_color_buffer_size =
@@ -1418,19 +1419,48 @@ impl<'gpu> DrawState<'gpu> {
 
                 ui_state.primitive_instances.clear();
 
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.coarse_bin_pipeline);
+
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
+                    &PrimitiveUniforms {
+                        screen_resolution_x: self.width,
+                        screen_resolution_y: self.height,
+                        atlas_resolution_x: atlas_width,
+                        atlas_resolution_y: atlas_height,
+                        num_primitives,
+                        num_primitives_32,
+                        num_primitives_1024,
+                        tile_stride_fine: self.tile_resolution_fine_x,
+                        tile_offset_x: 0,
+                        tile_offset_y: 0,
+                    },
+                );
+
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    (num_primitives + 63) / 64,
+                    self.tile_resolution_coarse_x,
+                    self.tile_resolution_coarse_y,
+                );
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    Some(&GlobalBarrier {
+                        prev_access: &[Access::ShaderWrite],
+                        next_access: &[Access::ShaderOtherRead],
+                    }),
+                    &[],
+                );
+
                 for tile_offset_y in
                     (0..self.tile_resolution_coarse_y).step_by(TILE_DISPATCH_COARSE_Y as usize)
                 {
                     for tile_offset_x in
                         (0..self.tile_resolution_coarse_x).step_by(TILE_DISPATCH_COARSE_X as usize)
                     {
-                        let coarse_dispatch_x = (tile_offset_x + TILE_DISPATCH_COARSE_X)
-                            .min(self.tile_resolution_coarse_x)
-                            - tile_offset_x;
-                        let coarse_dispatch_y = (tile_offset_y + TILE_DISPATCH_COARSE_Y)
-                            .min(self.tile_resolution_coarse_y)
-                            - tile_offset_y;
-
                         let tile_offset_fine_x =
                             tile_offset_x * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
 
@@ -1444,11 +1474,6 @@ impl<'gpu> DrawState<'gpu> {
                         let fine_dispatch_y = (tile_offset_fine_y + TILE_DISPATCH_FINE_Y)
                             .min(self.tile_resolution_fine_y)
                             - tile_offset_fine_y;
-
-                        gpu.cmd_set_pipeline(
-                            cmd_encoder,
-                            self.primitive_2d_pipeline.coarse_bin_pipeline,
-                        );
 
                         gpu.cmd_push_constants(
                             cmd_encoder,
@@ -1466,22 +1491,6 @@ impl<'gpu> DrawState<'gpu> {
                                 tile_offset_x,
                                 tile_offset_y,
                             },
-                        );
-
-                        gpu.cmd_dispatch(
-                            cmd_encoder,
-                            (num_primitives + 63) / 64,
-                            coarse_dispatch_x,
-                            coarse_dispatch_y,
-                        );
-
-                        gpu.cmd_barrier(
-                            cmd_encoder,
-                            Some(&GlobalBarrier {
-                                prev_access: &[Access::ShaderWrite],
-                                next_access: &[Access::ShaderOtherRead],
-                            }),
-                            &[],
                         );
 
                         gpu.cmd_set_pipeline(

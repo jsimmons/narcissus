@@ -27,8 +27,8 @@ void main() {
 
     uint bitmap_l0 = 0;
     if (index < primitive_uniforms.num_primitives_32) {
-        const uvec2 tile_coord_coarse = tile_coord / TILE_SIZE_MUL;
-        const uint tile_index_coarse = tile_coord_coarse.y * TILE_DISPATCH_X + tile_coord_coarse.x;
+        const uvec2 tile_coord_coarse = (tile_coord / TILE_SIZE_MUL) + primitive_uniforms.tile_offset_coarse;
+        const uint tile_index_coarse = tile_coord_coarse.y * (primitive_uniforms.tile_stride_fine / TILE_SIZE_MUL) + tile_coord_coarse.x;
         const uint tile_base_coarse = tile_index_coarse * TILE_STRIDE_COARSE;
         const uint tile_bitmap_base_coarse = tile_base_coarse + TILE_BITMAP_OFFSET_COARSE;
 
