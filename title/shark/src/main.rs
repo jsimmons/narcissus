@@ -31,10 +31,7 @@ use pipelines::primitive_2d::{GlyphInstance, Primitive2dPipeline};
 use spring::simple_spring_damper_exact;
 
 use crate::pipelines::basic::BasicUniforms;
-use crate::pipelines::primitive_2d::{
-    PrimitiveUniforms, TILE_DISPATCH_COARSE_X, TILE_DISPATCH_COARSE_Y, TILE_DISPATCH_FINE_X,
-    TILE_DISPATCH_FINE_Y, TILE_SIZE_COARSE, TILE_SIZE_FINE, TILE_STRIDE_COARSE, TILE_STRIDE_FINE,
-};
+use crate::pipelines::primitive_2d::{PrimitiveUniforms, TILE_SIZE, TILE_STRIDE};
 
 mod fonts;
 mod helpers;
@@ -853,18 +850,14 @@ struct DrawState<'gpu> {
     width: u32,
     height: u32,
 
-    tile_resolution_coarse_x: u32,
-    tile_resolution_coarse_y: u32,
-    tile_resolution_fine_x: u32,
-    tile_resolution_fine_y: u32,
+    tile_resolution_x: u32,
+    tile_resolution_y: u32,
 
     depth_image: Image,
     rt_image: Image,
     ui_image: Image,
 
-    coarse_tile_bitmap_buffer: Buffer,
-    fine_tile_bitmap_buffer: Buffer,
-    fine_tile_color_buffer: Buffer,
+    tile_bitmap_buffer: Buffer,
 
     glyph_atlas_image: Image,
 
@@ -885,18 +878,6 @@ impl<'gpu> DrawState<'gpu> {
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
-        let fine_bitmap_buffer_size = TILE_DISPATCH_FINE_X
-            * TILE_DISPATCH_FINE_Y
-            * TILE_STRIDE_FINE
-            * std::mem::size_of::<u32>() as u32;
-
-        let fine_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
-            memory_location: MemoryLocation::Device,
-            host_mapped: false,
-            usage: BufferUsageFlags::STORAGE,
-            size: fine_bitmap_buffer_size.widen(),
-        });
-
         Self {
             gpu,
             basic_pipeline,
@@ -904,16 +885,12 @@ impl<'gpu> DrawState<'gpu> {
             display_transform_pipeline,
             width: 0,
             height: 0,
-            tile_resolution_coarse_x: 0,
-            tile_resolution_coarse_y: 0,
-            tile_resolution_fine_x: 0,
-            tile_resolution_fine_y: 0,
+            tile_resolution_x: 0,
+            tile_resolution_y: 0,
             depth_image: default(),
             rt_image: default(),
             ui_image: default(),
-            coarse_tile_bitmap_buffer: default(),
-            fine_tile_bitmap_buffer,
-            fine_tile_color_buffer: default(),
+            tile_bitmap_buffer: default(),
             glyph_atlas_image: default(),
             samplers,
             models,
@@ -1024,47 +1001,30 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.destroy_image(frame, self.rt_image);
                 gpu.destroy_image(frame, self.ui_image);
 
-                let tile_resolution_coarse_x = (width + (TILE_SIZE_COARSE - 1)) / TILE_SIZE_COARSE;
-                let tile_resolution_coarse_y = (height + (TILE_SIZE_COARSE - 1)) / TILE_SIZE_COARSE;
-                let tile_resolution_fine_x = (width + (TILE_SIZE_FINE - 1)) / TILE_SIZE_FINE;
-                let tile_resolution_fine_y = (height + (TILE_SIZE_FINE - 1)) / TILE_SIZE_FINE;
+                let tile_resolution_x = (width + (TILE_SIZE - 1)) / TILE_SIZE;
+                let tile_resolution_y = (height + (TILE_SIZE - 1)) / TILE_SIZE;
 
-                if tile_resolution_coarse_x != self.tile_resolution_coarse_x
-                    || tile_resolution_coarse_y != self.tile_resolution_coarse_y
-                    || tile_resolution_fine_x != self.tile_resolution_fine_x
-                    || tile_resolution_fine_y != self.tile_resolution_fine_y
+                if tile_resolution_x != self.tile_resolution_x
+                    || tile_resolution_y != self.tile_resolution_y
                 {
-                    gpu.destroy_buffer(frame, self.fine_tile_color_buffer);
-                    gpu.destroy_buffer(frame, self.coarse_tile_bitmap_buffer);
+                    gpu.destroy_buffer(frame, self.tile_bitmap_buffer);
 
-                    let coarse_bitmap_buffer_size = tile_resolution_coarse_x
-                        * tile_resolution_coarse_y
-                        * TILE_STRIDE_COARSE
+                    let bitmap_buffer_size = tile_resolution_x
+                        * tile_resolution_y
+                        * TILE_STRIDE
                         * std::mem::size_of::<u32>() as u32;
 
-                    self.coarse_tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
+                    self.tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
                         memory_location: MemoryLocation::Device,
                         host_mapped: false,
                         usage: BufferUsageFlags::STORAGE,
-                        size: coarse_bitmap_buffer_size.widen(),
+                        size: bitmap_buffer_size.widen(),
                     });
 
-                    // align to the workgroup size to simplify shader
-                    let fine_color_buffer_size =
-                        ((tile_resolution_fine_x * tile_resolution_fine_y + 63) & !63)
-                            * std::mem::size_of::<u32>() as u32;
+                    println!("tile_resolution: ({tile_resolution_x},{tile_resolution_y})");
 
-                    self.fine_tile_color_buffer = gpu.create_buffer(&BufferDesc {
-                        memory_location: MemoryLocation::Device,
-                        host_mapped: false,
-                        usage: BufferUsageFlags::STORAGE,
-                        size: fine_color_buffer_size.widen(),
-                    });
-
-                    self.tile_resolution_coarse_x = tile_resolution_coarse_x;
-                    self.tile_resolution_coarse_y = tile_resolution_coarse_y;
-                    self.tile_resolution_fine_x = tile_resolution_fine_x;
-                    self.tile_resolution_fine_y = tile_resolution_fine_y;
+                    self.tile_resolution_x = tile_resolution_x;
+                    self.tile_resolution_y = tile_resolution_y;
                 }
 
                 self.depth_image = gpu.create_image(&ImageDesc {
@@ -1330,8 +1290,6 @@ impl<'gpu> DrawState<'gpu> {
 
             // Render UI
             {
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.fine_clear_pipeline);
-
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
@@ -1344,6 +1302,14 @@ impl<'gpu> DrawState<'gpu> {
                     BufferUsageFlags::STORAGE,
                     ui_state.primitive_instances.as_slice(),
                 );
+
+                let num_primitives = ui_state.primitive_instances.len() as u32;
+                let num_primitives_32 = (num_primitives + 31) / 32;
+                let num_primitives_1024 = (num_primitives_32 + 31) / 32;
+
+                ui_state.primitive_instances.clear();
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_pipeline);
 
                 gpu.cmd_set_bind_group(
                     frame,
@@ -1377,26 +1343,10 @@ impl<'gpu> DrawState<'gpu> {
                         Bind {
                             binding: 4,
                             array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[self
-                                .coarse_tile_bitmap_buffer
-                                .to_arg()]),
+                            typed: TypedBind::StorageBuffer(&[self.tile_bitmap_buffer.to_arg()]),
                         },
                         Bind {
                             binding: 5,
-                            array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[self
-                                .fine_tile_bitmap_buffer
-                                .to_arg()]),
-                        },
-                        Bind {
-                            binding: 6,
-                            array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[self
-                                .fine_tile_color_buffer
-                                .to_arg()]),
-                        },
-                        Bind {
-                            binding: 7,
                             array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
@@ -1405,21 +1355,6 @@ impl<'gpu> DrawState<'gpu> {
                         },
                     ],
                 );
-
-                gpu.cmd_dispatch(
-                    cmd_encoder,
-                    (self.tile_resolution_fine_x * self.tile_resolution_fine_y + 63) / 64,
-                    1,
-                    1,
-                );
-
-                let num_primitives = ui_state.primitive_instances.len() as u32;
-                let num_primitives_32 = (num_primitives + 31) / 32;
-                let num_primitives_1024 = (num_primitives_32 + 31) / 32;
-
-                ui_state.primitive_instances.clear();
-
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.coarse_bin_pipeline);
 
                 gpu.cmd_push_constants(
                     cmd_encoder,
@@ -1433,17 +1368,15 @@ impl<'gpu> DrawState<'gpu> {
                         num_primitives,
                         num_primitives_32,
                         num_primitives_1024,
-                        tile_stride_fine: self.tile_resolution_fine_x,
-                        tile_offset_x: 0,
-                        tile_offset_y: 0,
+                        tile_stride: self.tile_resolution_x,
                     },
                 );
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    (num_primitives + 63) / 64,
-                    self.tile_resolution_coarse_x,
-                    self.tile_resolution_coarse_y,
+                    (num_primitives + 2047) / 2048,
+                    (self.tile_resolution_x + 3) / 4,
+                    (self.tile_resolution_y + 3) / 4,
                 );
 
                 gpu.cmd_barrier(
@@ -1455,73 +1388,9 @@ impl<'gpu> DrawState<'gpu> {
                     &[],
                 );
 
-                for tile_offset_y in
-                    (0..self.tile_resolution_coarse_y).step_by(TILE_DISPATCH_COARSE_Y as usize)
-                {
-                    for tile_offset_x in
-                        (0..self.tile_resolution_coarse_x).step_by(TILE_DISPATCH_COARSE_X as usize)
-                    {
-                        let tile_offset_fine_x =
-                            tile_offset_x * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.rasterize_pipeline);
 
-                        let tile_offset_fine_y =
-                            tile_offset_y * (TILE_SIZE_COARSE / TILE_SIZE_FINE);
-
-                        let fine_dispatch_x = (tile_offset_fine_x + TILE_DISPATCH_FINE_X)
-                            .min(self.tile_resolution_fine_x)
-                            - tile_offset_fine_x;
-
-                        let fine_dispatch_y = (tile_offset_fine_y + TILE_DISPATCH_FINE_Y)
-                            .min(self.tile_resolution_fine_y)
-                            - tile_offset_fine_y;
-
-                        gpu.cmd_push_constants(
-                            cmd_encoder,
-                            ShaderStageFlags::COMPUTE,
-                            0,
-                            &PrimitiveUniforms {
-                                screen_resolution_x: self.width,
-                                screen_resolution_y: self.height,
-                                atlas_resolution_x: atlas_width,
-                                atlas_resolution_y: atlas_height,
-                                num_primitives,
-                                num_primitives_32,
-                                num_primitives_1024,
-                                tile_stride_fine: self.tile_resolution_fine_x,
-                                tile_offset_x,
-                                tile_offset_y,
-                            },
-                        );
-
-                        gpu.cmd_set_pipeline(
-                            cmd_encoder,
-                            self.primitive_2d_pipeline.fine_bin_pipeline,
-                        );
-
-                        gpu.cmd_dispatch(
-                            cmd_encoder,
-                            (num_primitives_32 + 63) / 64,
-                            fine_dispatch_x,
-                            fine_dispatch_y,
-                        );
-
-                        gpu.cmd_barrier(
-                            cmd_encoder,
-                            Some(&GlobalBarrier {
-                                prev_access: &[Access::ShaderWrite],
-                                next_access: &[Access::ShaderOtherRead],
-                            }),
-                            &[],
-                        );
-
-                        gpu.cmd_set_pipeline(
-                            cmd_encoder,
-                            self.primitive_2d_pipeline.rasterize_pipeline,
-                        );
-
-                        gpu.cmd_dispatch(cmd_encoder, fine_dispatch_x, fine_dispatch_y, 1);
-                    }
-                }
+                gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
             }
 
             // Display transform and composite
@@ -1595,13 +1464,6 @@ impl<'gpu> DrawState<'gpu> {
                                 ImageLayout::General,
                                 swapchain_image,
                             )]),
-                        },
-                        Bind {
-                            binding: 5,
-                            array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[self
-                                .fine_tile_color_buffer
-                                .to_arg()]),
                         },
                     ],
                 );
@@ -1793,7 +1655,7 @@ pub fn main() {
                 );
             }
 
-            for i in 0..180 {
+            for i in 0..224 {
                 let i = i as f32;
                 ui_state.text_fmt(
                         5.0,

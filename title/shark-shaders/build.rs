@@ -20,15 +20,7 @@ const SHADERS: &[Shader] = &[
     },
     Shader {
         stage: "comp",
-        name: "primitive_2d_bin_coarse",
-    },
-    Shader {
-        stage: "comp",
-        name: "primitive_2d_bin_fine",
-    },
-    Shader {
-        stage: "comp",
-        name: "primitive_2d_clear_fine",
+        name: "primitive_2d_bin",
     },
     Shader {
         stage: "comp",

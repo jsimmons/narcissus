@@ -25,8 +25,6 @@ impl DisplayTransformPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
             // Composited Output
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
-            // Tile color buffer
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
         ]);
 
         let layout = &PipelineLayout {

@@ -1,16 +1,11 @@
-#define MAX_PRIMS 0x20000u
-#define TILE_SIZE_COARSE 64
-#define TILE_SIZE_FINE 16
-#define TILE_SIZE_MUL (TILE_SIZE_COARSE / TILE_SIZE_FINE)
+#define TILE_SIZE 32
+
+#define MAX_PRIMS (1 << 18)
 #define TILE_BITMAP_L1_WORDS (MAX_PRIMS / 32 / 32)
 #define TILE_BITMAP_L0_WORDS (MAX_PRIMS / 32)
-#define TILE_STRIDE_COARSE TILE_BITMAP_L0_WORDS
-#define TILE_STRIDE_FINE (TILE_BITMAP_L0_WORDS + TILE_BITMAP_L1_WORDS)
-#define TILE_BITMAP_OFFSET_COARSE 0
-#define TILE_BITMAP_L1_OFFSET_FINE 0
-#define TILE_BITMAP_L0_OFFSET_FINE TILE_BITMAP_L1_WORDS
-
-#define TILE_DISPATCH_X 15
+#define TILE_STRIDE (TILE_BITMAP_L0_WORDS + TILE_BITMAP_L1_WORDS)
+#define TILE_BITMAP_L1_OFFSET 0
+#define TILE_BITMAP_L0_OFFSET TILE_BITMAP_L1_WORDS
 
 struct PrimitiveUniforms {
     uvec2 screen_resolution;
@@ -19,9 +14,7 @@ struct PrimitiveUniforms {
     uint num_primitives;
     uint num_primitives_32;
     uint num_primitives_1024;
-    uint tile_stride_fine;
-
-    uvec2 tile_offset_coarse;
+    uint tile_stride;
 };
 
 struct Glyph {
