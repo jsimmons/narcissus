@@ -10,10 +10,6 @@
 
 #include "primitive_2d.h"
 
-layout(std430, set = 0, binding = 3) readonly coherent buffer glyphInstanceBufferCoherent {
-    GlyphInstance glyph_instances_coherent[];
-};
-
 #define SUBGROUP_SIZE 64
 #define NUM_PRIMS_WG (SUBGROUP_SIZE * 32)
 
@@ -31,7 +27,7 @@ void main() {
         const uint prim_index = gl_WorkGroupID.x * NUM_PRIMS_WG + i + gl_SubgroupInvocationID;
         bool intersects = false;
         if (prim_index < primitive_uniforms.num_primitives) {
-            const GlyphInstance gi = glyph_instances_coherent[prim_index];
+            const GlyphInstance gi = glyph_instances[prim_index];
             const Glyph gl = glyphs[gi.index];
             const vec2 glyph_min = gi.position + gl.offset_min;
             const vec2 glyph_max = gi.position + gl.offset_max;
