@@ -10,7 +10,7 @@ pub const TILE_SIZE: u32 = 32;
 pub const MAX_PRIMS: u32 = 1 << 18;
 pub const TILE_BITMAP_WORDS_L1: u32 = MAX_PRIMS / 32 / 32;
 pub const TILE_BITMAP_WORDS_L0: u32 = MAX_PRIMS / 32;
-pub const TILE_STRIDE: u32 = TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1;
+pub const TILE_STRIDE: u32 = TILE_BITMAP_WORDS_L0 + TILE_BITMAP_WORDS_L1 + 2;
 
 #[allow(unused)]
 #[repr(C)]
@@ -38,6 +38,7 @@ pub struct GlyphInstance {
 
 pub struct Primitive2dPipeline {
     pub bind_group_layout: BindGroupLayout,
+    pub bin_clear_pipeline: Pipeline,
     pub bin_pipeline: Pipeline,
     pub rasterize_pipeline: Pipeline,
 }
@@ -68,6 +69,14 @@ impl Primitive2dPipeline {
             }],
         };
 
+        let bin_clear_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_BIN_CLEAR_COMP_SPV,
+            },
+            layout,
+        });
+
         let bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
             shader: ShaderDesc {
                 entry: c"main",
@@ -86,6 +95,7 @@ impl Primitive2dPipeline {
 
         Self {
             bind_group_layout,
+            bin_clear_pipeline,
             bin_pipeline,
             rasterize_pipeline,
         }

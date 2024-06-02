@@ -34,16 +34,22 @@ void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy / 4;
     const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride + tile_coord.x;
     const uint tile_base = tile_index * TILE_STRIDE;
-    const uint tile_bitmap_l1_base_fine = tile_base + TILE_BITMAP_L1_OFFSET;
-    const uint tile_bitmap_l0_base_fine = tile_base + TILE_BITMAP_L0_OFFSET;
+
+    const uint first = tile_bitmap_ro[tile_base + TILE_BITMAP_RANGE_OFFSET + 0];
+    const uint last = tile_bitmap_ro[tile_base + TILE_BITMAP_RANGE_OFFSET + 1];
+
+    [[branch]]
+    if (last < first) {
+        return;
+    }
 
 #if DEBUG_SHOW_TILES == 1
 
     int count = 0;
     // For each tile, iterate over all words in the L1 bitmap.
-    for (int index_l1 = 0; index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
+    for (uint index_l1 = first; index_l1 <= last; index_l1++) {
         // For each word, iterate all set bits.
-        uint bitmap_l1 = tile_bitmap_ro[tile_bitmap_l1_base_fine + index_l1];
+        uint bitmap_l1 = tile_bitmap_ro[tile_base + TILE_BITMAP_L1_OFFSET + index_l1];
 
         while (bitmap_l1 != 0) {
             const uint i = findLSB(bitmap_l1);
@@ -52,7 +58,7 @@ void main() {
             // For each set bit in the L1 bitmap, iterate the set bits in the
             // corresponding L0 bitmap.
             const uint index_l0 = index_l1 * 32 + i;
-            uint bitmap_l0 = tile_bitmap_ro[tile_bitmap_l0_base_fine + index_l0];
+            uint bitmap_l0 = tile_bitmap_ro[tile_base + TILE_BITMAP_L0_OFFSET + index_l0];
 
             count += bitCount(bitmap_l0);
         }
@@ -66,9 +72,9 @@ void main() {
     vec4 accum = vec4(0.0);
 
     // For each tile, iterate over all words in the L1 bitmap. 
-    for (int index_l1 = 0; index_l1 < primitive_uniforms.num_primitives_1024; index_l1++) {
+    for (uint index_l1 = first; index_l1 <= last; index_l1++) {
         // For each word, iterate all set bits.
-        uint bitmap_l1 = tile_bitmap_ro[tile_bitmap_l1_base_fine + index_l1];
+        uint bitmap_l1 = tile_bitmap_ro[tile_base + TILE_BITMAP_L1_OFFSET + index_l1];
 
         while (bitmap_l1 != 0) {
             const uint i = findLSB(bitmap_l1);
@@ -77,7 +83,7 @@ void main() {
             // For each set bit in the L1 bitmap, iterate the set bits in the
             // corresponding L0 bitmap.
             const uint index_l0 = index_l1 * 32 + i;
-            uint bitmap_l0 = tile_bitmap_ro[tile_bitmap_l0_base_fine + index_l0];
+            uint bitmap_l0 = tile_bitmap_ro[tile_base + TILE_BITMAP_L0_OFFSET + index_l0];
             while (bitmap_l0 != 0) {
                 const uint j = findLSB(bitmap_l0);
                 bitmap_l0 ^= bitmap_l0 & -bitmap_l0;

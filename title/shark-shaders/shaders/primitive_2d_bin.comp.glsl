@@ -73,6 +73,11 @@ void main() {
             }
 
             tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_L1_OFFSET + gl_WorkGroupID.x * 2 + i] = out_1;
+
+            if (out_1 != 0) {
+                atomicMin(tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 0], gl_WorkGroupID.x * 2 + i);
+                atomicMax(tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 1], gl_WorkGroupID.x * 2 + i);
+            }
         }
     }
 }

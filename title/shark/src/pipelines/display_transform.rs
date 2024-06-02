@@ -19,6 +19,8 @@ impl DisplayTransformPipeline {
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::Sampler),
             // Tony Mc'mapface LUT
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
+            // Tiles
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageBuffer),
             // Layer RT
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
             // Layer UI

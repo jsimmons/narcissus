@@ -3,9 +3,10 @@ const uint TILE_SIZE = 32;
 const uint MAX_PRIMS = 1 << 18;
 const uint TILE_BITMAP_L1_WORDS = (MAX_PRIMS / 32 / 32);
 const uint TILE_BITMAP_L0_WORDS = (MAX_PRIMS / 32);
-const uint TILE_STRIDE = (TILE_BITMAP_L0_WORDS + TILE_BITMAP_L1_WORDS);
-const uint TILE_BITMAP_L1_OFFSET = 0;
-const uint TILE_BITMAP_L0_OFFSET = TILE_BITMAP_L1_WORDS;
+const uint TILE_STRIDE = (TILE_BITMAP_L0_WORDS + TILE_BITMAP_L1_WORDS + 2);
+const uint TILE_BITMAP_RANGE_OFFSET = 0;
+const uint TILE_BITMAP_L1_OFFSET = 2;
+const uint TILE_BITMAP_L0_OFFSET = TILE_BITMAP_L1_OFFSET + TILE_BITMAP_L1_WORDS;
 
 struct PrimitiveUniforms {
     uvec2 screen_resolution;

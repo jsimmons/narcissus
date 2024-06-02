@@ -24,6 +24,10 @@ const SHADERS: &[Shader] = &[
     },
     Shader {
         stage: "comp",
+        name: "primitive_2d_bin_clear",
+    },
+    Shader {
+        stage: "comp",
         name: "primitive_2d_rasterize",
     },
     Shader {

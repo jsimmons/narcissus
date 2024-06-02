@@ -1309,7 +1309,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 ui_state.primitive_instances.clear();
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_pipeline);
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_clear_pipeline);
 
                 gpu.cmd_set_bind_group(
                     frame,
@@ -1374,6 +1374,24 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
+                    (self.tile_resolution_y * self.tile_resolution_x + 63) / 64,
+                    1,
+                    1,
+                );
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    Some(&GlobalBarrier {
+                        prev_access: &[Access::ComputeWrite],
+                        next_access: &[Access::ComputeOtherRead],
+                    }),
+                    &[],
+                );
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_pipeline);
+
+                gpu.cmd_dispatch(
+                    cmd_encoder,
                     (num_primitives + 2047) / 2048,
                     (self.tile_resolution_x + 3) / 4,
                     (self.tile_resolution_y + 3) / 4,
@@ -1382,8 +1400,8 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_barrier(
                     cmd_encoder,
                     Some(&GlobalBarrier {
-                        prev_access: &[Access::ShaderWrite],
-                        next_access: &[Access::ShaderOtherRead],
+                        prev_access: &[Access::ComputeWrite],
+                        next_access: &[Access::ComputeOtherRead],
                     }),
                     &[],
                 );
@@ -1444,13 +1462,18 @@ impl<'gpu> DrawState<'gpu> {
                         Bind {
                             binding: 2,
                             array_element: 0,
+                            typed: TypedBind::StorageBuffer(&[self.tile_bitmap_buffer.to_arg()]),
+                        },
+                        Bind {
+                            binding: 3,
+                            array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
                                 self.rt_image,
                             )]),
                         },
                         Bind {
-                            binding: 3,
+                            binding: 4,
                             array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
@@ -1458,7 +1481,7 @@ impl<'gpu> DrawState<'gpu> {
                             )]),
                         },
                         Bind {
-                            binding: 4,
+                            binding: 5,
                             array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
