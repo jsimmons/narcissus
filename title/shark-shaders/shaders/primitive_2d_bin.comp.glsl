@@ -10,8 +10,8 @@
 
 #include "primitive_2d.h"
 
-#define SUBGROUP_SIZE 64
-#define NUM_PRIMS_WG (SUBGROUP_SIZE * 32)
+const uint SUBGROUP_SIZE = 64;
+const uint NUM_PRIMS_WG = (SUBGROUP_SIZE * 32);
 
 // TODO: Spec constant support for different subgroup sizes.
 layout (local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
