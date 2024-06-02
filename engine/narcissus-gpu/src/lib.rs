@@ -561,6 +561,9 @@ pub enum Access {
     /// Read as a depth-stencil attachment.
     DepthStencilAttachmentRead,
 
+    /// Read as any other resource in a compute shader.
+    ComputeOtherRead,
+
     /// Read as a uniform buffer in any shader.
     ShaderUniformBufferRead,
     /// Read as a uniform buffer or vertex buffer in any shader.
@@ -587,6 +590,9 @@ pub enum Access {
     ColorAttachmentWrite,
     /// Written as a depth-stencil attachment during rendering.
     DepthStencilAttachmentWrite,
+
+    /// Written as a resource in a compute shader.
+    ComputeWrite,
 
     /// Written as any resource in any shader.
     ShaderWrite,
@@ -621,6 +627,7 @@ impl Access {
             Access::FragmentShaderOtherRead => true,
             Access::ColorAttachmentRead => true,
             Access::DepthStencilAttachmentRead => true,
+            Access::ComputeOtherRead => true,
             Access::ShaderUniformBufferRead => true,
             Access::ShaderUniformBufferOrVertexBufferRead => true,
             Access::ShaderSampledImageRead => true,
@@ -632,6 +639,7 @@ impl Access {
             Access::FragmentShaderWrite => false,
             Access::ColorAttachmentWrite => false,
             Access::DepthStencilAttachmentWrite => false,
+            Access::ComputeWrite => true,
             Access::ShaderWrite => false,
             Access::TransferWrite => false,
             Access::HostPreInitializedWrite => false,

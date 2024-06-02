@@ -80,6 +80,12 @@ pub fn vulkan_access_info(access: Access) -> VulkanAccessInfo {
             layout: vk::ImageLayout::AttachmentOptimal,
         },
 
+        Access::ComputeOtherRead => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::COMPUTE_SHADER,
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::General,
+        },
+
         Access::ShaderUniformBufferRead => VulkanAccessInfo {
             stages: vk::PipelineStageFlags2::ALL_COMMANDS,
             access: vk::AccessFlags2::UNIFORM_READ,
@@ -139,6 +145,13 @@ pub fn vulkan_access_info(access: Access) -> VulkanAccessInfo {
             access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
             layout: vk::ImageLayout::DepthAttachmentOptimal,
         },
+
+        Access::ComputeWrite => VulkanAccessInfo {
+            stages: vk::PipelineStageFlags2::COMPUTE_SHADER,
+            access: vk::AccessFlags2::SHADER_WRITE,
+            layout: vk::ImageLayout::General,
+        },
+
         Access::ShaderWrite => VulkanAccessInfo {
             stages: vk::PipelineStageFlags2::ALL_COMMANDS,
             access: vk::AccessFlags2::SHADER_WRITE,
