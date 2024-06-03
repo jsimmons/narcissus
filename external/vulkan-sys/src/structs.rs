@@ -257,6 +257,25 @@ impl Default for MemoryAllocateInfo {
 }
 
 #[repr(C)]
+pub struct MemoryAllocateFlagsInfo {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub flags: MemoryAllocateFlags,
+    pub device_mask: u32,
+}
+
+impl Default for MemoryAllocateFlagsInfo {
+    fn default() -> Self {
+        MemoryAllocateFlagsInfo {
+            _type: StructureType::MemoryAllocateFlagsInfo,
+            _next: std::ptr::null(),
+            flags: MemoryAllocateFlags::default(),
+            device_mask: 0,
+        }
+    }
+}
+
+#[repr(C)]
 pub struct MemoryRequirements {
     pub size: DeviceSize,      // Specified in bytes
     pub alignment: DeviceSize, // Specified in bytes
@@ -1867,6 +1886,23 @@ impl Default for BufferViewCreateInfo {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::BufferViewCreateInfo;
         x
+    }
+}
+
+#[repr(C)]
+pub struct BufferDeviceAddressInfo {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub buffer: Buffer,
+}
+
+impl Default for BufferDeviceAddressInfo {
+    fn default() -> Self {
+        BufferDeviceAddressInfo {
+            _type: StructureType::BufferDeviceAddressInfo,
+            _next: std::ptr::null(),
+            buffer: Buffer::null(),
+        }
     }
 }
 

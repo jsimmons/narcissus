@@ -110,6 +110,15 @@ impl MemoryHeapFlags {
 pub struct MemoryMapFlags(u32);
 
 #[repr(C)]
+pub struct MemoryAllocateFlags(u32);
+
+impl MemoryAllocateFlags {
+    pub const DEVICE_MASK: Self = Self(0x00000001);
+    pub const DEVICE_ADDRESS_BIT: Self = Self(0x00000002);
+    pub const DEVICE_ADDRESS_CAPTURE_REPLAY_BIT: Self = Self(0x00000004);
+}
+
+#[repr(C)]
 pub struct ImageAspectFlags(u32);
 impl ImageAspectFlags {
     pub const COLOR: Self = Self(1);
@@ -1085,6 +1094,7 @@ impl_flags_u32!(
     MemoryPropertyFlags,
     MemoryHeapFlags,
     MemoryMapFlags,
+    MemoryAllocateFlags,
     ImageAspectFlags,
     SparseMemoryBindFlags,
     SparseImageFormatFlags,

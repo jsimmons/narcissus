@@ -792,6 +792,9 @@ pub type FnGetBufferMemoryRequirements2 = extern "system" fn(
 pub type FnBindBufferMemory2 =
     extern "system" fn(device: Device, bind_info_count: u32, *const BindBufferMemoryInfo);
 
+pub type FnGetBufferDeviceAddress =
+    extern "system" fn(device: Device, info: *const BufferDeviceAddressInfo) -> DeviceAddress;
+
 pub type FnCmdWriteTimestamp = extern "system" fn(
     command_buffer: CommandBuffer,
     pipeline_stage: PipelineStageFlags,

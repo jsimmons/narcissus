@@ -607,7 +607,6 @@ pub struct DeviceFunctions {
     destroy_render_pass: FnDestroyRenderPass,
     create_semaphore: FnCreateSemaphore,
     destroy_semaphore: FnDestroySemaphore,
-    get_semaphore_counter_value: FnGetSemaphoreCounterValue,
     wait_semaphores: FnWaitSemaphores,
     signal_semaphore: FnSignalSemaphore,
     create_fence: FnCreateFence,
@@ -683,6 +682,10 @@ pub struct DeviceFunctions {
     bind_image_memory2: FnBindImageMemory2,
     get_buffer_memory_requirements2: FnGetBufferMemoryRequirements2,
     bind_buffer_memory2: FnBindBufferMemory2,
+
+    // VERSION_1_2
+    get_buffer_device_address: FnGetBufferDeviceAddress,
+    get_semaphore_counter_value: FnGetSemaphoreCounterValue,
 
     // VERSION_1_3
     cmd_pipeline_barrier2: FnCmdPipelineBarrier2,
@@ -921,6 +924,11 @@ impl DeviceFunctions {
                 bind_buffer_memory2: transmute::<_, _>(load(c"vkBindBufferMemory2", VERSION_1_1)),
 
                 // VERSION_1_2
+                get_buffer_device_address: transmute::<_, _>(load(
+                    c"vkGetBufferDeviceAddress",
+                    VERSION_1_2,
+                )),
+
                 get_semaphore_counter_value: transmute::<_, _>(load(
                     c"vkGetSemaphoreCounterValue",
                     VERSION_1_2,
@@ -2281,6 +2289,15 @@ impl DeviceFunctions {
     #[inline]
     pub unsafe fn bind_buffer_memory2(&self, device: Device, bind_infos: &[BindBufferMemoryInfo]) {
         (self.bind_buffer_memory2)(device, bind_infos.len() as u32, bind_infos.as_ptr())
+    }
+
+    #[inline]
+    pub unsafe fn get_buffer_device_address(
+        &self,
+        device: Device,
+        info: &BufferDeviceAddressInfo,
+    ) -> DeviceAddress {
+        (self.get_buffer_device_address)(device, info)
     }
 
     #[inline]
