@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    ffi::c_void,
     sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
@@ -252,7 +253,13 @@ impl VulkanDevice {
             return None;
         }
 
+        let flags_info = vk::MemoryAllocateFlagsInfo {
+            flags: vk::MemoryAllocateFlags::DEVICE_ADDRESS_BIT,
+            ..default()
+        };
+
         let mut allocate_info = vk::MemoryAllocateInfo {
+            _next: &flags_info as *const _ as *const c_void,
             allocation_size: size,
             memory_type_index,
             ..default()

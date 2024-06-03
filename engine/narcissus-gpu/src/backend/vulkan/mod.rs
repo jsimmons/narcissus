@@ -183,6 +183,7 @@ fn vulkan_shader_module(
 struct VulkanBuffer {
     memory: VulkanMemory,
     buffer: vk::Buffer,
+    _address: vk::DeviceAddress,
     map_count: u64,
 }
 
@@ -624,6 +625,7 @@ impl VulkanDevice {
             };
             let enabled_features_12 = vk::PhysicalDeviceVulkan12Features {
                 _next: &enabled_features_13 as *const vk::PhysicalDeviceVulkan13Features as *mut _,
+                buffer_device_address: vk::Bool32::True,
                 timeline_semaphore: vk::Bool32::True,
                 descriptor_indexing: vk::Bool32::True,
                 descriptor_binding_partially_bound: vk::Bool32::True,
@@ -911,7 +913,8 @@ impl Device for VulkanDevice {
 
         let create_info = vk::BufferCreateInfo {
             size: desc.size as u64,
-            usage: vulkan_buffer_usage_flags(desc.usage),
+            usage: vulkan_buffer_usage_flags(desc.usage)
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             queue_family_indices: queue_family_indices.into(),
             sharing_mode: vk::SharingMode::Exclusive,
             ..default()
@@ -940,9 +943,20 @@ impl Device for VulkanDevice {
             )
         };
 
+        let address = unsafe {
+            self.device_fn.get_buffer_device_address(
+                self.device,
+                &vk::BufferDeviceAddressInfo {
+                    buffer,
+                    ..default()
+                },
+            )
+        };
+
         let handle = self.buffer_pool.lock().insert(VulkanBuffer {
             memory,
             buffer,
+            _address: address,
             map_count: 0,
         });
 
@@ -2619,7 +2633,8 @@ impl VulkanDevice {
                 | vk::BufferUsageFlags::TRANSFER_SRC
                 | vk::BufferUsageFlags::INDEX_BUFFER
                 | vk::BufferUsageFlags::STORAGE_BUFFER
-                | vk::BufferUsageFlags::UNIFORM_BUFFER,
+                | vk::BufferUsageFlags::UNIFORM_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             queue_family_indices: queue_family_indices.into(),
             sharing_mode: vk::SharingMode::Exclusive,
             ..default()
