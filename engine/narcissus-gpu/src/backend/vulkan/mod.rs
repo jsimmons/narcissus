@@ -392,6 +392,9 @@ pub(crate) struct VulkanDevice {
     _global_fn: vk::GlobalFunctions,
     instance_fn: vk::InstanceFunctions,
     device_fn: vk::DeviceFunctions,
+
+    #[cfg(feature = "debug_markers")]
+    debug_utils_fn: Option<vk::DebugUtilsFunctions>,
 }
 
 impl VulkanDevice {
@@ -444,12 +447,22 @@ impl VulkanDevice {
         let mut enabled_extensions = vec![];
 
         let mut has_get_surface_capabilities2 = false;
+        #[cfg(feature = "debug_markers")]
+        let mut has_debug_utils = false;
         for extension in &extension_properties {
             let extension_name = CStr::from_bytes_until_nul(&extension.extension_name).unwrap();
-            if extension_name.to_str().unwrap() == "VK_KHR_get_surface_capabilities2" {
-                has_get_surface_capabilities2 = true;
-                enabled_extensions.push(extension_name);
-                break;
+            match extension_name.to_str().unwrap() {
+                "VK_KHR_get_surface_capabilities2" => {
+                    has_get_surface_capabilities2 = true;
+                    enabled_extensions.push(extension_name);
+                }
+
+                #[cfg(feature = "debug_markers")]
+                "VK_EXT_debug_utils" => {
+                    has_debug_utils = true;
+                    enabled_extensions.push(extension_name);
+                }
+                _ => {}
             }
         }
 
@@ -654,6 +667,18 @@ impl VulkanDevice {
 
         let device_fn = vk::DeviceFunctions::new(&instance_fn, device, vk::VERSION_1_3);
 
+        #[cfg(feature = "debug_markers")]
+        let debug_utils_fn = if has_debug_utils {
+            Some(vk::DebugUtilsFunctions::new(
+                &global_fn,
+                &instance_fn,
+                instance,
+                device,
+            ))
+        } else {
+            None
+        };
+
         let wsi = Box::new(VulkanWsi::new(&global_fn, instance, wsi_support));
 
         let universal_queue = unsafe {
@@ -733,15 +758,6 @@ impl VulkanDevice {
         Self {
             instance,
             physical_device,
-            physical_device_properties,
-            _physical_device_properties_11: physical_device_properties_11,
-            _physical_device_properties_12: physical_device_properties_12,
-            _physical_device_properties_13: physical_device_properties_13,
-            _physical_device_features: physical_device_features,
-            _physical_device_features_11: physical_device_features_11,
-            _physical_device_features_12: physical_device_features_12,
-            _physical_device_features_13: physical_device_features_13,
-            physical_device_memory_properties,
             device,
 
             universal_queue,
@@ -769,9 +785,22 @@ impl VulkanDevice {
 
             allocator,
 
+            physical_device_properties,
+            _physical_device_properties_11: physical_device_properties_11,
+            _physical_device_properties_12: physical_device_properties_12,
+            _physical_device_properties_13: physical_device_properties_13,
+            _physical_device_features: physical_device_features,
+            _physical_device_features_11: physical_device_features_11,
+            _physical_device_features_12: physical_device_features_12,
+            _physical_device_features_13: physical_device_features_13,
+            physical_device_memory_properties,
+
             _global_fn: global_fn,
             instance_fn,
             device_fn,
+
+            #[cfg(feature = "debug_markers")]
+            debug_utils_fn,
         }
     }
 
@@ -1577,6 +1606,50 @@ impl Device for VulkanDevice {
             cmd_encoder_addr: vulkan_cmd_encoder as *mut _ as usize,
             thread_token,
             phantom_unsend: PhantomUnsend {},
+        }
+    }
+
+    fn cmd_insert_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let arena = HybridArena::<256>::new();
+            let label_name = arena.alloc_cstr_from_str(label_name);
+
+            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+            let label_info = vk::DebugUtilsLabelExt {
+                label_name: label_name.as_ptr(),
+                color,
+                ..default()
+            };
+            unsafe {
+                debug_utils_fn.cmd_insert_debug_utils_label_ext(command_buffer, &label_info);
+            }
+        }
+    }
+
+    fn cmd_begin_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let arena = HybridArena::<256>::new();
+            let label_name = arena.alloc_cstr_from_str(label_name);
+
+            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+            let label_info = vk::DebugUtilsLabelExt {
+                label_name: label_name.as_ptr(),
+                color,
+                ..default()
+            };
+            unsafe {
+                debug_utils_fn.cmd_begin_debug_utils_label_ext(command_buffer, &label_info);
+            }
+        }
+    }
+
+    fn cmd_end_marker(&self, cmd_encoder: &mut CmdEncoder) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+            unsafe { debug_utils_fn.cmd_end_debug_utils_label_ext(command_buffer) }
         }
     }
 

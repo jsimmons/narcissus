@@ -819,6 +819,10 @@ pub trait Device {
         thread_token: &'a ThreadToken,
     ) -> CmdEncoder<'a>;
 
+    fn cmd_insert_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]);
+    fn cmd_begin_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]);
+    fn cmd_end_marker(&self, cmd_encoder: &mut CmdEncoder);
+
     fn cmd_set_bind_group(
         &self,
         frame: &Frame,

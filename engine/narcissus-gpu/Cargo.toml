@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["debug_markers"]
+debug_markers = []
+
 [dependencies]
 narcissus-core = { path = "../narcissus-core" }
 blake3-smol = { path = "../../external/blake3-smol" }
