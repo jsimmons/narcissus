@@ -1,4 +1,4 @@
-use std::{alloc::Layout, cell::Cell, mem::MaybeUninit, ptr::NonNull};
+use std::{alloc::Layout, cell::Cell, ffi::CStr, mem::MaybeUninit, ptr::NonNull};
 
 use crate::{align_offset, oom};
 
@@ -410,6 +410,30 @@ impl Arena {
     }
 
     #[inline(always)]
+    pub fn alloc_cstr_from_str(&self, str: &str) -> &CStr {
+        assert!(str.len() < isize::MAX as usize);
+        assert!(!str.contains('\0'));
+
+        unsafe {
+            // SAFETY: We checked we're *less than* isize::MAX above.
+            let len = str.len() + 1;
+            // SAFETY: Alignment of 1 cannot change len, so it cannot overflow.
+            let layout = Layout::from_size_align_unchecked(len, 1);
+            let src = str.as_ptr();
+            let dst = self.alloc_layout(layout).cast::<u8>().as_ptr();
+
+            // SAFETY: We allocate dst with a larger size than src before copying into it.
+            std::ptr::copy_nonoverlapping(src, dst, str.len());
+            // SAFETY: The +1 was so we can write the nul terminator here.
+            std::ptr::write(dst.byte_add(str.len()), 0);
+
+            let slice = std::slice::from_raw_parts(dst, len);
+            // SAFETY: We ensured there are no internal nul bytes up top.
+            std::ffi::CStr::from_bytes_with_nul_unchecked(slice)
+        }
+    }
+
+    #[inline(always)]
     #[allow(clippy::mut_from_ref)]
     pub fn alloc_slice_fill_with<T, F>(&self, len: usize, mut f: F) -> &mut [T]
     where
@@ -701,6 +725,29 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         // SAFETY: We've just copied this string from a valid `&str`, so it must be valid
         // too.
         unsafe { std::str::from_utf8_unchecked_mut(str) }
+    }
+
+    #[inline(always)]
+    pub fn alloc_cstr_from_str(&self, str: &str) -> &CStr {
+        assert!(str.len() < isize::MAX as usize && !str.contains('\0'));
+
+        unsafe {
+            // SAFETY: We asserted we're *less than* isize::MAX above.
+            let len = str.len() + 1;
+            // SAFETY: Alignment of 1 cannot change len, so it cannot overflow.
+            let layout = Layout::from_size_align_unchecked(len, 1);
+            let src = str.as_ptr();
+            let dst = self.alloc_layout(layout).cast::<u8>().as_ptr();
+
+            // SAFETY: We allocate dst with a larger size than src before copying into it.
+            std::ptr::copy_nonoverlapping(src, dst, str.len());
+            // SAFETY: The +1 was so we can write the nul terminator here.
+            std::ptr::write(dst.byte_add(str.len()), 0);
+            let slice = std::slice::from_raw_parts(dst, len);
+
+            // SAFETY: We asserted there are no internal nul bytes above.
+            std::ffi::CStr::from_bytes_with_nul_unchecked(slice)
+        }
     }
 
     #[inline(always)]
