@@ -1378,8 +1378,9 @@ pub enum StructureType {
 }
 
 #[repr(i32)]
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub enum ObjectType {
+    #[default]
     Unknown = 0,
     Instance = 1,
     PhysicalDevice = 2,

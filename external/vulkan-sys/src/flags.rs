@@ -897,6 +897,32 @@ impl PresentGravityFlagsEXT {
     pub const CENTERED_EXT: Self = Self(0x00000004);
 }
 
+#[repr(C)]
+pub struct DebugUtilsMessengerCreateFlagsExt(u32);
+
+#[repr(C)]
+pub struct DebugUtilsMessageSeverityFlagsExt(u32);
+
+impl DebugUtilsMessageSeverityFlagsExt {
+    pub const VERBOSE: Self = Self(0x00000001);
+    pub const INFO: Self = Self(0x00000010);
+    pub const WARNING: Self = Self(0x00000100);
+    pub const ERROR: Self = Self(0x00001000);
+}
+
+#[repr(C)]
+pub struct DebugUtilsMessageTypeFlagsExt(u32);
+
+impl DebugUtilsMessageTypeFlagsExt {
+    pub const GENERAL: Self = Self(0x00000001);
+    pub const VALIDATION: Self = Self(0x00000002);
+    pub const PERFORMANCE: Self = Self(0x00000004);
+    pub const DEVICE_ADDRESS_BINDING: Self = Self(0x00000008);
+}
+
+#[repr(C)]
+pub struct DebugUtilsMessengerCallbackDataFlagsExt(u32);
+
 macro_rules! impl_flags_u32 {
     ($($t:ty),+) => {
         $(

@@ -2697,3 +2697,175 @@ impl SwapchainMaintenance1ExtFunctions {
         (self.release_swapchain_images_ext)(device, release_info)
     }
 }
+
+pub struct DebugUtilsFunctions {
+    cmd_begin_debug_utils_label_ext: FnCmdBeginDebugUtilsLabelExt,
+    cmd_end_debug_utils_label_ext: FnCmdEndDebugUtilsLabelExt,
+    cmd_insert_debug_utils_label_ext: FnCmdInsertDebugUtilsLabelExt,
+    create_debug_utils_messenger_ext: FnCreateDebugUtilsMessengerExt,
+    destroy_debug_utils_messenger_ext: FnDestroyDebugUtilsMessengerExt,
+    queue_begin_debug_utils_label_ext: FnQueueBeginDebugUtilsLabelExt,
+    queue_end_debug_utils_label_ext: FnQueueEndDebugUtilsLabelExt,
+    queue_insert_debug_utils_label_ext: FnQueueInsertDebugUtilsLabelExt,
+    set_debug_utils_object_name_ext: FnSetDebugUtilsObjectNameExt,
+    set_debug_utils_object_tag_ext: FnSetDebugUtilsObjectTagExt,
+    submit_debug_utils_message_ext: FnSubmitDebugUtilsMessageExt,
+}
+
+impl DebugUtilsFunctions {
+    pub fn new(
+        global_functions: &GlobalFunctions,
+        instance_functions: &InstanceFunctions,
+        instance: Instance,
+        device: Device,
+    ) -> Self {
+        unsafe {
+            let load_instance = |name: &CStr| {
+                global_functions
+                    .get_instance_proc_addr(instance, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || {
+                            panic!(
+                                "failed to load instance function {}",
+                                name.to_string_lossy()
+                            )
+                        },
+                    )
+            };
+            let load_device = |name: &CStr| {
+                instance_functions
+                    .get_device_proc_addr(device, name)
+                    .unwrap_or_else(
+                        #[cold]
+                        || panic!("failed to load device function {}", name.to_string_lossy()),
+                    )
+            };
+            Self {
+                cmd_begin_debug_utils_label_ext: transmute::<_, _>(load_device(
+                    c"vkCmdBeginDebugUtilsLabelEXT",
+                )),
+                cmd_end_debug_utils_label_ext: transmute::<_, _>(load_device(
+                    c"vkCmdEndDebugUtilsLabelEXT",
+                )),
+                cmd_insert_debug_utils_label_ext: transmute::<_, _>(load_device(
+                    c"vkCmdInsertDebugUtilsLabelEXT",
+                )),
+                create_debug_utils_messenger_ext: transmute::<_, _>(load_instance(
+                    c"vkCreateDebugUtilsMessengerEXT",
+                )),
+                destroy_debug_utils_messenger_ext: transmute::<_, _>(load_instance(
+                    c"vkDestroyDebugUtilsMessengerEXT",
+                )),
+                queue_begin_debug_utils_label_ext: transmute::<_, _>(load_device(
+                    c"vkQueueBeginDebugUtilsLabelEXT",
+                )),
+                queue_end_debug_utils_label_ext: transmute::<_, _>(load_device(
+                    c"vkQueueEndDebugUtilsLabelEXT",
+                )),
+                queue_insert_debug_utils_label_ext: transmute::<_, _>(load_device(
+                    c"vkQueueInsertDebugUtilsLabelEXT",
+                )),
+                set_debug_utils_object_name_ext: transmute::<_, _>(load_device(
+                    c"vkSetDebugUtilsObjectNameEXT",
+                )),
+                set_debug_utils_object_tag_ext: transmute::<_, _>(load_device(
+                    c"vkSetDebugUtilsObjectTagEXT",
+                )),
+                submit_debug_utils_message_ext: transmute::<_, _>(load_instance(
+                    c"vkSubmitDebugUtilsMessageEXT",
+                )),
+            }
+        }
+    }
+
+    pub unsafe fn cmd_begin_debug_utils_label_ext(
+        &self,
+        command_buffer: CommandBuffer,
+        label_info: &DebugUtilsLabelExt,
+    ) {
+        (self.cmd_begin_debug_utils_label_ext)(command_buffer, label_info)
+    }
+
+    pub unsafe fn cmd_end_debug_utils_label_ext(&self, command_buffer: CommandBuffer) {
+        (self.cmd_end_debug_utils_label_ext)(command_buffer)
+    }
+
+    pub unsafe fn cmd_insert_debug_utils_label_ext(
+        &self,
+        command_buffer: CommandBuffer,
+        label_info: &DebugUtilsLabelExt,
+    ) {
+        (self.cmd_insert_debug_utils_label_ext)(command_buffer, label_info)
+    }
+
+    pub unsafe fn create_debug_utils_messenger_ext(
+        &self,
+        instance: Instance,
+        create_info: &DebugUtilsMessengerCreateInfoExt,
+        allocator: Option<&AllocationCallbacks>,
+        messenger: *mut DebugUtilsMessengerExt,
+    ) {
+        (self.create_debug_utils_messenger_ext)(instance, create_info, allocator, messenger)
+    }
+
+    pub unsafe fn destroy_debug_utils_messenger_ext(
+        &self,
+        instance: Instance,
+        messenger: DebugUtilsMessengerExt,
+        allocator: Option<&AllocationCallbacks>,
+    ) {
+        (self.destroy_debug_utils_messenger_ext)(instance, messenger, allocator)
+    }
+
+    pub unsafe fn queue_begin_debug_utils_label_ext(
+        &self,
+        queue: Queue,
+        label_info: &DebugUtilsLabelExt,
+    ) {
+        (self.queue_begin_debug_utils_label_ext)(queue, label_info)
+    }
+
+    pub unsafe fn queue_end_debug_utils_label_ext(&self, queue: Queue) {
+        (self.queue_end_debug_utils_label_ext)(queue)
+    }
+
+    pub unsafe fn queue_insert_debug_utils_label_ext(
+        &self,
+        queue: Queue,
+        label_info: &DebugUtilsLabelExt,
+    ) {
+        (self.queue_insert_debug_utils_label_ext)(queue, label_info)
+    }
+
+    pub unsafe fn set_debug_utils_object_name_ext(
+        &self,
+        device: Device,
+        name_info: &DebugUtilsObjectNameInfoExt,
+    ) {
+        (self.set_debug_utils_object_name_ext)(device, name_info)
+    }
+
+    pub unsafe fn set_debug_utils_object_tag_ext(
+        &self,
+        device: Device,
+        tag_info: &DebugUtilsObjectTagInfoExt,
+    ) {
+        (self.set_debug_utils_object_tag_ext)(device, tag_info)
+    }
+
+    pub unsafe fn submit_debug_utils_message_ext(
+        &self,
+        instance: Instance,
+        message_severity: DebugUtilsMessageSeverityFlagsExt,
+        message_types: DebugUtilsMessageTypeFlagsExt,
+        callback_data: &DebugUtilsMessengerCallbackDataExt,
+    ) {
+        (self.submit_debug_utils_message_ext)(
+            instance,
+            message_severity,
+            message_types,
+            callback_data,
+        )
+    }
+}

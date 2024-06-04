@@ -948,3 +948,42 @@ pub type FnGetPhysicalDeviceSurfaceFormats2KHR = extern "system" fn(
     surface_format_count: &mut u32,
     surface_formats: *mut SurfaceFormat2KHR,
 ) -> Result;
+
+pub type FnCmdBeginDebugUtilsLabelExt =
+    extern "system" fn(command_buffer: CommandBuffer, label_info: &DebugUtilsLabelExt);
+pub type FnCmdEndDebugUtilsLabelExt = extern "system" fn(command_buffer: CommandBuffer);
+pub type FnCmdInsertDebugUtilsLabelExt =
+    extern "system" fn(command_buffer: CommandBuffer, label_info: &DebugUtilsLabelExt);
+pub type FnCreateDebugUtilsMessengerExt = extern "system" fn(
+    instance: Instance,
+    create_info: &DebugUtilsMessengerCreateInfoExt,
+    allocator: Option<&AllocationCallbacks>,
+    messenger: *mut DebugUtilsMessengerExt,
+);
+pub type FnDestroyDebugUtilsMessengerExt = extern "system" fn(
+    instance: Instance,
+    messenger: DebugUtilsMessengerExt,
+    allocator: Option<&AllocationCallbacks>,
+);
+pub type FnQueueBeginDebugUtilsLabelExt =
+    extern "system" fn(queue: Queue, label_info: &DebugUtilsLabelExt);
+pub type FnQueueEndDebugUtilsLabelExt = extern "system" fn(queue: Queue);
+pub type FnQueueInsertDebugUtilsLabelExt =
+    extern "system" fn(queue: Queue, label_info: &DebugUtilsLabelExt);
+pub type FnSetDebugUtilsObjectNameExt =
+    extern "system" fn(device: Device, name_info: &DebugUtilsObjectNameInfoExt);
+pub type FnSetDebugUtilsObjectTagExt =
+    extern "system" fn(device: Device, tag_info: &DebugUtilsObjectTagInfoExt);
+pub type FnSubmitDebugUtilsMessageExt = extern "system" fn(
+    instance: Instance,
+    message_severity: DebugUtilsMessageSeverityFlagsExt,
+    message_types: DebugUtilsMessageTypeFlagsExt,
+    callback_data: &DebugUtilsMessengerCallbackDataExt,
+);
+
+pub type FnDebugUtilsMessengerCallbackExt = extern "system" fn(
+    message_severity: DebugUtilsMessageSeverityFlagsExt,
+    message_types: DebugUtilsMessageTypeFlagsExt,
+    callback_data: &DebugUtilsMessengerCallbackDataExt,
+    user_data: *mut c_void,
+) -> Bool32;

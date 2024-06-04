@@ -118,6 +118,10 @@ pub struct SurfaceKHR(u64);
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash, Debug)]
 pub struct SwapchainKHR(u64);
 
+#[repr(C)]
+#[derive(Copy, Clone, PartialEq, Eq, Default, Hash, Debug)]
+pub struct DebugUtilsMessengerExt(u64);
+
 // impl Handle {
 //     #[inline]
 //     pub const fn null() -> Self {
@@ -165,6 +169,7 @@ pub struct SwapchainKHR(u64);
 // DisplayModeKHR
 // SurfaceKHR
 // SwapchainKHR
+// DebugUtilsMessengerExt
 
 impl Instance {
     #[inline]
@@ -776,6 +781,27 @@ impl SurfaceKHR {
     }
 }
 impl SwapchainKHR {
+    #[inline]
+    pub const fn null() -> Self {
+        Self(0)
+    }
+
+    #[inline]
+    pub const fn is_null(self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline]
+    pub fn as_raw(self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    pub fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
+}
+impl DebugUtilsMessengerExt {
     #[inline]
     pub const fn null() -> Self {
         Self(0)

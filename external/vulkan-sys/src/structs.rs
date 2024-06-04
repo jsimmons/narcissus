@@ -2168,6 +2168,99 @@ impl Default for ImageMemoryBarrier {
 }
 
 #[repr(C)]
+pub struct DebugUtilsLabelExt {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub label_name: *const c_char,
+    pub color: [f32; 4],
+}
+
+impl Default for DebugUtilsLabelExt {
+    fn default() -> Self {
+        DebugUtilsLabelExt {
+            _type: StructureType::DebugUtilsLabelExt,
+            _next: std::ptr::null(),
+            label_name: std::ptr::null(),
+            color: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+
+pub struct DebugUtilsObjectTagInfoExt {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub object_type: ObjectType,
+    pub object_handle: u64,
+    pub tag_name: u64,
+    pub tag_size: usize,
+    pub tag_data: *const c_void,
+}
+
+impl Default for DebugUtilsObjectTagInfoExt {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::DebugUtilsObjectTagInfoExt,
+            _next: std::ptr::null(),
+            object_type: ObjectType::Unknown,
+            object_handle: 0,
+            tag_name: 0,
+            tag_size: 0,
+            tag_data: std::ptr::null(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct DebugUtilsObjectNameInfoExt {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub object_type: ObjectType,
+    pub object_handle: u64,
+    pub object_name: *const c_char,
+}
+
+impl Default for DebugUtilsObjectNameInfoExt {
+    fn default() -> Self {
+        Self {
+            _type: StructureType::DebugUtilsObjectNameInfoExt,
+            _next: std::ptr::null(),
+            object_type: ObjectType::Unknown,
+            object_handle: 0,
+            object_name: std::ptr::null(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct DebugUtilsMessengerCreateInfoExt {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub flags: DebugUtilsMessengerCreateFlagsExt,
+    pub message_severity: DebugUtilsMessageSeverityFlagsExt,
+    pub message_type: DebugUtilsMessageTypeFlagsExt,
+    pub user_callback: FnDebugUtilsMessengerCallbackExt,
+    pub user_data: *mut c_void,
+}
+
+#[repr(C)]
+pub struct DebugUtilsMessengerCallbackDataExt {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub flags: DebugUtilsMessengerCallbackDataFlagsExt,
+    pub message_id_name: *const c_char,
+    pub message_id_number: i32,
+    pub message: *const c_char,
+    pub queue_label_count: u32,
+    pub queue_labels: *const DebugUtilsLabelExt,
+    pub command_buffer_label_count: u32,
+    pub command_buffer_labels: *const DebugUtilsLabelExt,
+    pub object_count: u32,
+    pub objects: *const DebugUtilsObjectNameInfoExt,
+}
+
+#[repr(C)]
 pub struct PhysicalDeviceSparseProperties {
     ///  Sparse resources support: GPU will access all 2D (single sample) sparse resources using the standard sparse image block shapes (based on pixel format)
     pub residency_standard_2d_block_shape: Bool32,
