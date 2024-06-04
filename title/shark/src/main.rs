@@ -35,6 +35,7 @@ use crate::pipelines::primitive_2d::{PrimitiveUniforms, TILE_SIZE, TILE_STRIDE};
 
 mod fonts;
 mod helpers;
+pub mod microshades;
 mod pipelines;
 mod spring;
 
@@ -812,6 +813,8 @@ impl Images {
             {
                 let cmd_encoder = &mut cmd_encoder;
 
+                gpu.cmd_begin_marker(cmd_encoder, "image upload", microshades::BROWN_RGBA_F32[3]);
+
                 images = Images {
                     tony_mc_mapface_lut: load_dds(
                         gpu,
@@ -828,6 +831,8 @@ impl Images {
                         "title/shark/data/blåhaj.png",
                     ),
                 };
+
+                gpu.cmd_end_marker(cmd_encoder);
             }
 
             gpu.submit(frame, cmd_encoder);
@@ -1088,6 +1093,12 @@ impl<'gpu> DrawState<'gpu> {
 
             // If the atlas has been updated, we need to upload it to the GPU.
             if let Some(texture) = glyph_texture {
+                gpu.cmd_begin_marker(
+                    cmd_encoder,
+                    "upload glyph atlas",
+                    microshades::BROWN_RGBA_F32[3],
+                );
+
                 let buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
@@ -1131,6 +1142,8 @@ impl<'gpu> DrawState<'gpu> {
                         ImageAspectFlags::COLOR,
                     )],
                 );
+
+                gpu.cmd_end_marker(cmd_encoder);
             }
 
             gpu.cmd_barrier(
@@ -1153,6 +1166,8 @@ impl<'gpu> DrawState<'gpu> {
                     },
                 ],
             );
+
+            gpu.cmd_begin_marker(cmd_encoder, "sharks", microshades::BLUE_RGBA_F32[3]);
 
             gpu.cmd_begin_rendering(
                 cmd_encoder,
@@ -1288,8 +1303,16 @@ impl<'gpu> DrawState<'gpu> {
 
             gpu.cmd_end_rendering(cmd_encoder);
 
+            gpu.cmd_end_marker(cmd_encoder);
+
             // Render UI
             {
+                gpu.cmd_begin_marker(
+                    cmd_encoder,
+                    "2d primitives",
+                    microshades::PURPLE_RGBA_F32[3],
+                );
+
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
@@ -1409,10 +1432,18 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.rasterize_pipeline);
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+
+                gpu.cmd_end_marker(cmd_encoder);
             }
 
             // Display transform and composite
             {
+                gpu.cmd_begin_marker(
+                    cmd_encoder,
+                    "display transform",
+                    microshades::GREEN_RGBA_F32[3],
+                );
+
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
@@ -1492,6 +1523,8 @@ impl<'gpu> DrawState<'gpu> {
                 );
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+
+                gpu.cmd_end_marker(cmd_encoder);
             }
         }
         gpu.submit(frame, cmd_encoder);
