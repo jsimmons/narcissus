@@ -595,6 +595,9 @@ impl<'a> Models<'a> {
                 indices.as_slice(),
             );
 
+            gpu.debug_name_buffer(vertex_buffer.to_arg(), "vertex");
+            gpu.debug_name_buffer(index_buffer.to_arg(), "index");
+
             Model {
                 indices: indices.len() as u32,
                 vertex_buffer,
@@ -661,6 +664,8 @@ impl Images {
                 layer_count: 1,
                 mip_levels: 1,
             });
+
+            gpu.debug_name_image(image, path.as_ref().to_string_lossy().as_ref());
 
             gpu.cmd_barrier(
                 cmd_encoder,
@@ -753,6 +758,8 @@ impl Images {
                 mip_levels: 1,
             });
 
+            gpu.debug_name_image(image, path.as_ref().to_string_lossy().as_ref());
+
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
@@ -813,7 +820,11 @@ impl Images {
             {
                 let cmd_encoder = &mut cmd_encoder;
 
-                gpu.cmd_begin_marker(cmd_encoder, "image upload", microshades::BROWN_RGBA_F32[3]);
+                gpu.cmd_begin_debug_marker(
+                    cmd_encoder,
+                    "image upload",
+                    microshades::BROWN_RGBA_F32[3],
+                );
 
                 images = Images {
                     tony_mc_mapface_lut: load_dds(
@@ -832,7 +843,7 @@ impl Images {
                     ),
                 };
 
-                gpu.cmd_end_marker(cmd_encoder);
+                gpu.cmd_end_debug_marker(cmd_encoder);
             }
 
             gpu.submit(frame, cmd_encoder);
@@ -989,6 +1000,8 @@ impl<'gpu> DrawState<'gpu> {
                     mip_levels: 1,
                 });
 
+                gpu.debug_name_image(self.glyph_atlas_image, "glyph atlas");
+
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
@@ -1026,6 +1039,8 @@ impl<'gpu> DrawState<'gpu> {
                         size: bitmap_buffer_size.widen(),
                     });
 
+                    gpu.debug_name_buffer(self.tile_bitmap_buffer.to_arg(), "tile bitmap");
+
                     println!("tile_resolution: ({tile_resolution_x},{tile_resolution_y})");
 
                     self.tile_resolution_x = tile_resolution_x;
@@ -1046,6 +1061,8 @@ impl<'gpu> DrawState<'gpu> {
                     mip_levels: 1,
                 });
 
+                gpu.debug_name_image(self.depth_image, "depth");
+
                 self.rt_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
                     host_mapped: false,
@@ -1060,6 +1077,8 @@ impl<'gpu> DrawState<'gpu> {
                     mip_levels: 1,
                 });
 
+                gpu.debug_name_image(self.rt_image, "render target");
+
                 self.ui_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
                     host_mapped: false,
@@ -1073,6 +1092,8 @@ impl<'gpu> DrawState<'gpu> {
                     layer_count: 1,
                     mip_levels: 1,
                 });
+
+                gpu.debug_name_image(self.ui_image, "ui");
 
                 gpu.cmd_barrier(
                     cmd_encoder,
@@ -1093,7 +1114,7 @@ impl<'gpu> DrawState<'gpu> {
 
             // If the atlas has been updated, we need to upload it to the GPU.
             if let Some(texture) = glyph_texture {
-                gpu.cmd_begin_marker(
+                gpu.cmd_begin_debug_marker(
                     cmd_encoder,
                     "upload glyph atlas",
                     microshades::BROWN_RGBA_F32[3],
@@ -1143,7 +1164,7 @@ impl<'gpu> DrawState<'gpu> {
                     )],
                 );
 
-                gpu.cmd_end_marker(cmd_encoder);
+                gpu.cmd_end_debug_marker(cmd_encoder);
             }
 
             gpu.cmd_barrier(
@@ -1167,7 +1188,7 @@ impl<'gpu> DrawState<'gpu> {
                 ],
             );
 
-            gpu.cmd_begin_marker(cmd_encoder, "sharks", microshades::BLUE_RGBA_F32[3]);
+            gpu.cmd_begin_debug_marker(cmd_encoder, "sharks", microshades::BLUE_RGBA_F32[3]);
 
             gpu.cmd_begin_rendering(
                 cmd_encoder,
@@ -1303,11 +1324,11 @@ impl<'gpu> DrawState<'gpu> {
 
             gpu.cmd_end_rendering(cmd_encoder);
 
-            gpu.cmd_end_marker(cmd_encoder);
+            gpu.cmd_end_debug_marker(cmd_encoder);
 
             // Render UI
             {
-                gpu.cmd_begin_marker(
+                gpu.cmd_begin_debug_marker(
                     cmd_encoder,
                     "2d primitives",
                     microshades::PURPLE_RGBA_F32[3],
@@ -1433,12 +1454,12 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
-                gpu.cmd_end_marker(cmd_encoder);
+                gpu.cmd_end_debug_marker(cmd_encoder);
             }
 
             // Display transform and composite
             {
-                gpu.cmd_begin_marker(
+                gpu.cmd_begin_debug_marker(
                     cmd_encoder,
                     "display transform",
                     microshades::GREEN_RGBA_F32[3],
@@ -1524,7 +1545,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
-                gpu.cmd_end_marker(cmd_encoder);
+                gpu.cmd_end_debug_marker(cmd_encoder);
             }
         }
         gpu.submit(frame, cmd_encoder);
