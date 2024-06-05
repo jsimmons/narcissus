@@ -992,6 +992,26 @@ impl Device for VulkanDevice {
         Buffer(handle)
     }
 
+    fn create_persistent_buffer<'device>(
+        &'device self,
+        desc: &BufferDesc,
+    ) -> PersistentBuffer<'device> {
+        assert!(desc.host_mapped);
+
+        let buffer = self.create_buffer(desc);
+        unsafe {
+            let ptr = std::ptr::NonNull::new(self.map_buffer(buffer))
+                .expect("failed to map buffer memory");
+
+            PersistentBuffer {
+                ptr,
+                len: desc.size,
+                buffer,
+                phantom: PhantomData,
+            }
+        }
+    }
+
     fn create_image(&self, image_desc: &ImageDesc) -> Image {
         debug_assert_ne!(image_desc.layer_count, 0, "layers must be at least one");
         debug_assert_ne!(image_desc.width, 0, "width must be at least one");
@@ -1475,6 +1495,89 @@ impl Device for VulkanDevice {
         Pipeline(handle)
     }
 
+    fn debug_name_buffer(&self, buffer: BufferArg, name: &str) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let buffer = match buffer {
+                BufferArg::Unmanaged(buffer) => buffer,
+                BufferArg::Persistent(buffer) => buffer.buffer,
+                BufferArg::Transient(_) => return,
+            };
+
+            let buffer_handle;
+            {
+                let buffer_pool = self.buffer_pool.lock();
+                let Some(buffer) = buffer_pool.get(buffer.0) else {
+                    return;
+                };
+
+                buffer_handle = buffer.buffer.as_raw();
+            }
+
+            let arena = HybridArena::<512>::new();
+            let object_name = arena.alloc_cstr_from_str(name);
+
+            let name_info = vk::DebugUtilsObjectNameInfoExt {
+                object_type: vk::ObjectType::Buffer,
+                object_handle: buffer_handle,
+                object_name: object_name.as_ptr(),
+                ..default()
+            };
+
+            unsafe { debug_utils_fn.set_debug_utils_object_name_ext(self.device, &name_info) }
+        }
+    }
+
+    fn debug_name_image(&self, image: Image, name: &str) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let image_handle;
+            let image_view_handle;
+            {
+                let image_pool = self.image_pool.lock();
+                let Some(image_holder) = image_pool.get(image.0) else {
+                    return;
+                };
+
+                match image_holder {
+                    VulkanImageHolder::Unique(unique) => {
+                        image_handle = unique.image.image.as_raw();
+                        image_view_handle = unique.view.as_raw();
+                    }
+                    VulkanImageHolder::Shared(shared) => {
+                        image_handle = 0;
+                        image_view_handle = shared.view.as_raw();
+                    }
+                    VulkanImageHolder::Swapchain(_) => return,
+                }
+            }
+            let arena = HybridArena::<512>::new();
+            let object_name = arena.alloc_cstr_from_str(name);
+
+            if image_handle != 0 {
+                let image_name_info = vk::DebugUtilsObjectNameInfoExt {
+                    object_type: vk::ObjectType::Image,
+                    object_handle: image_handle,
+                    object_name: object_name.as_ptr(),
+                    ..default()
+                };
+                unsafe {
+                    debug_utils_fn.set_debug_utils_object_name_ext(self.device, &image_name_info)
+                }
+            }
+
+            let image_view_name_info = vk::DebugUtilsObjectNameInfoExt {
+                object_type: vk::ObjectType::ImageView,
+                object_handle: image_view_handle,
+                object_name: object_name.as_ptr(),
+                ..default()
+            };
+            unsafe {
+                debug_utils_fn.set_debug_utils_object_name_ext(self.device, &image_view_name_info)
+            }
+        }
+    }
+
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer) {
         if let Some(buffer) = self.buffer_pool.lock().remove(buffer.0) {
             assert_eq!(
@@ -1485,6 +1588,11 @@ impl Device for VulkanDevice {
             frame.destroyed_buffers.lock().push_back(buffer.buffer);
             frame.destroyed_allocations.lock().push_back(buffer.memory);
         }
+    }
+
+    fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer) {
+        unsafe { self.unmap_buffer(buffer.buffer) }
+        self.destroy_buffer(frame, buffer.buffer)
     }
 
     fn destroy_image(&self, frame: &Frame, image: Image) {
@@ -1549,6 +1657,35 @@ impl Device for VulkanDevice {
         }
     }
 
+    fn acquire_swapchain(
+        &self,
+        frame: &Frame,
+        window: &dyn AsRawWindow,
+        width: u32,
+        height: u32,
+        configurator: &mut dyn SwapchainConfigurator,
+    ) -> Result<SwapchainImage, SwapchainOutOfDateError> {
+        self.acquire_swapchain(frame, window, width, height, configurator)
+    }
+
+    fn destroy_swapchain(&self, window: &dyn AsRawWindow) {
+        self.destroy_swapchain(window)
+    }
+
+    unsafe fn map_buffer(&self, buffer: Buffer) -> *mut u8 {
+        let mut buffer_pool = self.buffer_pool.lock();
+        let buffer = buffer_pool.get_mut(buffer.0).unwrap();
+        buffer.map_count += 1;
+        buffer.memory.mapped_ptr()
+    }
+
+    unsafe fn unmap_buffer(&self, buffer: Buffer) {
+        let mut buffer_pool = self.buffer_pool.lock();
+        let buffer = buffer_pool.get_mut(buffer.0).unwrap();
+        assert!(buffer.map_count > 0);
+        buffer.map_count -= 1;
+    }
+
     fn request_transient_buffer<'a>(
         &self,
         frame: &'a Frame,
@@ -1609,7 +1746,12 @@ impl Device for VulkanDevice {
         }
     }
 
-    fn cmd_insert_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]) {
+    fn cmd_insert_debug_marker(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        label_name: &str,
+        color: [f32; 4],
+    ) {
         #[cfg(feature = "debug_markers")]
         if let Some(debug_utils_fn) = &self.debug_utils_fn {
             let arena = HybridArena::<256>::new();
@@ -1627,7 +1769,12 @@ impl Device for VulkanDevice {
         }
     }
 
-    fn cmd_begin_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]) {
+    fn cmd_begin_debug_marker(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        label_name: &str,
+        color: [f32; 4],
+    ) {
         #[cfg(feature = "debug_markers")]
         if let Some(debug_utils_fn) = &self.debug_utils_fn {
             let arena = HybridArena::<256>::new();
@@ -1645,241 +1792,11 @@ impl Device for VulkanDevice {
         }
     }
 
-    fn cmd_end_marker(&self, cmd_encoder: &mut CmdEncoder) {
+    fn cmd_end_debug_marker(&self, cmd_encoder: &mut CmdEncoder) {
         #[cfg(feature = "debug_markers")]
         if let Some(debug_utils_fn) = &self.debug_utils_fn {
             let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
             unsafe { debug_utils_fn.cmd_end_debug_utils_label_ext(command_buffer) }
-        }
-    }
-
-    fn cmd_compute_touch_swapchain(&self, cmd_encoder: &mut CmdEncoder, image: Image) {
-        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
-
-        match self.image_pool.lock().get(image.0) {
-            Some(VulkanImageHolder::Swapchain(image)) => {
-                assert!(
-                    !cmd_encoder.swapchains_touched.contains_key(&image.surface),
-                    "swapchain attached multiple times in a command buffer"
-                );
-                cmd_encoder.swapchains_touched.insert(
-                    image.surface,
-                    VulkanTouchedSwapchain {
-                        image: image.image,
-                        layout: vk::ImageLayout::General,
-                        access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
-                        stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-                    },
-                );
-
-                // Transition swapchain image to shader storage write
-                let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
-                    src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-                    src_access_mask: vk::AccessFlags2::NONE,
-                    dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-                    dst_access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
-                    src_queue_family_index: self.universal_queue_family_index,
-                    dst_queue_family_index: self.universal_queue_family_index,
-                    old_layout: vk::ImageLayout::Undefined,
-                    new_layout: vk::ImageLayout::General,
-                    image: image.image,
-                    subresource_range: vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: !0,
-                        base_array_layer: 0,
-                        layer_count: !0,
-                    },
-                    ..default()
-                }];
-
-                let dependency_info = vk::DependencyInfo {
-                    image_memory_barriers: image_memory_barriers.into(),
-                    ..default()
-                };
-
-                unsafe {
-                    self.device_fn
-                        .cmd_pipeline_barrier2(cmd_encoder.command_buffer, &dependency_info)
-                };
-            }
-            _ => panic!(),
-        }
-    }
-
-    fn cmd_barrier(
-        &self,
-        cmd_encoder: &mut CmdEncoder,
-        global_barrier: Option<&GlobalBarrier>,
-        image_barriers: &[ImageBarrier],
-    ) {
-        let arena = HybridArena::<4096>::new();
-
-        let memory_barriers = arena.alloc_slice_fill_iter(
-            global_barrier
-                .iter()
-                .map(|global_barrier| vulkan_memory_barrier(global_barrier)),
-        );
-
-        let image_memory_barriers =
-            arena.alloc_slice_fill_iter(image_barriers.iter().map(|image_barrier| {
-                let image = self
-                    .image_pool
-                    .lock()
-                    .get(image_barrier.image.0)
-                    .expect("invalid image handle")
-                    .image();
-                let subresource_range = vulkan_subresource_range(&image_barrier.subresource_range);
-                vulkan_image_memory_barrier(image_barrier, image, subresource_range)
-            }));
-
-        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
-
-        #[cfg(debug_assertions)]
-        debug_assert!(!cmd_encoder.in_render_pass);
-
-        unsafe {
-            self.device_fn.cmd_pipeline_barrier2(
-                cmd_encoder.command_buffer,
-                &vk::DependencyInfo {
-                    memory_barriers: memory_barriers.into(),
-
-                    image_memory_barriers: image_memory_barriers.into(),
-                    ..default()
-                },
-            )
-        }
-    }
-
-    unsafe fn cmd_push_constants_unchecked(
-        &self,
-        cmd_encoder: &mut CmdEncoder,
-        stage_flags: ShaderStageFlags,
-        offset: u32,
-        size: u32,
-        src: *const u8,
-    ) {
-        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
-        let command_buffer = cmd_encoder.command_buffer;
-
-        let VulkanBoundPipeline {
-            pipeline_layout,
-            pipeline_bind_point: _,
-        } = cmd_encoder
-            .bound_pipeline
-            .as_ref()
-            .expect("cannot push constants without a pipeline bound")
-            .clone();
-
-        let stage_flags = vulkan_shader_stage_flags(stage_flags);
-        self.device_fn.cmd_push_constants(
-            command_buffer,
-            pipeline_layout,
-            stage_flags,
-            offset,
-            size,
-            src as *const std::ffi::c_void,
-        )
-    }
-
-    fn cmd_copy_buffer_to_image(
-        &self,
-        cmd_encoder: &mut CmdEncoder,
-        src_buffer: BufferArg,
-        dst_image: Image,
-        dst_image_layout: ImageLayout,
-        copies: &[BufferImageCopy],
-    ) {
-        let arena = HybridArena::<4096>::new();
-
-        let (src_buffer, base_offset, _range) = self.unwrap_buffer_arg(&src_buffer);
-
-        let regions = arena.alloc_slice_fill_iter(copies.iter().map(|copy| vk::BufferImageCopy {
-            buffer_offset: copy.buffer_offset + base_offset,
-            buffer_row_length: copy.buffer_row_length,
-            buffer_image_height: copy.buffer_image_height,
-            image_subresource: vulkan_subresource_layers(&copy.image_subresource),
-            image_offset: copy.image_offset.into(),
-            image_extent: copy.image_extent.into(),
-        }));
-
-        let dst_image = self
-            .image_pool
-            .lock()
-            .get(dst_image.0)
-            .expect("invalid image handle")
-            .image();
-
-        let dst_image_layout = match dst_image_layout {
-            ImageLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
-            ImageLayout::General => vk::ImageLayout::General,
-        };
-
-        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-        unsafe {
-            self.device_fn.cmd_copy_buffer_to_image(
-                command_buffer,
-                src_buffer,
-                dst_image,
-                dst_image_layout,
-                regions,
-            )
-        }
-    }
-
-    fn cmd_blit_image(
-        &self,
-        cmd_encoder: &mut CmdEncoder,
-        src_image: Image,
-        src_image_layout: ImageLayout,
-        dst_image: Image,
-        dst_image_layout: ImageLayout,
-        regions: &[ImageBlit],
-    ) {
-        let arena = HybridArena::<4096>::new();
-
-        let regions = arena.alloc_slice_fill_iter(regions.iter().map(|blit| vk::ImageBlit {
-            src_subresource: vulkan_subresource_layers(&blit.src_subresource),
-            src_offsets: [blit.src_offset_min.into(), blit.src_offset_max.into()],
-            dst_subresource: vulkan_subresource_layers(&blit.dst_subresource),
-            dst_offsets: [blit.dst_offset_min.into(), blit.dst_offset_max.into()],
-        }));
-
-        let src_image = self
-            .image_pool
-            .lock()
-            .get(src_image.0)
-            .expect("invalid src image handle")
-            .image();
-
-        let src_image_layout = match src_image_layout {
-            ImageLayout::Optimal => vk::ImageLayout::TransferSrcOptimal,
-            ImageLayout::General => vk::ImageLayout::General,
-        };
-
-        let dst_image = self
-            .image_pool
-            .lock()
-            .get(dst_image.0)
-            .expect("invalid dst image handle")
-            .image();
-
-        let dst_image_layout = match dst_image_layout {
-            ImageLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
-            ImageLayout::General => vk::ImageLayout::General,
-        };
-
-        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-        unsafe {
-            self.device_fn.cmd_blit_image(
-                command_buffer,
-                src_image,
-                src_image_layout,
-                dst_image,
-                dst_image_layout,
-                regions,
-                vk::Filter::Linear,
-            );
         }
     }
 
@@ -2097,6 +2014,60 @@ impl Device for VulkanDevice {
         }
     }
 
+    fn cmd_compute_touch_swapchain(&self, cmd_encoder: &mut CmdEncoder, image: Image) {
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+
+        match self.image_pool.lock().get(image.0) {
+            Some(VulkanImageHolder::Swapchain(image)) => {
+                assert!(
+                    !cmd_encoder.swapchains_touched.contains_key(&image.surface),
+                    "swapchain attached multiple times in a command buffer"
+                );
+                cmd_encoder.swapchains_touched.insert(
+                    image.surface,
+                    VulkanTouchedSwapchain {
+                        image: image.image,
+                        layout: vk::ImageLayout::General,
+                        access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
+                        stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    },
+                );
+
+                // Transition swapchain image to shader storage write
+                let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
+                    src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    src_access_mask: vk::AccessFlags2::NONE,
+                    dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    dst_access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
+                    src_queue_family_index: self.universal_queue_family_index,
+                    dst_queue_family_index: self.universal_queue_family_index,
+                    old_layout: vk::ImageLayout::Undefined,
+                    new_layout: vk::ImageLayout::General,
+                    image: image.image,
+                    subresource_range: vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: !0,
+                        base_array_layer: 0,
+                        layer_count: !0,
+                    },
+                    ..default()
+                }];
+
+                let dependency_info = vk::DependencyInfo {
+                    image_memory_barriers: image_memory_barriers.into(),
+                    ..default()
+                };
+
+                unsafe {
+                    self.device_fn
+                        .cmd_pipeline_barrier2(cmd_encoder.command_buffer, &dependency_info)
+                };
+            }
+            _ => panic!(),
+        }
+    }
+
     fn cmd_set_pipeline(&self, cmd_encoder: &mut CmdEncoder, pipeline: Pipeline) {
         let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
 
@@ -2122,6 +2093,202 @@ impl Device for VulkanDevice {
             self.device_fn
                 .cmd_bind_pipeline(command_buffer, pipeline_bind_point, vk_pipeline)
         };
+    }
+
+    fn cmd_set_viewports(&self, cmd_encoder: &mut CmdEncoder, viewports: &[crate::Viewport]) {
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+        unsafe {
+            self.device_fn.cmd_set_viewport_with_count(
+                command_buffer,
+                std::mem::transmute::<_, &[vk::Viewport]>(viewports), // yolo
+            );
+        }
+    }
+
+    fn cmd_set_scissors(&self, cmd_encoder: &mut CmdEncoder, scissors: &[crate::Scissor]) {
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+        unsafe {
+            self.device_fn.cmd_set_scissor_with_count(
+                command_buffer,
+                std::mem::transmute::<_, &[vk::Rect2d]>(scissors), // yolo
+            );
+        }
+    }
+
+    fn cmd_barrier(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        global_barrier: Option<&GlobalBarrier>,
+        image_barriers: &[ImageBarrier],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let memory_barriers = arena.alloc_slice_fill_iter(
+            global_barrier
+                .iter()
+                .map(|global_barrier| vulkan_memory_barrier(global_barrier)),
+        );
+
+        let image_memory_barriers =
+            arena.alloc_slice_fill_iter(image_barriers.iter().map(|image_barrier| {
+                let image = self
+                    .image_pool
+                    .lock()
+                    .get(image_barrier.image.0)
+                    .expect("invalid image handle")
+                    .image();
+                let subresource_range = vulkan_subresource_range(&image_barrier.subresource_range);
+                vulkan_image_memory_barrier(image_barrier, image, subresource_range)
+            }));
+
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+
+        #[cfg(debug_assertions)]
+        debug_assert!(!cmd_encoder.in_render_pass);
+
+        unsafe {
+            self.device_fn.cmd_pipeline_barrier2(
+                cmd_encoder.command_buffer,
+                &vk::DependencyInfo {
+                    memory_barriers: memory_barriers.into(),
+
+                    image_memory_barriers: image_memory_barriers.into(),
+                    ..default()
+                },
+            )
+        }
+    }
+
+    unsafe fn cmd_push_constants_unchecked(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        stage_flags: ShaderStageFlags,
+        offset: u32,
+        size: u32,
+        src: *const u8,
+    ) {
+        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+        let command_buffer = cmd_encoder.command_buffer;
+
+        let VulkanBoundPipeline {
+            pipeline_layout,
+            pipeline_bind_point: _,
+        } = cmd_encoder
+            .bound_pipeline
+            .as_ref()
+            .expect("cannot push constants without a pipeline bound")
+            .clone();
+
+        let stage_flags = vulkan_shader_stage_flags(stage_flags);
+        self.device_fn.cmd_push_constants(
+            command_buffer,
+            pipeline_layout,
+            stage_flags,
+            offset,
+            size,
+            src as *const std::ffi::c_void,
+        )
+    }
+
+    fn cmd_copy_buffer_to_image(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        src_buffer: BufferArg,
+        dst_image: Image,
+        dst_image_layout: ImageLayout,
+        copies: &[BufferImageCopy],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let (src_buffer, base_offset, _range) = self.unwrap_buffer_arg(&src_buffer);
+
+        let regions = arena.alloc_slice_fill_iter(copies.iter().map(|copy| vk::BufferImageCopy {
+            buffer_offset: copy.buffer_offset + base_offset,
+            buffer_row_length: copy.buffer_row_length,
+            buffer_image_height: copy.buffer_image_height,
+            image_subresource: vulkan_subresource_layers(&copy.image_subresource),
+            image_offset: copy.image_offset.into(),
+            image_extent: copy.image_extent.into(),
+        }));
+
+        let dst_image = self
+            .image_pool
+            .lock()
+            .get(dst_image.0)
+            .expect("invalid image handle")
+            .image();
+
+        let dst_image_layout = match dst_image_layout {
+            ImageLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
+            ImageLayout::General => vk::ImageLayout::General,
+        };
+
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+        unsafe {
+            self.device_fn.cmd_copy_buffer_to_image(
+                command_buffer,
+                src_buffer,
+                dst_image,
+                dst_image_layout,
+                regions,
+            )
+        }
+    }
+
+    fn cmd_blit_image(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        src_image: Image,
+        src_image_layout: ImageLayout,
+        dst_image: Image,
+        dst_image_layout: ImageLayout,
+        regions: &[ImageBlit],
+    ) {
+        let arena = HybridArena::<4096>::new();
+
+        let regions = arena.alloc_slice_fill_iter(regions.iter().map(|blit| vk::ImageBlit {
+            src_subresource: vulkan_subresource_layers(&blit.src_subresource),
+            src_offsets: [blit.src_offset_min.into(), blit.src_offset_max.into()],
+            dst_subresource: vulkan_subresource_layers(&blit.dst_subresource),
+            dst_offsets: [blit.dst_offset_min.into(), blit.dst_offset_max.into()],
+        }));
+
+        let src_image = self
+            .image_pool
+            .lock()
+            .get(src_image.0)
+            .expect("invalid src image handle")
+            .image();
+
+        let src_image_layout = match src_image_layout {
+            ImageLayout::Optimal => vk::ImageLayout::TransferSrcOptimal,
+            ImageLayout::General => vk::ImageLayout::General,
+        };
+
+        let dst_image = self
+            .image_pool
+            .lock()
+            .get(dst_image.0)
+            .expect("invalid dst image handle")
+            .image();
+
+        let dst_image_layout = match dst_image_layout {
+            ImageLayout::Optimal => vk::ImageLayout::TransferDstOptimal,
+            ImageLayout::General => vk::ImageLayout::General,
+        };
+
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+        unsafe {
+            self.device_fn.cmd_blit_image(
+                command_buffer,
+                src_image,
+                src_image_layout,
+                dst_image,
+                dst_image_layout,
+                regions,
+                vk::Filter::Linear,
+            );
+        }
     }
 
     fn cmd_begin_rendering(&self, cmd_encoder: &mut CmdEncoder, desc: &crate::RenderingDesc) {
@@ -2257,26 +2424,6 @@ impl Device for VulkanDevice {
         }
 
         unsafe { self.device_fn.cmd_end_rendering(cmd_encoder.command_buffer) }
-    }
-
-    fn cmd_set_viewports(&self, cmd_encoder: &mut CmdEncoder, viewports: &[crate::Viewport]) {
-        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-        unsafe {
-            self.device_fn.cmd_set_viewport_with_count(
-                command_buffer,
-                std::mem::transmute::<_, &[vk::Viewport]>(viewports), // yolo
-            );
-        }
-    }
-
-    fn cmd_set_scissors(&self, cmd_encoder: &mut CmdEncoder, scissors: &[crate::Scissor]) {
-        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-        unsafe {
-            self.device_fn.cmd_set_scissor_with_count(
-                command_buffer,
-                std::mem::transmute::<_, &[vk::Rect2d]>(scissors), // yolo
-            );
-        }
     }
 
     fn cmd_draw(
@@ -2508,60 +2655,6 @@ impl Device for VulkanDevice {
     fn end_frame(&self, mut frame: Frame) {
         self.wsi_end_frame(self.frame_mut(&mut frame));
         self.frame_counter.release(frame);
-    }
-
-    unsafe fn map_buffer(&self, buffer: Buffer) -> *mut u8 {
-        let mut buffer_pool = self.buffer_pool.lock();
-        let buffer = buffer_pool.get_mut(buffer.0).unwrap();
-        buffer.map_count += 1;
-        buffer.memory.mapped_ptr()
-    }
-
-    unsafe fn unmap_buffer(&self, buffer: Buffer) {
-        let mut buffer_pool = self.buffer_pool.lock();
-        let buffer = buffer_pool.get_mut(buffer.0).unwrap();
-        assert!(buffer.map_count > 0);
-        buffer.map_count -= 1;
-    }
-
-    fn acquire_swapchain(
-        &self,
-        frame: &Frame,
-        window: &dyn AsRawWindow,
-        width: u32,
-        height: u32,
-        configurator: &mut dyn SwapchainConfigurator,
-    ) -> Result<SwapchainImage, SwapchainOutOfDateError> {
-        self.acquire_swapchain(frame, window, width, height, configurator)
-    }
-
-    fn destroy_swapchain(&self, window: &dyn AsRawWindow) {
-        self.destroy_swapchain(window)
-    }
-
-    fn create_persistent_buffer<'device>(
-        &'device self,
-        desc: &BufferDesc,
-    ) -> PersistentBuffer<'device> {
-        assert!(desc.host_mapped);
-
-        let buffer = self.create_buffer(desc);
-        unsafe {
-            let ptr = std::ptr::NonNull::new(self.map_buffer(buffer))
-                .expect("failed to map buffer memory");
-
-            PersistentBuffer {
-                ptr,
-                len: desc.size,
-                buffer,
-                phantom: PhantomData,
-            }
-        }
-    }
-
-    fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer) {
-        unsafe { self.unmap_buffer(buffer.buffer) }
-        self.destroy_buffer(frame, buffer.buffer)
     }
 }
 

@@ -770,6 +770,9 @@ pub trait Device {
     fn create_graphics_pipeline(&self, pipeline_desc: &GraphicsPipelineDesc) -> Pipeline;
     fn create_compute_pipeline(&self, pipeline_desc: &ComputePipelineDesc) -> Pipeline;
 
+    fn debug_name_buffer(&self, buffer: BufferArg, label_name: &str);
+    fn debug_name_image(&self, image: Image, label_name: &str);
+
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
     fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer);
     fn destroy_image(&self, frame: &Frame, image: Image);
@@ -819,9 +822,21 @@ pub trait Device {
         thread_token: &'a ThreadToken,
     ) -> CmdEncoder<'a>;
 
-    fn cmd_insert_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]);
-    fn cmd_begin_marker(&self, cmd_encoder: &mut CmdEncoder, label_name: &str, color: [f32; 4]);
-    fn cmd_end_marker(&self, cmd_encoder: &mut CmdEncoder);
+    fn cmd_insert_debug_marker(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        label_name: &str,
+        color: [f32; 4],
+    );
+
+    fn cmd_begin_debug_marker(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        label_name: &str,
+        color: [f32; 4],
+    );
+
+    fn cmd_end_debug_marker(&self, cmd_encoder: &mut CmdEncoder);
 
     fn cmd_set_bind_group(
         &self,
