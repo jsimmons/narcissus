@@ -13,8 +13,8 @@
 //!
 //! https://karstenslab.github.io/project/microshades/
 
-pub const GRAY_RGBA8: [u32; 5] = [0xd9d9d9ff, 0xbdbdbdff, 0x969696ff, 0x737373ff, 0x525252ff];
-pub const BROWN_RGBA8: [u32; 5] = [0xD8C7BEff, 0xCAA995ff, 0xB78560ff, 0x9E5C00ff, 0x7D3200ff];
+pub const GRAY_RGBA8: [u32; 5] = [0xd9d9_d9ff, 0xbdbdbdff, 0x969696ff, 0x737373ff, 0x525252ff];
+pub const BROWN_RGBA8: [u32; 5] = [0xd8c7beff, 0xcaa995ff, 0xb78560ff, 0x9e5c00ff, 0x7d3200ff];
 pub const GREEN_RGBA8: [u32; 5] = [0xc7e9c0ff, 0xa1d99bff, 0x74c476ff, 0x41ab5dff, 0x238b45ff];
 pub const ORANGE_RGBA8: [u32; 5] = [0xfeeda0ff, 0xfec44fff, 0xfdae6bff, 0xfe9929ff, 0xff7f00ff];
 pub const BLUE_RGBA8: [u32; 5] = [0xeff3ffff, 0xc6dbefff, 0x9ecae1ff, 0x6baed6ff, 0x4292c6ff];
