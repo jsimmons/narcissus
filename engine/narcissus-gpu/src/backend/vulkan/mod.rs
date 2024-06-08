@@ -18,13 +18,14 @@ use narcissus_core::{
 use vulkan_sys as vk;
 
 use crate::{
-    frame_counter::FrameCounter, Bind, BindDesc, BindGroupLayout, Buffer, BufferArg, BufferDesc,
-    BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d,
-    Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit,
-    ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation,
-    Offset2d, Offset3d, PersistentBuffer, Pipeline, PipelineLayout, Sampler, SamplerAddressMode,
-    SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, SwapchainConfigurator,
-    SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer, TypedBind,
+    frame_counter::FrameCounter, Bind, BindDesc, BindGroupLayout, BindingType, Buffer, BufferArg,
+    BufferDesc, BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device,
+    Extent2d, Extent3d, Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image,
+    ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc,
+    IndexType, MemoryLocation, Offset2d, Offset3d, PersistentBuffer, Pipeline, PipelineLayout,
+    Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags,
+    SwapchainConfigurator, SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer,
+    TypedBind,
 };
 
 mod allocator;
@@ -1239,30 +1240,64 @@ impl Device for VulkanDevice {
         Sampler(handle)
     }
 
-    fn create_bind_group_layout(&self, bindings_desc: &[BindDesc]) -> BindGroupLayout {
-        let mut hasher = blake3_smol::Hasher::new();
-        for binding in bindings_desc {
-            hasher.update(&binding.slot.to_le_bytes());
-            hasher.update(&binding.stages.as_raw().to_le_bytes());
-            hasher.update(&(binding.binding_type as u32).to_le_bytes());
-            hasher.update(&binding.count.to_le_bytes());
-        }
-        let hash = hasher.finalize();
-
+    fn create_bind_group_layout(&self, binds_desc: &[BindDesc]) -> BindGroupLayout {
         let arena = HybridArena::<256>::new();
-        let layout_bindings = arena.alloc_slice_fill_iter(bindings_desc.iter().enumerate().map(
-            |(i, binding_desc)| vk::DescriptorSetLayoutBinding {
-                binding: if binding_desc.slot != !0 {
-                    binding_desc.slot
+        let mut hasher = blake3_smol::Hasher::new();
+
+        for bind_desc in binds_desc {
+            hasher.update(&bind_desc.slot.to_le_bytes());
+            hasher.update(&bind_desc.stages.as_raw().to_le_bytes());
+            hasher.update(&(bind_desc.binding_type as u32).to_le_bytes());
+            hasher.update(&bind_desc.count.to_le_bytes());
+        }
+
+        let layout_bindings =
+            arena.alloc_slice_fill_iter(binds_desc.iter().enumerate().map(|(i, bind_desc)| {
+                let immutable_samplers = if !bind_desc.immutable_samplers.is_empty() {
+                    assert_eq!(
+                        bind_desc.binding_type,
+                        BindingType::Sampler,
+                        "can only use immutable samplers with sampler binds"
+                    );
+                    assert_eq!(
+                        bind_desc.count as usize,
+                        bind_desc.immutable_samplers.len(),
+                        "number of immutable samplers must match bind count"
+                    );
+
+                    let sampler_pool = self.sampler_pool.lock();
+
+                    let immutable_samplers = arena.alloc_slice_fill_iter(
+                        bind_desc.immutable_samplers.iter().map(|sampler| {
+                            let sampler = sampler_pool
+                                .get(sampler.0)
+                                .expect("trying to set an invalid immutable sampler");
+
+                            // We need to make sure we include immutable samplers in the hash calculation.
+                            hasher.update(&sampler.0.as_raw().to_le_bytes());
+
+                            sampler.0
+                        }),
+                    );
+
+                    // This pointer can safely escape the block as its lifetime is bound to the arena.
+                    immutable_samplers.as_ptr()
                 } else {
-                    i as u32
-                },
-                descriptor_type: vulkan_descriptor_type(binding_desc.binding_type),
-                descriptor_count: binding_desc.count,
-                stage_flags: vulkan_shader_stage_flags(binding_desc.stages),
-                immutable_samplers: std::ptr::null(),
-            },
-        ));
+                    std::ptr::null()
+                };
+
+                vk::DescriptorSetLayoutBinding {
+                    binding: if bind_desc.slot != !0 {
+                        bind_desc.slot
+                    } else {
+                        i as u32
+                    },
+                    descriptor_type: vulkan_descriptor_type(bind_desc.binding_type),
+                    descriptor_count: bind_desc.count,
+                    stage_flags: vulkan_shader_stage_flags(bind_desc.stages),
+                    immutable_samplers,
+                }
+            }));
         let create_info = &vk::DescriptorSetLayoutCreateInfo {
             bindings: layout_bindings.into(),
             ..default()
@@ -1274,6 +1309,8 @@ impl Device for VulkanDevice {
             None,
             &mut descriptor_set_layout,
         ));
+
+        let hash = hasher.finalize();
         let bind_group_layout = self
             .bind_group_layout_pool
             .lock()

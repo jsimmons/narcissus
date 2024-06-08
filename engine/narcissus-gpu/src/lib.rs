@@ -492,20 +492,35 @@ pub enum BindingType {
     DynamicStorageBuffer,
 }
 
-pub struct BindDesc {
+pub struct BindDesc<'a> {
     pub slot: u32,
     pub stages: ShaderStageFlags,
     pub binding_type: BindingType,
     pub count: u32,
+    pub immutable_samplers: &'a [Sampler],
 }
 
-impl BindDesc {
-    pub const fn new(stages: ShaderStageFlags, binding_type: BindingType) -> BindDesc {
+impl<'a> BindDesc<'a> {
+    pub const fn new(stages: ShaderStageFlags, binding_type: BindingType) -> BindDesc<'static> {
         BindDesc {
             slot: !0,
             stages,
             binding_type,
             count: 1,
+            immutable_samplers: &[],
+        }
+    }
+
+    pub const fn with_immutable_samplers(
+        stages: ShaderStageFlags,
+        immutable_samplers: &[Sampler],
+    ) -> BindDesc {
+        BindDesc {
+            slot: !0,
+            stages,
+            binding_type: BindingType::Sampler,
+            count: immutable_samplers.len() as u32,
+            immutable_samplers,
         }
     }
 }
