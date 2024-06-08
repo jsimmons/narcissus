@@ -877,7 +877,7 @@ struct DrawState<'gpu> {
 
     glyph_atlas_image: Image,
 
-    samplers: Samplers,
+    _samplers: Samplers,
     models: Models<'gpu>,
     images: Images,
 
@@ -886,11 +886,13 @@ struct DrawState<'gpu> {
 
 impl<'gpu> DrawState<'gpu> {
     fn new(gpu: &'gpu Gpu, thread_token: &ThreadToken) -> Self {
-        let basic_pipeline = BasicPipeline::new(gpu);
-        let primitive_2d_pipeline = Primitive2dPipeline::new(gpu);
-        let display_transform_pipeline = DisplayTransformPipeline::new(gpu);
-
         let samplers = Samplers::load(gpu);
+        let immutable_samplers = &[samplers[SamplerRes::Bilinear]];
+
+        let basic_pipeline = BasicPipeline::new(gpu, immutable_samplers);
+        let primitive_2d_pipeline = Primitive2dPipeline::new(gpu, immutable_samplers);
+        let display_transform_pipeline = DisplayTransformPipeline::new(gpu, immutable_samplers);
+
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
@@ -908,7 +910,7 @@ impl<'gpu> DrawState<'gpu> {
             ui_image: default(),
             tile_bitmap_buffer: default(),
             glyph_atlas_image: default(),
-            samplers,
+            _samplers: samplers,
             models,
             images,
             transforms: vec![],
@@ -1252,18 +1254,11 @@ impl<'gpu> DrawState<'gpu> {
                     cmd_encoder,
                     self.basic_pipeline.uniforms_bind_group_layout,
                     0,
-                    &[
-                        Bind {
-                            binding: 0,
-                            array_element: 0,
-                            typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
-                        },
-                        Bind {
-                            binding: 1,
-                            array_element: 0,
-                            typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
-                        },
-                    ],
+                    &[Bind {
+                        binding: 0,
+                        array_element: 0,
+                        typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
+                    }],
                 );
 
                 {
@@ -1361,11 +1356,6 @@ impl<'gpu> DrawState<'gpu> {
                     self.primitive_2d_pipeline.bind_group_layout,
                     0,
                     &[
-                        Bind {
-                            binding: 0,
-                            array_element: 0,
-                            typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
-                        },
                         Bind {
                             binding: 1,
                             array_element: 0,
@@ -1498,11 +1488,6 @@ impl<'gpu> DrawState<'gpu> {
                     self.display_transform_pipeline.bind_group_layout,
                     0,
                     &[
-                        Bind {
-                            binding: 0,
-                            array_element: 0,
-                            typed: TypedBind::Sampler(&[self.samplers[SamplerRes::Bilinear]]),
-                        },
                         Bind {
                             binding: 1,
                             array_element: 0,

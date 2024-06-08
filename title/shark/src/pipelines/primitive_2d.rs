@@ -1,7 +1,7 @@
 use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
     BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, PipelineLayout,
-    PushConstantRange, ShaderDesc, ShaderStageFlags,
+    PushConstantRange, Sampler, ShaderDesc, ShaderStageFlags,
 };
 
 use crate::Gpu;
@@ -44,10 +44,10 @@ pub struct Primitive2dPipeline {
 }
 
 impl Primitive2dPipeline {
-    pub fn new(gpu: &Gpu) -> Self {
+    pub fn new(gpu: &Gpu, immutable_samplers: &[Sampler]) -> Self {
         let bind_group_layout = gpu.create_bind_group_layout(&[
             // Sampler
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::Sampler),
+            BindDesc::with_immutable_samplers(ShaderStageFlags::COMPUTE, immutable_samplers),
             // Glyph Atlas
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
             // Glyphs

@@ -1,6 +1,6 @@
 use narcissus_gpu::{
     BindDesc, BindGroupLayout, BindingType, ComputePipelineDesc, Pipeline, PipelineLayout,
-    PushConstantRange, ShaderDesc, ShaderStageFlags,
+    PushConstantRange, Sampler, ShaderDesc, ShaderStageFlags,
 };
 
 use crate::Gpu;
@@ -13,10 +13,10 @@ pub struct DisplayTransformPipeline {
 }
 
 impl DisplayTransformPipeline {
-    pub fn new(gpu: &Gpu) -> Self {
+    pub fn new(gpu: &Gpu, immutable_samplers: &[Sampler]) -> Self {
         let bind_group_layout = gpu.create_bind_group_layout(&[
-            // Sampler
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::Sampler),
+            // Samplers
+            BindDesc::with_immutable_samplers(ShaderStageFlags::COMPUTE, immutable_samplers),
             // Tony Mc'mapface LUT
             BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
             // Tiles

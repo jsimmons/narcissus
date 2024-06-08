@@ -2,7 +2,7 @@ use narcissus_core::default;
 use narcissus_gpu::{
     BindDesc, BindGroupLayout, BindingType, BlendMode, CompareOp, CullingMode, FrontFace,
     GraphicsPipelineAttachments, GraphicsPipelineDesc, ImageFormat, Pipeline, PipelineLayout,
-    PolygonMode, ShaderDesc, ShaderStageFlags, Topology,
+    PolygonMode, Sampler, ShaderDesc, ShaderStageFlags, Topology,
 };
 use narcissus_maths::Mat4;
 
@@ -29,12 +29,12 @@ pub struct BasicPipeline {
 }
 
 impl BasicPipeline {
-    pub fn new(gpu: &Gpu) -> Self {
+    pub fn new(gpu: &Gpu, immutable_samplers: &[Sampler]) -> Self {
         let uniforms_bind_group_layout = gpu.create_bind_group_layout(&[
             // Uniforms
             BindDesc::new(ShaderStageFlags::ALL, BindingType::UniformBuffer),
-            // Bilinear Sampler
-            BindDesc::new(ShaderStageFlags::ALL, BindingType::Sampler),
+            // Samplers
+            BindDesc::with_immutable_samplers(ShaderStageFlags::ALL, immutable_samplers),
         ]);
 
         let storage_bind_group_layout = gpu.create_bind_group_layout(&[
