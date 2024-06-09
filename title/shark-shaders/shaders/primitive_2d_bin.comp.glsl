@@ -2,12 +2,15 @@
 
 #extension GL_GOOGLE_include_directive : require
 
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
 
 #extension GL_KHR_shader_subgroup_vote : require
 #extension GL_KHR_shader_subgroup_ballot : require
 
+#include "compute_bindings.h"
 #include "primitive_2d.h"
 
 const uint SUBGROUP_SIZE = 64;
@@ -21,14 +24,14 @@ shared uint bitmap_0[SUBGROUP_SIZE];
 void main() {
     const uvec2 bin_coord = gl_GlobalInvocationID.yz;
     const uvec2 bin_min = bin_coord * TILE_SIZE * 8;
-    const uvec2 bin_max = min(bin_min + TILE_SIZE * 8, primitive_uniforms.screen_resolution);
+    const uvec2 bin_max = min(bin_min + TILE_SIZE * 8, uniforms.screen_resolution);
 
     for (uint i = 0; i < NUM_PRIMS_WG; i += gl_SubgroupSize.x) {
         const uint prim_index = gl_WorkGroupID.x * NUM_PRIMS_WG + i + gl_SubgroupInvocationID;
         bool intersects = false;
-        if (prim_index < primitive_uniforms.num_primitives) {
-            const GlyphInstance gi = glyph_instances[prim_index];
-            const Glyph gl = glyphs[gi.index];
+        if (prim_index < uniforms.num_primitives) {
+            const GlyphInstance gi = uniforms.glyph_instances.values[prim_index];
+            const Glyph gl = uniforms.glyphs.values[gi.index];
             const vec2 glyph_min = gi.position + gl.offset_min;
             const vec2 glyph_max = gi.position + gl.offset_max;
             intersects = !(any(lessThan(bin_max, glyph_min)) || any(greaterThan(bin_min, glyph_max)));
@@ -44,10 +47,10 @@ void main() {
     const uint y = gl_SubgroupInvocationID.x >> 3;
     const uvec2 tile_coord = gl_GlobalInvocationID.yz * 8 + uvec2(x, y);
     const uvec2 tile_min = tile_coord * TILE_SIZE;
-    const uvec2 tile_max = min(tile_min + TILE_SIZE, primitive_uniforms.screen_resolution);
+    const uvec2 tile_max = min(tile_min + TILE_SIZE, uniforms.screen_resolution);
 
     if (all(lessThan(tile_min, tile_max))) {
-        const uint tile_index = tile_coord.y * primitive_uniforms.tile_stride + tile_coord.x;
+        const uint tile_index = tile_coord.y * uniforms.tile_stride + tile_coord.x;
 
         for (uint i = 0; i < 2; i++) {
             uint out_1 = 0;
@@ -68,15 +71,15 @@ void main() {
 
                 if (out_0 != 0) {
                     out_1 |= 1 << j;
-                    tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_L0_OFFSET + gl_WorkGroupID.x * 64 + index_0] = out_0;
+                    uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_L0_OFFSET + gl_WorkGroupID.x * 64 + index_0] = out_0;
                 }
             }
 
-            tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_L1_OFFSET + gl_WorkGroupID.x * 2 + i] = out_1;
+            uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_L1_OFFSET + gl_WorkGroupID.x * 2 + i] = out_1;
 
             if (out_1 != 0) {
-                atomicMin(tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 0], gl_WorkGroupID.x * 2 + i);
-                atomicMax(tile_bitmap_wo[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 1], gl_WorkGroupID.x * 2 + i);
+                atomicMin(uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 0], gl_WorkGroupID.x * 2 + i);
+                atomicMax(uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 1], gl_WorkGroupID.x * 2 + i);
             }
         }
     }

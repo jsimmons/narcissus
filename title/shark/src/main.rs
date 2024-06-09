@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use narcissus_core::{dds, Widen as _};
 use pipelines::basic::BasicPipeline;
-use pipelines::display_transform::DisplayTransformPipeline;
+use pipelines::{GlyphInstance, PrimitiveUniforms, TILE_SIZE, TILE_STRIDE};
 use renderdoc_sys as rdoc;
 
 use fonts::{FontFamily, Fonts};
@@ -14,24 +14,23 @@ use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, Bind, Buffer, BufferDesc, BufferImageCopy, BufferUsageFlags, ClearValue,
-    CmdEncoder, ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Image,
-    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
-    ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation,
-    Offset2d, PersistentBuffer, PresentMode, RenderingAttachment, RenderingDesc, Sampler,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderStageFlags, StoreOp,
-    SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind, Viewport,
+    create_device, Access, Bind, BindDesc, BindGroupLayout, BindingType, Buffer, BufferDesc,
+    BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder, ColorSpace, ComputePipelineDesc,
+    Device, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Image, ImageAspectFlags,
+    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange,
+    ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer,
+    Pipeline, PipelineLayout, PresentMode, PushConstantRange, RenderingAttachment, RenderingDesc,
+    Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags,
+    StoreOp, SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
     clamp, perlin_noise3, sin_cos_pi_f32, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4,
     Point3, Vec3,
 };
-use pipelines::primitive_2d::{GlyphInstance, Primitive2dPipeline};
 use spring::simple_spring_damper_exact;
 
 use crate::pipelines::basic::BasicUniforms;
-use crate::pipelines::primitive_2d::{PrimitiveUniforms, TILE_SIZE, TILE_STRIDE};
 
 mod fonts;
 mod helpers;
@@ -860,8 +859,12 @@ struct DrawState<'gpu> {
     gpu: &'gpu Gpu,
 
     basic_pipeline: BasicPipeline,
-    primitive_2d_pipeline: Primitive2dPipeline,
-    display_transform_pipeline: DisplayTransformPipeline,
+
+    compute_bind_group_layout: BindGroupLayout,
+    bin_clear_pipeline: Pipeline,
+    bin_pipeline: Pipeline,
+    rasterize_pipeline: Pipeline,
+    display_transform_pipeline: Pipeline,
 
     width: u32,
     height: u32,
@@ -870,10 +873,10 @@ struct DrawState<'gpu> {
     tile_resolution_y: u32,
 
     depth_image: Image,
-    rt_image: Image,
+    color_image: Image,
     ui_image: Image,
 
-    tile_bitmap_buffer: Buffer,
+    tiles_buffer: Buffer,
 
     glyph_atlas_image: Image,
 
@@ -889,9 +892,63 @@ impl<'gpu> DrawState<'gpu> {
         let samplers = Samplers::load(gpu);
         let immutable_samplers = &[samplers[SamplerRes::Bilinear]];
 
+        let compute_bind_group_layout = gpu.create_bind_group_layout(&[
+            // Samplers
+            BindDesc::with_immutable_samplers(ShaderStageFlags::COMPUTE, immutable_samplers),
+            // Tony mc mapface LUT
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
+            // Glyph Atlas
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
+            // UI Render Target
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
+            // Color Render Target
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
+            // Composited output
+            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
+        ]);
+
+        let compute_pipeline_layout = PipelineLayout {
+            bind_group_layouts: &[compute_bind_group_layout],
+            push_constant_ranges: &[PushConstantRange {
+                stage_flags: ShaderStageFlags::COMPUTE,
+                offset: 0,
+                size: std::mem::size_of::<PrimitiveUniforms>() as u32,
+            }],
+        };
+
+        let bin_clear_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_BIN_CLEAR_COMP_SPV,
+            },
+            layout: &compute_pipeline_layout,
+        });
+
+        let bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_BIN_COMP_SPV,
+            },
+            layout: &compute_pipeline_layout,
+        });
+
+        let rasterize_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::PRIMITIVE_2D_RASTERIZE_COMP_SPV,
+            },
+            layout: &compute_pipeline_layout,
+        });
+
+        let display_transform_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+            shader: ShaderDesc {
+                entry: c"main",
+                code: shark_shaders::DISPLAY_TRANSFORM_COMP_SPV,
+            },
+            layout: &compute_pipeline_layout,
+        });
+
         let basic_pipeline = BasicPipeline::new(gpu, immutable_samplers);
-        let primitive_2d_pipeline = Primitive2dPipeline::new(gpu, immutable_samplers);
-        let display_transform_pipeline = DisplayTransformPipeline::new(gpu, immutable_samplers);
 
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
@@ -899,16 +956,19 @@ impl<'gpu> DrawState<'gpu> {
         Self {
             gpu,
             basic_pipeline,
-            primitive_2d_pipeline,
+            compute_bind_group_layout,
+            bin_clear_pipeline,
+            bin_pipeline,
+            rasterize_pipeline,
             display_transform_pipeline,
             width: 0,
             height: 0,
             tile_resolution_x: 0,
             tile_resolution_y: 0,
             depth_image: default(),
-            rt_image: default(),
+            color_image: default(),
             ui_image: default(),
-            tile_bitmap_buffer: default(),
+            tiles_buffer: default(),
             glyph_atlas_image: default(),
             _samplers: samplers,
             models,
@@ -1018,7 +1078,7 @@ impl<'gpu> DrawState<'gpu> {
 
             if width != self.width || height != self.height {
                 gpu.destroy_image(frame, self.depth_image);
-                gpu.destroy_image(frame, self.rt_image);
+                gpu.destroy_image(frame, self.color_image);
                 gpu.destroy_image(frame, self.ui_image);
 
                 let tile_resolution_x = (width + (TILE_SIZE - 1)) / TILE_SIZE;
@@ -1027,21 +1087,21 @@ impl<'gpu> DrawState<'gpu> {
                 if tile_resolution_x != self.tile_resolution_x
                     || tile_resolution_y != self.tile_resolution_y
                 {
-                    gpu.destroy_buffer(frame, self.tile_bitmap_buffer);
+                    gpu.destroy_buffer(frame, self.tiles_buffer);
 
                     let bitmap_buffer_size = tile_resolution_x
                         * tile_resolution_y
                         * TILE_STRIDE
                         * std::mem::size_of::<u32>() as u32;
 
-                    self.tile_bitmap_buffer = gpu.create_buffer(&BufferDesc {
+                    self.tiles_buffer = gpu.create_buffer(&BufferDesc {
                         memory_location: MemoryLocation::Device,
                         host_mapped: false,
                         usage: BufferUsageFlags::STORAGE,
                         size: bitmap_buffer_size.widen(),
                     });
 
-                    gpu.debug_name_buffer(self.tile_bitmap_buffer.to_arg(), "tile bitmap");
+                    gpu.debug_name_buffer(self.tiles_buffer.to_arg(), "tile bitmap");
 
                     println!("tile_resolution: ({tile_resolution_x},{tile_resolution_y})");
 
@@ -1065,7 +1125,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.debug_name_image(self.depth_image, "depth");
 
-                self.rt_image = gpu.create_image(&ImageDesc {
+                self.color_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
                     host_mapped: false,
                     usage: ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::STORAGE,
@@ -1079,7 +1139,7 @@ impl<'gpu> DrawState<'gpu> {
                     mip_levels: 1,
                 });
 
-                gpu.debug_name_image(self.rt_image, "render target");
+                gpu.debug_name_image(self.color_image, "render target");
 
                 self.ui_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
@@ -1176,7 +1236,7 @@ impl<'gpu> DrawState<'gpu> {
                     ImageBarrier::layout_optimal(
                         &[Access::None],
                         &[Access::ColorAttachmentWrite],
-                        self.rt_image,
+                        self.color_image,
                         ImageAspectFlags::COLOR,
                     ),
                     ImageBarrier {
@@ -1200,7 +1260,7 @@ impl<'gpu> DrawState<'gpu> {
                     width,
                     height,
                     color_attachments: &[RenderingAttachment {
-                        image: self.rt_image,
+                        image: self.color_image,
                         load_op: LoadOp::Clear(ClearValue::ColorF32([1.0, 1.0, 1.0, 1.0])),
                         store_op: StoreOp::Store,
                     }],
@@ -1348,12 +1408,12 @@ impl<'gpu> DrawState<'gpu> {
 
                 ui_state.primitive_instances.clear();
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_clear_pipeline);
+                gpu.cmd_set_pipeline(cmd_encoder, self.bin_clear_pipeline);
 
                 gpu.cmd_set_bind_group(
                     frame,
                     cmd_encoder,
-                    self.primitive_2d_pipeline.bind_group_layout,
+                    self.compute_bind_group_layout,
                     0,
                     &[
                         Bind {
@@ -1361,30 +1421,39 @@ impl<'gpu> DrawState<'gpu> {
                             array_element: 0,
                             typed: TypedBind::SampledImage(&[(
                                 ImageLayout::Optimal,
-                                self.glyph_atlas_image,
+                                self.images[ImageRes::TonyMcMapfaceLut],
                             )]),
                         },
                         Bind {
                             binding: 2,
                             array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[glyph_buffer.to_arg()]),
+                            typed: TypedBind::SampledImage(&[(
+                                ImageLayout::Optimal,
+                                self.glyph_atlas_image,
+                            )]),
                         },
                         Bind {
                             binding: 3,
                             array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[glyph_instance_buffer.to_arg()]),
+                            typed: TypedBind::StorageImage(&[(
+                                ImageLayout::General,
+                                self.ui_image,
+                            )]),
                         },
                         Bind {
                             binding: 4,
                             array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[self.tile_bitmap_buffer.to_arg()]),
+                            typed: TypedBind::StorageImage(&[(
+                                ImageLayout::General,
+                                self.color_image,
+                            )]),
                         },
                         Bind {
                             binding: 5,
                             array_element: 0,
                             typed: TypedBind::StorageImage(&[(
                                 ImageLayout::General,
-                                self.ui_image,
+                                swapchain_image,
                             )]),
                         },
                     ],
@@ -1403,6 +1472,10 @@ impl<'gpu> DrawState<'gpu> {
                         num_primitives_32,
                         num_primitives_1024,
                         tile_stride: self.tile_resolution_x,
+                        glyphs_buffer: gpu.get_buffer_address(glyph_buffer.to_arg()),
+                        glyph_instances_buffer: gpu
+                            .get_buffer_address(glyph_instance_buffer.to_arg()),
+                        tiles_buffer: gpu.get_buffer_address(self.tiles_buffer.to_arg()),
                     },
                 );
 
@@ -1422,7 +1495,7 @@ impl<'gpu> DrawState<'gpu> {
                     &[],
                 );
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.bin_pipeline);
+                gpu.cmd_set_pipeline(cmd_encoder, self.bin_pipeline);
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
@@ -1440,7 +1513,7 @@ impl<'gpu> DrawState<'gpu> {
                     &[],
                 );
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.primitive_2d_pipeline.rasterize_pipeline);
+                gpu.cmd_set_pipeline(cmd_encoder, self.rasterize_pipeline);
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
@@ -1464,7 +1537,7 @@ impl<'gpu> DrawState<'gpu> {
                             prev_layout: ImageLayout::Optimal,
                             next_access: &[Access::ShaderOtherRead],
                             next_layout: ImageLayout::General,
-                            image: self.rt_image,
+                            image: self.color_image,
                             subresource_range: ImageSubresourceRange::default(),
                         },
                         ImageBarrier {
@@ -1480,53 +1553,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline.pipeline);
-
-                gpu.cmd_set_bind_group(
-                    frame,
-                    cmd_encoder,
-                    self.display_transform_pipeline.bind_group_layout,
-                    0,
-                    &[
-                        Bind {
-                            binding: 1,
-                            array_element: 0,
-                            typed: TypedBind::SampledImage(&[(
-                                ImageLayout::Optimal,
-                                self.images[ImageRes::TonyMcMapfaceLut],
-                            )]),
-                        },
-                        Bind {
-                            binding: 2,
-                            array_element: 0,
-                            typed: TypedBind::StorageBuffer(&[self.tile_bitmap_buffer.to_arg()]),
-                        },
-                        Bind {
-                            binding: 3,
-                            array_element: 0,
-                            typed: TypedBind::StorageImage(&[(
-                                ImageLayout::General,
-                                self.rt_image,
-                            )]),
-                        },
-                        Bind {
-                            binding: 4,
-                            array_element: 0,
-                            typed: TypedBind::StorageImage(&[(
-                                ImageLayout::General,
-                                self.ui_image,
-                            )]),
-                        },
-                        Bind {
-                            binding: 5,
-                            array_element: 0,
-                            typed: TypedBind::StorageImage(&[(
-                                ImageLayout::General,
-                                swapchain_image,
-                            )]),
-                        },
-                    ],
-                );
+                gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline);
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
