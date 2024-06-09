@@ -85,6 +85,7 @@ pub struct TransientBuffer<'a> {
     pub(crate) offset: u64,
     pub(crate) len: usize,
     pub(crate) buffer: u64,
+    pub(crate) address: u64,
     pub(crate) phantom: PhantomData<&'a u8>,
 }
 

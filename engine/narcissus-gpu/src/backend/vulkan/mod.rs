@@ -184,7 +184,7 @@ fn vulkan_shader_module(
 struct VulkanBuffer {
     memory: VulkanMemory,
     buffer: vk::Buffer,
-    _address: vk::DeviceAddress,
+    address: vk::DeviceAddress,
     map_count: u64,
 }
 
@@ -260,6 +260,7 @@ struct VulkanBoundPipeline {
 #[derive(Clone)]
 struct VulkanTransientBuffer {
     buffer: vk::Buffer,
+    address: u64,
     memory: VulkanMemory,
 }
 
@@ -986,7 +987,7 @@ impl Device for VulkanDevice {
         let handle = self.buffer_pool.lock().insert(VulkanBuffer {
             memory,
             buffer,
-            _address: address,
+            address,
             map_count: 0,
         });
 
@@ -2693,6 +2694,17 @@ impl Device for VulkanDevice {
         self.wsi_end_frame(self.frame_mut(&mut frame));
         self.frame_counter.release(frame);
     }
+
+    fn get_buffer_address(&self, buffer: BufferArg) -> u64 {
+        let buffer = match buffer {
+            BufferArg::Unmanaged(buffer) => buffer.0,
+            BufferArg::Persistent(buffer) => buffer.buffer.0,
+            BufferArg::Transient(buffer) => return buffer.address,
+        };
+        let buffer_pool = self.buffer_pool.lock();
+        let buffer = buffer_pool.get(buffer).unwrap();
+        buffer.address
+    }
 }
 
 impl VulkanDevice {
@@ -2740,6 +2752,16 @@ impl VulkanDevice {
                 )
             };
 
+            let address = unsafe {
+                self.device_fn.get_buffer_device_address(
+                    self.device,
+                    &vk::BufferDeviceAddressInfo {
+                        buffer,
+                        ..default()
+                    },
+                )
+            };
+
             let ptr = NonNull::new(memory.mapped_ptr()).unwrap();
 
             frame.destroyed_buffers.lock().push_back(buffer);
@@ -2749,6 +2771,7 @@ impl VulkanDevice {
                 ptr,
                 len: size as usize,
                 buffer: buffer.as_raw(),
+                address,
                 offset: 0,
                 phantom: PhantomData,
             };
@@ -2816,6 +2839,7 @@ impl VulkanDevice {
             .unwrap(),
             len: size as usize,
             buffer: current.buffer.as_raw(),
+            address: current.address + allocator.offset,
             offset: allocator.offset,
             phantom: PhantomData,
         }
@@ -2874,7 +2898,21 @@ impl VulkanDevice {
             )
         };
 
-        VulkanTransientBuffer { buffer, memory }
+        let address = unsafe {
+            self.device_fn.get_buffer_device_address(
+                self.device,
+                &vk::BufferDeviceAddressInfo {
+                    buffer,
+                    ..default()
+                },
+            )
+        };
+
+        VulkanTransientBuffer {
+            buffer,
+            address,
+            memory,
+        }
     }
 
     fn unwrap_buffer_arg(&self, buffer_arg: &BufferArg) -> (vk::Buffer, u64, u64) {

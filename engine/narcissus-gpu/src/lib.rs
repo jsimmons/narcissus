@@ -788,6 +788,9 @@ pub trait Device {
     fn debug_name_buffer(&self, buffer: BufferArg, label_name: &str);
     fn debug_name_image(&self, image: Image, label_name: &str);
 
+    // Danger Zone
+    fn get_buffer_address(&self, buffer: BufferArg) -> u64;
+
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
     fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer);
     fn destroy_image(&self, frame: &Frame, image: Image);
