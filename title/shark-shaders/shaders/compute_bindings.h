@@ -36,6 +36,7 @@ layout(buffer_reference, std430, buffer_reference_align = 4) writeonly buffer Ti
 struct ComputeUniforms {
     uvec2 screen_resolution;
     uvec2 atlas_resolution;
+    uvec2 tile_resolution;
 
     uint num_primitives;
     uint num_primitives_32;

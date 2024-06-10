@@ -1471,6 +1471,8 @@ impl<'gpu> DrawState<'gpu> {
                         num_primitives,
                         num_primitives_32,
                         num_primitives_1024,
+                        tile_resolution_x: self.tile_resolution_x,
+                        tile_resolution_y: self.tile_resolution_y,
                         tile_stride: self.tile_resolution_x,
                         glyphs_buffer: gpu.get_buffer_address(glyph_buffer.to_arg()),
                         glyph_instances_buffer: gpu

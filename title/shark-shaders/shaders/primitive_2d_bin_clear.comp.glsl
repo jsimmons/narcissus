@@ -17,6 +17,12 @@
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
-    uniforms.tiles.values[gl_GlobalInvocationID.x * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 0] = 0xffffffff;
-    uniforms.tiles.values[gl_GlobalInvocationID.x * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET + 1] = 0;
+    if (gl_GlobalInvocationID.x >= uniforms.tile_resolution.x * uniforms.tile_resolution.y) {
+        return;
+    }
+
+    const uint index = gl_GlobalInvocationID.x * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET;
+
+    uniforms.tiles.values[index + 0] = 0xffffffff;
+    uniforms.tiles.values[index + 1] = 0;
 }
