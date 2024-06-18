@@ -2,6 +2,7 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::derivable_impls)]
+#![allow(clippy::missing_transmute_annotations)]
 
 mod enums;
 mod flags;
