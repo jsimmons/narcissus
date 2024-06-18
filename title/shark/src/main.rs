@@ -1220,7 +1220,7 @@ impl<'gpu> DrawState<'gpu> {
                     None,
                     &[ImageBarrier::layout_optimal(
                         &[Access::TransferWrite],
-                        &[Access::FragmentShaderSampledImageRead],
+                        &[Access::ShaderSampledImageRead],
                         self.glyph_atlas_image,
                         ImageAspectFlags::COLOR,
                     )],
@@ -1241,7 +1241,7 @@ impl<'gpu> DrawState<'gpu> {
                     ),
                     ImageBarrier {
                         prev_access: &[Access::None],
-                        next_access: &[Access::ShaderWrite],
+                        next_access: &[Access::ComputeWrite],
                         prev_layout: ImageLayout::Optimal,
                         next_layout: ImageLayout::General,
                         image: self.ui_image,
@@ -1543,9 +1543,9 @@ impl<'gpu> DrawState<'gpu> {
                             subresource_range: ImageSubresourceRange::default(),
                         },
                         ImageBarrier {
-                            prev_access: &[Access::ShaderWrite],
+                            prev_access: &[Access::ComputeWrite],
                             prev_layout: ImageLayout::General,
-                            next_access: &[Access::ShaderOtherRead],
+                            next_access: &[Access::ComputeOtherRead],
                             next_layout: ImageLayout::General,
                             image: self.ui_image,
                             subresource_range: ImageSubresourceRange::default(),
