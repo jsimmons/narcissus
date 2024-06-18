@@ -30,7 +30,7 @@ impl<T> VirtualRawVec<T> {
         let max_capacity_bytes = size.checked_mul(max_capacity).unwrap();
 
         // Check overflow of rounding operation.
-        assert!(max_capacity_bytes <= (std::usize::MAX - (align - 1)));
+        assert!(max_capacity_bytes <= (usize::MAX - (align - 1)));
 
         let ptr = virtual_reserve(max_capacity_bytes).expect("mapping failed");
         let ptr = unsafe { NonNull::new_unchecked(ptr as *mut T) };

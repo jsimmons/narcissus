@@ -22,7 +22,7 @@ impl<T> VirtualDeque<T> {
 
     pub fn with_capacity(capacity: usize, max_capacity: usize) -> Self {
         assert!(max_capacity.is_power_of_two());
-        assert!(max_capacity < std::isize::MAX as usize);
+        assert!(max_capacity < isize::MAX as usize);
         let cap = std::cmp::max(capacity + 1, MINIMUM_CAPACITY + 1).next_power_of_two();
         Self {
             buf: VirtualRawVec::with_capacity(cap, max_capacity),

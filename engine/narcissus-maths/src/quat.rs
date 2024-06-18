@@ -25,10 +25,10 @@ impl Quat {
     };
 
     pub const NAN: Self = Self {
-        a: std::f32::NAN,
-        b: std::f32::NAN,
-        c: std::f32::NAN,
-        d: std::f32::NAN,
+        a: f32::NAN,
+        b: f32::NAN,
+        c: f32::NAN,
+        d: f32::NAN,
     };
 
     /// Create a new quaternion from its components.

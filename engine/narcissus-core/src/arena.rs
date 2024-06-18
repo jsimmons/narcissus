@@ -173,7 +173,7 @@ unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePoin
     // Clamp between `PAGE_MIN_SIZE` and `PAGE_MAX_SIZE` to handle the case where
     // the existing page is the empty page, and to avoid overly large allocated
     // blocks.
-    let new_page_size = new_page_size.max(PAGE_MIN_SIZE).min(PAGE_MAX_SIZE);
+    let new_page_size = new_page_size.clamp(PAGE_MIN_SIZE, PAGE_MAX_SIZE);
     // Ensure that after all that, the given page is large enough to hold the thing
     // we're trying to allocate.
     let new_page_size = new_page_size.max(layout.size() + (layout.align() - 1) + PAGE_FOOTER_SIZE);
