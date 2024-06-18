@@ -70,7 +70,7 @@ void main() {
     }
 
     const vec3 color = plasma_quintic(float(count) / 100.0);
-    imageStore(layer_ui_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
+    imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
 
 #else
 
