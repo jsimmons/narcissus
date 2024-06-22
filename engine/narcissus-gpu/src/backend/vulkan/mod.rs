@@ -2138,7 +2138,7 @@ impl Device for VulkanDevice {
         unsafe {
             self.device_fn.cmd_set_viewport_with_count(
                 command_buffer,
-                std::mem::transmute::<_, &[vk::Viewport]>(viewports), // yolo
+                std::mem::transmute::<&[crate::Viewport], &[vk::Viewport]>(viewports), // yolo
             );
         }
     }
@@ -2148,7 +2148,7 @@ impl Device for VulkanDevice {
         unsafe {
             self.device_fn.cmd_set_scissor_with_count(
                 command_buffer,
-                std::mem::transmute::<_, &[vk::Rect2d]>(scissors), // yolo
+                std::mem::transmute::<&[crate::Scissor], &[vk::Rect2d]>(scissors), // yolo
             );
         }
     }

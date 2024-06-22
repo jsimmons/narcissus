@@ -368,7 +368,7 @@ impl RenderdocApi1_5_0 {
             if get_api_ptr.is_null() {
                 return None;
             }
-            let get_api = std::mem::transmute::<_, FnGetApi>(get_api_ptr);
+            let get_api = std::mem::transmute::<*mut c_void, FnGetApi>(get_api_ptr);
 
             let mut rdoc_api = MaybeUninit::<Self>::uninit();
             let ret = get_api(

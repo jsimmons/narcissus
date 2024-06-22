@@ -222,7 +222,7 @@ pub fn oom() -> ! {
 pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
     let layout = std::alloc::Layout::new::<MaybeUninit<T>>();
     unsafe {
-        let ptr = std::mem::transmute::<_, *mut MaybeUninit<T>>(std::alloc::alloc(layout));
+        let ptr = std::mem::transmute::<*mut u8, *mut MaybeUninit<T>>(std::alloc::alloc(layout));
         Box::from_raw(ptr)
     }
 }
@@ -232,7 +232,8 @@ pub fn uninit_box<T>() -> Box<MaybeUninit<T>> {
 pub fn zeroed_box<T>() -> Box<MaybeUninit<T>> {
     let layout = std::alloc::Layout::new::<MaybeUninit<T>>();
     unsafe {
-        let ptr = std::mem::transmute::<_, *mut MaybeUninit<T>>(std::alloc::alloc_zeroed(layout));
+        let ptr =
+            std::mem::transmute::<*mut u8, *mut MaybeUninit<T>>(std::alloc::alloc_zeroed(layout));
         Box::from_raw(ptr)
     }
 }
