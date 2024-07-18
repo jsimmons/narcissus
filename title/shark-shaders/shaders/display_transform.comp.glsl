@@ -37,9 +37,9 @@ void main() {
 
     TilesRead tiles_read = TilesRead(uniforms.tiles);
 
-    const uint first = tiles_read.values[tile_base + TILE_BITMAP_RANGE_OFFSET + 0];
-    const uint last = tiles_read.values[tile_base + TILE_BITMAP_RANGE_OFFSET + 1];
-    if (first <= last) {
+    const uint lo = tiles_read.values[tile_base + TILE_BITMAP_RANGE_LO_OFFSET];
+    const uint hi = tiles_read.values[tile_base + TILE_BITMAP_RANGE_HI_OFFSET];
+    if (lo <= hi) {
         const vec4 ui = imageLoad(ui_layer_read, ivec2(gl_GlobalInvocationID.xy)).rgba;
         composited = ui.rgb + (composited * (1.0 - ui.a));
     }

@@ -17,12 +17,12 @@
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
-    if (gl_GlobalInvocationID.x >= uniforms.tile_resolution.x * uniforms.tile_resolution.y) {
-        return;
+    const uint tile_index = gl_GlobalInvocationID.z * uniforms.tile_stride + gl_GlobalInvocationID.y;
+
+    uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_LO_OFFSET] = 0xffffffff;
+    uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_RANGE_HI_OFFSET] = 0;
+
+    if (gl_GlobalInvocationID.x < TILE_BITMAP_L1_WORDS) {
+        uniforms.tiles.values[tile_index * TILE_STRIDE + TILE_BITMAP_L1_OFFSET + gl_GlobalInvocationID.x] = 0;
     }
-
-    const uint index = gl_GlobalInvocationID.x * TILE_STRIDE + TILE_BITMAP_RANGE_OFFSET;
-
-    uniforms.tiles.values[index + 0] = 0xffffffff;
-    uniforms.tiles.values[index + 1] = 0;
 }

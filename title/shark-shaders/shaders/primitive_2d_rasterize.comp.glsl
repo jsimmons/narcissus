@@ -34,25 +34,24 @@ vec3 plasma_quintic(float x)
 #endif
 
 void main() {
-    const uvec2 tile_coord = gl_WorkGroupID.xy / 4;
+    const uvec2 tile_coord = gl_WorkGroupID.xy / (TILE_SIZE / gl_WorkGroupSize.xy);
     const uint tile_index = tile_coord.y * uniforms.tile_stride + tile_coord.x;
     const uint tile_base = tile_index * TILE_STRIDE;
 
     TilesRead tiles_read = TilesRead(uniforms.tiles);
 
-    const uint first = tiles_read.values[tile_base + TILE_BITMAP_RANGE_OFFSET + 0];
-    const uint last = tiles_read.values[tile_base + TILE_BITMAP_RANGE_OFFSET + 1];
+    const uint lo = tiles_read.values[tile_base + TILE_BITMAP_RANGE_LO_OFFSET];
+    const uint hi = tiles_read.values[tile_base + TILE_BITMAP_RANGE_HI_OFFSET];
 
-    [[branch]]
-    if (last < first) {
+    if (hi < lo) {
         return;
     }
 
 #if DEBUG_SHOW_TILES == 1
 
-    int count = 0;
+    uint count = 0;
     // For each tile, iterate over all words in the L1 bitmap.
-    for (uint index_l1 = first; index_l1 <= last; index_l1++) {
+    for (uint index_l1 = lo; index_l1 <= hi; index_l1++) {
         // For each word, iterate all set bits.
         uint bitmap_l1 = tiles_read.values[tile_base + TILE_BITMAP_L1_OFFSET + index_l1];
 
@@ -72,12 +71,20 @@ void main() {
     const vec3 color = plasma_quintic(float(count) / 100.0);
     imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
 
+#elif DEBUG_SHOW_TILES == 2
+
+    uint count = hi - lo;
+    const vec3 color = plasma_quintic(float(count) / 100.0);
+    imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
+
 #else
+
+    const vec2 sample_center = gl_GlobalInvocationID.xy + vec2(0.5);
 
     vec4 accum = vec4(0.0);
 
-    // For each tile, iterate over all words in the L1 bitmap. 
-    for (uint index_l1 = first; index_l1 <= last; index_l1++) {
+    // For each tile, iterate over all words in the L1 bitmap.
+    for (uint index_l1 = lo; index_l1 <= hi; index_l1++) {
         // For each word, iterate all set bits.
         uint bitmap_l1 = tiles_read.values[tile_base + TILE_BITMAP_L1_OFFSET + index_l1];
 
@@ -100,12 +107,12 @@ void main() {
                 const Glyph gl = uniforms.glyphs.values[gi.index];
                 const vec2 glyph_min = gi.position + gl.offset_min;
                 const vec2 glyph_max = gi.position + gl.offset_max;
-                const vec2 sample_center = gl_GlobalInvocationID.xy + vec2(0.5);
+
                 [[branch]]
                 if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
                     const vec2 glyph_size = gl.offset_max - gl.offset_min;
-                    const vec4 color = unpackUnorm4x8(gi.color).bgra;
                     const vec2 uv = mix(gl.atlas_min, gl.atlas_max, (sample_center - glyph_min) / glyph_size) / uniforms.atlas_resolution;
+                    const vec4 color = unpackUnorm4x8(gi.color).bgra;
                     const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r * color.a;
                     accum.rgb = (coverage * color.rgb) + accum.rgb * (1.0 - coverage);
                     accum.a = coverage + accum.a * (1.0 - coverage);

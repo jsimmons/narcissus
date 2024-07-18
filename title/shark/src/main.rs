@@ -1483,9 +1483,9 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    (self.tile_resolution_y * self.tile_resolution_x + 63) / 64,
-                    1,
-                    1,
+                    (num_primitives_1024 + 63) / 64,
+                    self.tile_resolution_x,
+                    self.tile_resolution_y,
                 );
 
                 gpu.cmd_barrier(
@@ -1499,12 +1499,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.bin_pipeline);
 
-                gpu.cmd_dispatch(
-                    cmd_encoder,
-                    (num_primitives + 2047) / 2048,
-                    (self.tile_resolution_x + 3) / 4,
-                    (self.tile_resolution_y + 3) / 4,
-                );
+                gpu.cmd_dispatch(cmd_encoder, (num_primitives + 1023) / 1024, 1, 1);
 
                 gpu.cmd_barrier(
                     cmd_encoder,
@@ -1738,8 +1733,8 @@ pub fn main() {
             for i in 0..80 {
                 let i = i as f32;
                 ui_state.text_fmt(
-                    base_x * 100.0 * scale + 5.0,
-                    base_y * 100.0 * scale + i * 15.0 * scale,
+                    base_x * 100.0 * scale - 5.0,
+                    base_y * 150.0 * scale + i * 15.0 * scale,
                     FontFamily::RobotoRegular,
                     20.0,
                     format_args!("tick: {:?}", tick_duration),
