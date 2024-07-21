@@ -27,18 +27,17 @@ vec3 tony_mc_mapface(vec3 stimulus) {
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
+    const uvec2 tile_coord = gl_WorkGroupID.xy / 4;
+    const uint tile_index = tile_coord.y * uniforms.tile_stride + tile_coord.x;
+    const uint tile_base = tile_index * TILE_STRIDE;
+    TilesRead tiles_read = TilesRead(uniforms.tiles);
+    const uint lo = tiles_read.values[tile_base + TILE_BITMAP_RANGE_LO_OFFSET];
+    const uint hi = tiles_read.values[tile_base + TILE_BITMAP_RANGE_HI_OFFSET];
+
     const vec3 stimulus = imageLoad(color_layer, ivec2(gl_GlobalInvocationID.xy)).rgb;
     const vec3 transformed = tony_mc_mapface(stimulus);
     vec3 composited = srgb_oetf(transformed);
 
-    const uvec2 tile_coord = gl_WorkGroupID.xy / 4;
-    const uint tile_index = tile_coord.y * uniforms.tile_stride + tile_coord.x;
-    const uint tile_base = tile_index * TILE_STRIDE;
-
-    TilesRead tiles_read = TilesRead(uniforms.tiles);
-
-    const uint lo = tiles_read.values[tile_base + TILE_BITMAP_RANGE_LO_OFFSET];
-    const uint hi = tiles_read.values[tile_base + TILE_BITMAP_RANGE_HI_OFFSET];
     if (lo <= hi) {
         const vec4 ui = imageLoad(ui_layer_read, ivec2(gl_GlobalInvocationID.xy)).rgba;
         composited = ui.rgb + (composited * (1.0 - ui.a));
