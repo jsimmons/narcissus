@@ -24,16 +24,6 @@ impl<T: Clone> ExtendWith<T> for ExtendElement<T> {
     }
 }
 
-struct ExtendFunc<F>(F);
-impl<T, F: FnMut() -> T> ExtendWith<T> for ExtendFunc<F> {
-    fn next(&mut self) -> T {
-        (self.0)()
-    }
-    fn last(mut self) -> T {
-        (self.0)()
-    }
-}
-
 impl<T, const CAP: usize> Default for FixedVec<T, CAP> {
     fn default() -> Self {
         Self::new()
