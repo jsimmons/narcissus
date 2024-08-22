@@ -19,6 +19,13 @@ struct GlyphKey<Family> {
 #[repr(transparent)]
 pub struct TouchedGlyphIndex(u32);
 
+impl TouchedGlyphIndex {
+    #[must_use]
+    pub fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
 /// Holds data required to draw a glyph from the glyph atlas.
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
