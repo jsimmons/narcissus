@@ -7,7 +7,6 @@
 #extension GL_EXT_scalar_block_layout : require
 
 #include "compute_bindings.h"
-#include "primitive_2d.h"
 
 float srgb_oetf(float a) {
     return (.0031308f >= a) ? 12.92f * a : 1.055f * pow(a, .4166666666666667f) - .055f;

@@ -1,26 +1,21 @@
+#ifndef COMPUTE_BINDINGS_INCLUDE
+#define COMPUTE_BINDINGS_INCLUDE
 
-struct Glyph {
-    ivec2 atlas_min;
-    ivec2 atlas_max;
+#include "primitive_2d.h"
 
-    vec2 offset_min;
-    vec2 offset_max;
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer PrimitiveInstances
+{
+    PrimitiveInstance values[];
 };
 
-struct GlyphInstance {
-    vec2 position;
-    uint index;
-    uint color;
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Rects
+{
+    Rect values[];
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Glyphs
 {
     Glyph values[];
-};
-
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer GlyphInstances
-{
-    GlyphInstance values[];
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer TilesRead
@@ -43,8 +38,9 @@ struct ComputeUniforms {
     uint num_primitives_1024;
     uint tile_stride;
 
+    PrimitiveInstances primitive_instances;
+    Rects rects;
     Glyphs glyphs;
-    GlyphInstances glyph_instances;
     TilesWrite tiles;
 };
 
@@ -59,3 +55,5 @@ layout (set = 0, binding = 3, rgba16f) uniform writeonly image2D ui_layer_write;
 layout (set = 0, binding = 3, rgba16f) uniform readonly image2D ui_layer_read;
 layout (set = 0, binding = 4, rgba16f) uniform readonly image2D color_layer;
 layout (set = 0, binding = 5, rgba16f) uniform writeonly image2D composited_output;
+
+#endif

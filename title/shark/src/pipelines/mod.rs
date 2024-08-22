@@ -25,16 +25,55 @@ pub struct PrimitiveUniforms {
     pub num_primitives_1024: u32,
     pub tile_stride: u32,
 
+    pub primitives_instances_buffer: u64,
+    pub rects_buffer: u64,
     pub glyphs_buffer: u64,
-    pub glyph_instances_buffer: u64,
     pub tiles_buffer: u64,
+}
+
+#[repr(u32)]
+pub enum PrimitiveType {
+    Rect,
+    Glyph,
 }
 
 #[allow(unused)]
 #[repr(C)]
-pub struct GlyphInstance {
+pub struct PrimitiveInstance {
+    pub packed: u32,
+    pub color: u32,
     pub x: f32,
     pub y: f32,
-    pub touched_glyph_index: TouchedGlyphIndex,
-    pub color: u32,
+}
+
+#[repr(C)]
+pub struct Rect {
+    pub half_extent_x: f32,
+    pub half_extent_y: f32,
+    pub border_width: f32,
+    pub border_radius: f32,
+}
+
+impl PrimitiveInstance {
+    #[inline(always)]
+    pub fn glyph(glyph_index: TouchedGlyphIndex, color: u32, x: f32, y: f32) -> Self {
+        let packed = glyph_index.as_u32() | ((PrimitiveType::Glyph as u32) << 30);
+        Self {
+            packed,
+            color,
+            x,
+            y,
+        }
+    }
+
+    #[inline(always)]
+    pub fn rect(rect_index: u32, color: u32, x: f32, y: f32) -> Self {
+        let packed = rect_index | ((PrimitiveType::Rect as u32) << 30);
+        Self {
+            packed,
+            color,
+            x,
+            y,
+        }
+    }
 }

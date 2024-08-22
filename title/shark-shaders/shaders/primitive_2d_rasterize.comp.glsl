@@ -102,20 +102,36 @@ void main() {
 
                 // Set bits in the L0 bitmap indicate binned primitives for this tile.
                 const uint primitive_index = index_l0 * 32 + j;
+                const PrimitiveInstance primitive_instance = uniforms.primitive_instances.values[primitive_index];
+                const uint type = bitfieldExtract(primitive_instance.packed, 30, 2);
+                const uint offset = bitfieldExtract(primitive_instance.packed, 0, 20);
 
-                const GlyphInstance gi = uniforms.glyph_instances.values[primitive_index];
-                const Glyph gl = uniforms.glyphs.values[gi.index];
-                const vec2 glyph_min = gi.position + gl.offset_min;
-                const vec2 glyph_max = gi.position + gl.offset_max;
-
-                [[branch]]
-                if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
-                    const vec2 glyph_size = gl.offset_max - gl.offset_min;
-                    const vec2 uv = mix(gl.atlas_min, gl.atlas_max, (sample_center - glyph_min) / glyph_size) / uniforms.atlas_resolution;
-                    const vec4 color = unpackUnorm4x8(gi.color).bgra;
-                    const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r * color.a;
-                    accum.rgb = (coverage * color.rgb) + accum.rgb * (1.0 - coverage);
-                    accum.a = coverage + accum.a * (1.0 - coverage);
+                switch (type) {
+                    case PRIMITIVE_TYPE_RECT: {
+                        const Rect rect = uniforms.rects.values[offset];
+                        const vec2 rect_min = primitive_instance.position - rect.half_extent;
+                        const vec2 rect_max = primitive_instance.position + rect.half_extent;
+                        if (all(greaterThanEqual(sample_center, rect_min)) && all(lessThanEqual(sample_center, rect_max))) {
+                            const vec4 color = unpackUnorm4x8(primitive_instance.color).bgra;
+                            accum.rgb = color.rgb * color.a + accum.rgb * (1.0 - color.a);
+                            accum.a = color.a + accum.a * (1.0 - color.a);
+                        }
+                        break;
+                    }
+                    case PRIMITIVE_TYPE_GLYPH: {
+                        const Glyph glyph = uniforms.glyphs.values[offset];
+                        const vec2 glyph_min = primitive_instance.position + glyph.offset_min;
+                        const vec2 glyph_max = primitive_instance.position + glyph.offset_max;
+                        if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
+                            const vec2 glyph_size = glyph.offset_max - glyph.offset_min;
+                            const vec2 uv = mix(glyph.atlas_min, glyph.atlas_max, (sample_center - glyph_min) / glyph_size) / uniforms.atlas_resolution;
+                            const vec4 color = unpackUnorm4x8(primitive_instance.color).bgra;
+                            const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r * color.a;
+                            accum.rgb = color.rgb * coverage + accum.rgb * (1.0 - coverage);
+                            accum.a = coverage + accum.a * (1.0 - coverage);
+                        }
+                        break;
+                    }
                 }
             }
         }

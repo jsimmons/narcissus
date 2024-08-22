@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use narcissus_core::{dds, Widen as _};
 use pipelines::basic::BasicPipeline;
-use pipelines::{GlyphInstance, PrimitiveUniforms, TILE_SIZE, TILE_STRIDE};
+use pipelines::{PrimitiveInstance, PrimitiveUniforms, Rect, TILE_SIZE, TILE_STRIDE};
 use renderdoc_sys as rdoc;
 
 use fonts::{FontFamily, Fonts};
@@ -452,7 +452,8 @@ struct UiState<'a> {
 
     tmp_string: String,
 
-    primitive_instances: Vec<GlyphInstance>,
+    primitive_instances: Vec<PrimitiveInstance>,
+    rects: Vec<Rect>,
 }
 
 impl<'a> UiState<'a> {
@@ -465,7 +466,28 @@ impl<'a> UiState<'a> {
             glyph_cache,
             tmp_string: default(),
             primitive_instances: vec![],
+            rects: vec![],
         }
+    }
+
+    fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
+        let half_extent_x = width / 2.0;
+        let half_extent_y = height / 2.0;
+        let center_x = x + half_extent_x;
+        let center_y = y + half_extent_y;
+
+        let rect_index = self.rects.len() as u32;
+
+        self.rects.push(Rect {
+            half_extent_x,
+            half_extent_y,
+            border_width: 0.0,
+            border_radius: 0.0,
+        });
+
+        self.primitive_instances.push(PrimitiveInstance::rect(
+            rect_index, 0x4400ff00, center_x, center_y,
+        ))
     }
 
     fn text_fmt(
@@ -508,12 +530,12 @@ impl<'a> UiState<'a> {
 
             x += advance * scale;
 
-            self.primitive_instances.push(GlyphInstance {
+            self.primitive_instances.push(PrimitiveInstance::glyph(
+                touched_glyph_index,
+                0x880000ff,
                 x,
                 y,
-                touched_glyph_index,
-                color: 0x880000ff,
-            });
+            ));
 
             x += advance_width * scale;
         }
@@ -1389,17 +1411,23 @@ impl<'gpu> DrawState<'gpu> {
                     microshades::PURPLE_RGBA_F32[3],
                 );
 
+                let primitive_instance_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    ui_state.primitive_instances.as_slice(),
+                );
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
                     touched_glyphs,
                 );
-                let glyph_instance_buffer = gpu.request_transient_buffer_with_data(
+                let rect_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
-                    ui_state.primitive_instances.as_slice(),
+                    ui_state.rects.as_slice(),
                 );
 
                 let num_primitives = ui_state.primitive_instances.len() as u32;
@@ -1474,9 +1502,10 @@ impl<'gpu> DrawState<'gpu> {
                         tile_resolution_x: self.tile_resolution_x,
                         tile_resolution_y: self.tile_resolution_y,
                         tile_stride: self.tile_resolution_x,
+                        primitives_instances_buffer: gpu
+                            .get_buffer_address(primitive_instance_buffer.to_arg()),
                         glyphs_buffer: gpu.get_buffer_address(glyph_buffer.to_arg()),
-                        glyph_instances_buffer: gpu
-                            .get_buffer_address(glyph_instance_buffer.to_arg()),
+                        rects_buffer: gpu.get_buffer_address(rect_buffer.to_arg()),
                         tiles_buffer: gpu.get_buffer_address(self.tiles_buffer.to_arg()),
                     },
                 );
@@ -1730,6 +1759,10 @@ pub fn main() {
             let base_x = (base_x + 1.0) * 0.5;
             let base_y = (base_y + 1.0) * 0.5;
 
+            for _ in 0..100 {
+                ui_state.rect(0.0, 0.0, width as f32, height as f32);
+            }
+
             for i in 0..80 {
                 let i = i as f32;
                 ui_state.text_fmt(
@@ -1753,6 +1786,17 @@ pub fn main() {
                         ),
                     );
             }
+
+            ui_state.rect(base_x * 60.0, base_y * 60.0, 120.0, 120.0);
+            ui_state.rect(base_x * 500.0, base_y * 100.0, 120.0, 120.0);
+            ui_state.rect(base_x * 90.0, base_y * 290.0, 140.0, 120.0);
+            ui_state.rect(base_x * 800.0, base_y * 320.0, 120.0, 120.0);
+            ui_state.rect(base_x * 200.0, base_y * 200.0, 120.0, 120.0);
+            ui_state.rect(base_x * 300.0, base_y * 120.0, 120.0, 170.0);
+            ui_state.rect(base_x * 1000.0, base_y * 30.0, 50.0, 120.0);
+            ui_state.rect(base_x * 340.0, base_y * 400.0, 120.0, 110.0);
+            ui_state.rect(base_x * 290.0, base_y * 80.0, 120.0, 10.0);
+            ui_state.rect(base_x * 310.0, base_y * 190.0, 10.0, 120.0);
 
             draw_state.draw(
                 thread_token,
