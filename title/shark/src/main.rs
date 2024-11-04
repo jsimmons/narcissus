@@ -5,10 +5,11 @@ use std::time::{Duration, Instant};
 
 use narcissus_core::dds;
 
-use pipelines::{
-    BasicConstants, ComputeBinds, Draw2dClearConstants, Draw2dCmd, Draw2dScatterConstants,
-    Draw2dSortConstants, GraphicsBinds, Pipelines, RadixSortDownsweepConstants,
-    RadixSortSpineConstants, RadixSortUpsweepConstants, DRAW_2D_TILE_SIZE,
+use shark_shaders::pipelines::{
+    calculate_spine_size, BasicConstants, ComputeBinds, Draw2dClearConstants, Draw2dCmd,
+    Draw2dScatterConstants, Draw2dSortConstants, GraphicsBinds, Pipelines,
+    RadixSortDownsweepConstants, RadixSortSpineConstants, RadixSortUpsweepConstants,
+    DRAW_2D_TILE_SIZE,
 };
 
 use renderdoc_sys as rdoc;
@@ -20,12 +21,11 @@ use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter}
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
     create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder,
-    ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Image,
-    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
-    ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation,
-    Offset2d, PersistentBuffer, PresentMode, RenderingAttachment, RenderingDesc, Scissor,
-    ShaderStageFlags, StoreOp, SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind,
-    Viewport,
+    ColorSpace, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Gpu, Image, ImageAspectFlags,
+    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange,
+    ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer,
+    PresentMode, RenderingAttachment, RenderingDesc, Scissor, ShaderStageFlags, StoreOp,
+    SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -37,7 +37,6 @@ use spring::simple_spring_damper_exact;
 mod fonts;
 mod helpers;
 pub mod microshades;
-mod pipelines;
 mod spring;
 
 const SQRT_2: f32 = 0.70710677;
@@ -836,8 +835,6 @@ impl Images {
     }
 }
 
-type Gpu = dyn Device + 'static;
-
 struct DrawState<'gpu> {
     gpu: &'gpu Gpu,
 
@@ -1312,7 +1309,7 @@ impl<'gpu> DrawState<'gpu> {
                     3 * std::mem::size_of::<u32>(),
                 );
 
-                let sort_tmp_buffer = gpu.request_transient_buffer(
+                let tmp_buffer = gpu.request_transient_buffer(
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
@@ -1323,7 +1320,7 @@ impl<'gpu> DrawState<'gpu> {
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
-                    (COARSE_BUFFER_LEN / (32 * 16)) * 256 * std::mem::size_of::<u32>(), // TODO: Fix size
+                    calculate_spine_size(COARSE_BUFFER_LEN) * std::mem::size_of::<u32>(), // TODO: Fix size
                 );
 
                 let draw_buffer_address = gpu.get_buffer_address(draw_buffer.to_arg());
@@ -1331,7 +1328,7 @@ impl<'gpu> DrawState<'gpu> {
                 let coarse_buffer_address = gpu.get_buffer_address(coarse_buffer.to_arg());
                 let indirect_dispatch_buffer_address =
                     gpu.get_buffer_address(indirect_dispatch_buffer.to_arg());
-                let sort_tmp_buffer_address = gpu.get_buffer_address(sort_tmp_buffer.to_arg());
+                let tmp_buffer_address = gpu.get_buffer_address(tmp_buffer.to_arg());
                 let spine_buffer_address = gpu.get_buffer_address(spine_buffer.to_arg());
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_0_clear_pipeline);
@@ -1394,21 +1391,6 @@ impl<'gpu> DrawState<'gpu> {
                     &[],
                 );
 
-                // let mut sort_data = Vec::new();
-                // let count = 8192u32;
-                // sort_data.push(count);
-                // for i in 0..count {
-                //     sort_data.push(255 - i / 32);
-                // }
-
-                // let sort_buffer = gpu.request_transient_buffer_with_data(
-                //     frame,
-                //     thread_token,
-                //     BufferUsageFlags::STORAGE,
-                //     sort_data.as_slice(),
-                // );
-                // let sort_buffer_address = gpu.get_buffer_address(sort_buffer.to_arg());
-
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_2_sort_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
                 gpu.cmd_push_constants(
@@ -1444,7 +1426,7 @@ impl<'gpu> DrawState<'gpu> {
                 let count_buffer_address = coarse_buffer_address;
                 // Then the elements we want to sort follow.
                 let mut src_buffer_address = count_buffer_address.byte_add(4);
-                let mut dst_buffer_address = sort_tmp_buffer_address;
+                let mut dst_buffer_address = tmp_buffer_address;
 
                 for pass in 0..4 {
                     let shift = pass * 8;

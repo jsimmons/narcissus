@@ -13,6 +13,8 @@ mod tlsf;
 
 pub use mapped_buffer::{PersistentBuffer, TransientBuffer};
 
+pub type Gpu = dyn Device + 'static;
+
 pub enum DeviceBackend {
     Vulkan,
 }

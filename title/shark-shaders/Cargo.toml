@@ -6,3 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+narcissus-core = { path = "../../engine/narcissus-core" }
+narcissus-font = { path = "../../engine/narcissus-font" }
+narcissus-maths = { path = "../../engine/narcissus-maths" }
+narcissus-gpu = { path = "../../engine/narcissus-gpu" }

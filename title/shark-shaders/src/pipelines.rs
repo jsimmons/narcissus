@@ -2,14 +2,12 @@ use narcissus_core::default;
 use narcissus_font::TouchedGlyphIndex;
 use narcissus_gpu::{
     BindDesc, BindGroupLayout, BindingType, BlendMode, BufferAddress, CompareOp,
-    ComputePipelineDesc, CullingMode, FrontFace, GraphicsPipelineAttachments, GraphicsPipelineDesc,
-    ImageFormat, Pipeline, PipelineLayout, PolygonMode, PushConstantRange, Sampler,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags, SpecConstant,
-    Topology,
+    ComputePipelineDesc, CullingMode, FrontFace, Gpu, GraphicsPipelineAttachments,
+    GraphicsPipelineDesc, ImageFormat, Pipeline, PipelineLayout, PolygonMode, PushConstantRange,
+    Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags,
+    SpecConstant, Topology,
 };
 use narcissus_maths::Mat4;
-
-use crate::Gpu;
 
 pub const DRAW_2D_TILE_SIZE: u32 = 32;
 
@@ -196,6 +194,18 @@ pub struct RadixSortDownsweepConstants<'a> {
     pub dst_buffer_address: BufferAddress<'a>,
 }
 
+pub const RADIX_ITEMS_PER_WGP: usize = 4096;
+pub const RADIX_DIGITS: usize = 256;
+
+pub fn calcuate_workgroup_count(count: usize) -> usize {
+    (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP
+}
+
+/// Returns the size of the spine required to sort the given count in units of u32 words.
+pub fn calculate_spine_size(count: usize) -> usize {
+    calcuate_workgroup_count(count) * RADIX_DIGITS
+}
+
 pub struct Pipelines {
     _samplers: Samplers,
 
@@ -251,11 +261,11 @@ impl Pipelines {
 
         let basic_pipeline = gpu.create_graphics_pipeline(&GraphicsPipelineDesc {
             vertex_shader: ShaderDesc {
-                code: shark_shaders::BASIC_VERT_SPV,
+                code: crate::BASIC_VERT_SPV,
                 ..default()
             },
             fragment_shader: ShaderDesc {
-                code: shark_shaders::BASIC_FRAG_SPV,
+                code: crate::BASIC_FRAG_SPV,
                 ..default()
             },
             layout: PipelineLayout {
@@ -327,7 +337,7 @@ impl Pipelines {
         };
 
         let draw_2d_bin_0_clear_pipeline = create_compute_pipeline(
-            shark_shaders::DRAW_2D_BIN_0_CLEAR_COMP_SPV,
+            crate::DRAW_2D_BIN_0_CLEAR_COMP_SPV,
             "draw2d_bin_clear",
             0,
             std::mem::size_of::<Draw2dClearConstants>(),
@@ -335,56 +345,52 @@ impl Pipelines {
 
         let draw_2d_bin_1_scatter_pipeline_workgroup_size = 32;
         let draw_2d_bin_1_scatter_pipeline = create_compute_pipeline(
-            shark_shaders::DRAW_2D_BIN_1_SCATTER_COMP_SPV,
+            crate::DRAW_2D_BIN_1_SCATTER_COMP_SPV,
             "draw2d_bin_scatter",
             draw_2d_bin_1_scatter_pipeline_workgroup_size,
             std::mem::size_of::<Draw2dScatterConstants>(),
         );
 
         let draw_2d_bin_2_sort_pipeline = create_compute_pipeline(
-            shark_shaders::DRAW_2D_BIN_2_SORT_COMP_SPV,
+            crate::DRAW_2D_BIN_2_SORT_COMP_SPV,
             "draw2d_bin_sort",
             0,
             std::mem::size_of::<Draw2dSortConstants>(),
         );
 
         let draw_2d_bin_3_resolve_pipeline = create_compute_pipeline(
-            shark_shaders::DRAW_2D_BIN_3_RESOLVE_COMP_SPV,
+            crate::DRAW_2D_BIN_3_RESOLVE_COMP_SPV,
             "draw2d_bin_resolve",
             0,
             0,
         );
 
-        let draw_2d_rasterize_pipeline = create_compute_pipeline(
-            shark_shaders::DRAW_2D_RASTERIZE_COMP_SPV,
-            "draw2d_rasterize",
-            0,
-            0,
-        );
+        let draw_2d_rasterize_pipeline =
+            create_compute_pipeline(crate::DRAW_2D_RASTERIZE_COMP_SPV, "draw2d_rasterize", 0, 0);
 
         let radix_sort_0_upsweep_pipeline = create_compute_pipeline(
-            shark_shaders::RADIX_SORT_0_UPSWEEP_COMP_SPV,
+            crate::RADIX_SORT_0_UPSWEEP_COMP_SPV,
             "radix_sort_upsweep",
             32,
             std::mem::size_of::<RadixSortUpsweepConstants>(),
         );
 
         let radix_sort_1_spine_pipeline = create_compute_pipeline(
-            shark_shaders::RADIX_SORT_1_SPINE_COMP_SPV,
+            crate::RADIX_SORT_1_SPINE_COMP_SPV,
             "radix_sort_spine",
             32,
             std::mem::size_of::<RadixSortSpineConstants>(),
         );
 
         let radix_sort_2_downsweep_pipeline = create_compute_pipeline(
-            shark_shaders::RADIX_SORT_2_DOWNSWEEP_COMP_SPV,
+            crate::RADIX_SORT_2_DOWNSWEEP_COMP_SPV,
             "radix_sort_downsweep",
             32,
             std::mem::size_of::<RadixSortDownsweepConstants>(),
         );
 
         let composite_pipeline =
-            create_compute_pipeline(shark_shaders::COMPOSITE_COMP_SPV, "composite", 0, 0);
+            create_compute_pipeline(crate::COMPOSITE_COMP_SPV, "composite", 0, 0);
 
         Self {
             _samplers: samplers,

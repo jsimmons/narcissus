@@ -3,7 +3,7 @@ use std::path::Path;
 use narcissus_core::{obj, Widen};
 use narcissus_maths::{vec2, vec3, vec4, Vec2, Vec3};
 
-use crate::pipelines::Vertex;
+use shark_shaders::pipelines::Vertex;
 
 pub fn load_obj<P: AsRef<Path>>(path: P) -> (Vec<Vertex>, Vec<u16>) {
     #[derive(Default)]
