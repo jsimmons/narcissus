@@ -654,7 +654,7 @@ impl Access {
             Access::FragmentShaderWrite => false,
             Access::ColorAttachmentWrite => false,
             Access::DepthStencilAttachmentWrite => false,
-            Access::ComputeWrite => true,
+            Access::ComputeWrite => false,
             Access::ShaderWrite => false,
             Access::TransferWrite => false,
             Access::HostPreInitializedWrite => false,
