@@ -11,4 +11,8 @@ const uint RADIX_ITEMS_PER_WGP = RADIX_WGP_SIZE * RADIX_ITEMS_PER_INVOCATION;
 
 const uint RADIX_SPINE_WGP_SIZE = 256;
 
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer CountRef {
+    uint value;
+};
+
 #endif

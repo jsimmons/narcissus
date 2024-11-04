@@ -27,10 +27,6 @@ layout (constant_id = 0) const uint SUBGROUP_SIZE = 64;
 
 const uint NUM_SUBGROUPS = RADIX_WGP_SIZE / SUBGROUP_SIZE;
 
-layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer CountRef {
-    uint value;
-};
-
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer SpineRef {
     uint values[];
 };

@@ -14,10 +14,6 @@
 #include "draw_2d.h"
 #include "indirect.h"
 
-layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer CountRef {
-    uint value;
-};
-
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer ValuesRef {
     uint values[];
 };
