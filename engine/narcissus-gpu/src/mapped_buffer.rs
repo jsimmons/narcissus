@@ -75,6 +75,11 @@ impl<'a> PersistentBuffer<'a> {
     pub fn copy_with_offset<T: ?Sized>(&mut self, offset: usize, src: &T) {
         unsafe { copy_from_with_offset(self.ptr, self.len, offset, src) }
     }
+
+    pub unsafe fn copy_to_slice<T>(&self, dst: &mut [T]) {
+        assert!(std::mem::size_of_val(dst) == self.len);
+        std::ptr::copy(self.ptr.cast().as_ptr(), dst.as_mut_ptr(), dst.len());
+    }
 }
 
 /// Transient mapped buffer that is tied to the lifetime of the current frame.
