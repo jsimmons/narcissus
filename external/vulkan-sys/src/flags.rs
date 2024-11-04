@@ -622,8 +622,8 @@ pub struct PipelineVertexInputStateCreateFlags(u32);
 #[repr(C)]
 pub struct PipelineShaderStageCreateFlags(u32);
 impl PipelineShaderStageCreateFlags {
-    pub const ALLOW_VARYING_SUBGROUP_SIZE_EXT: Self = Self(1);
-    pub const REQUIRE_F_SUBGROUPS_EXT: Self = Self(2);
+    pub const ALLOW_VARYING_SUBGROUP_SIZE: Self = Self(1);
+    pub const REQUIRE_FULL_SUBGROUPS: Self = Self(2);
 }
 
 #[repr(C)]
