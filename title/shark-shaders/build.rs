@@ -43,16 +43,16 @@ fn main() {
         _ => "0",
     };
 
-    let commands = SHADERS
+    let mut commands = SHADERS
         .iter()
         .map(|Shader { stage, name }| {
             Command::new("glslangValidator")
                 .args(["--target-env", "vulkan1.3"])
                 .arg("--quiet")
-                .arg(&format!("-g{debug}"))
+                .arg(format!("-g{debug}"))
                 .args(["--depfile", &format!("{out_dir}/{name}.{stage}.d")])
                 .args(["-o", &format!("{out_dir}/{name}.{stage}.spv")])
-                .arg(&format!("{SHADER_ROOT}/{name}.{stage}.glsl"))
+                .arg(format!("{SHADER_ROOT}/{name}.{stage}"))
                 .spawn()
                 .unwrap()
         })
@@ -77,9 +77,13 @@ fn main() {
         .unwrap();
     }
 
-    for mut command in commands {
+    for (mut command, shader) in commands.drain(..).zip(SHADERS.iter()) {
         let status = command.wait().unwrap();
-        assert!(status.success());
+        assert!(
+            status.success(),
+            "shader '{}' failed to compile",
+            shader.name
+        );
     }
 
     for &Shader { stage, name } in SHADERS {
