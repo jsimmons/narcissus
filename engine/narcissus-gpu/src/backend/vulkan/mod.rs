@@ -2811,6 +2811,10 @@ impl Device for VulkanDevice {
         ));
     }
 
+    fn wait_idle(&self) {
+        vk_check!(unsafe { self.device_fn.device_wait_idle(self.device) });
+    }
+
     fn begin_frame(&self) -> Frame {
         let device_fn = &self.device_fn;
         let device = self.device;

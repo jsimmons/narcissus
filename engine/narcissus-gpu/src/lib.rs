@@ -1024,6 +1024,8 @@ pub trait Device {
 
     fn submit(&self, frame: &Frame, cmd_encoder: CmdEncoder);
 
+    fn wait_idle(&self);
+
     fn begin_frame(&self) -> Frame;
 
     fn end_frame<'device>(&'device self, frame: Frame<'device>);
