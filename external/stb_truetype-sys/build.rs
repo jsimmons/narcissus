@@ -18,7 +18,7 @@ fn main() {
             "-fPIC",
             "-o",
         ])
-        .arg(&format!("{out_dir}/stb_truetype.o"))
+        .arg(format!("{out_dir}/stb_truetype.o"))
         .status()
         .unwrap();
 

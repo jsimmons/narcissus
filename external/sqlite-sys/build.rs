@@ -29,7 +29,7 @@ fn main() {
             "-fPIC",
             "-o",
         ])
-        .arg(&format!("{out_dir}/sqlite3.o"))
+        .arg(format!("{out_dir}/sqlite3.o"))
         .status()
         .unwrap();
 
