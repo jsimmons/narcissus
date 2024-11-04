@@ -1,0 +1,91 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_control_flow_attributes : require
+
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_shuffle_relative: enable
+#extension GL_KHR_shader_subgroup_vote : require
+
+//#extension GL_EXT_debug_printf : enable
+
+#include "compute_bindings.h"
+
+#include "radix_sort.h"
+
+#include "draw_2d.h"
+#include "indirect.h"
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer CountRef {
+    uint value;
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer SpineRef {
+    uint values[];
+};
+
+struct RadixSortSpineConstants {
+    CountRef count_buffer;
+    SpineRef spine_buffer;
+};
+
+layout(std430, push_constant) uniform RadixSortSpineConstantsBlock {
+    RadixSortSpineConstants constants;
+};
+
+layout (constant_id = 0) const uint SUBGROUP_SIZE = 64;
+
+const uint NUM_SUBGROUPS = RADIX_SPINE_WGP_SIZE / SUBGROUP_SIZE;
+
+shared uint sums[NUM_SUBGROUPS];
+shared uint carry_in;
+
+layout (local_size_x = RADIX_SPINE_WGP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
+
+    const uint count = constants.count_buffer.value;
+
+    // Re-calculate how many workgroups pushed data into the spine
+    const uint upsweep_wgp_count = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
+
+    carry_in = 0;
+    for (uint i = 0; i < upsweep_wgp_count; i++) {
+        const uint spine_index = i * RADIX_DIGITS + local_id;
+
+        // Load values and calculate partial sums
+        const uint value = constants.spine_buffer.values[spine_index];
+        const uint sum = subgroupAdd(value);
+        const uint scan = subgroupExclusiveAdd(value);
+
+        if (subgroupElect()) {
+            sums[gl_SubgroupID] = sum;
+        }
+
+        barrier();
+
+        // Scan partials
+        if (local_id < NUM_SUBGROUPS) {
+            sums[local_id] = subgroupExclusiveAdd(sums[local_id]);
+        }
+
+        const uint carry = carry_in;
+
+        barrier();
+
+        // Write out the final prefix sum, combining the carry-in, subgroup sums, and local scan
+        constants.spine_buffer.values[spine_index] = carry + sums[gl_SubgroupID] + scan;
+
+        if (gl_SubgroupID == gl_NumSubgroups - 1 && subgroupElect()) {
+            carry_in += sums[gl_SubgroupID] + sum;
+        }
+
+        memoryBarrierShared();
+    }
+}

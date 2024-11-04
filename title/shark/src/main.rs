@@ -3,9 +3,14 @@ use std::ops::Index;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use narcissus_core::{dds, Widen as _};
-use pipelines::basic::BasicPipeline;
-use pipelines::{PrimitiveInstance, PrimitiveUniforms, Rect, TILE_SIZE, TILE_STRIDE};
+use narcissus_core::dds;
+
+use pipelines::{
+    BasicConstants, ComputeBinds, Draw2dClearConstants, Draw2dCmd, Draw2dScatterConstants,
+    Draw2dSortConstants, GraphicsBinds, Pipelines, RadixSortDownsweepConstants,
+    RadixSortSpineConstants, RadixSortUpsweepConstants, DRAW_2D_TILE_SIZE,
+};
+
 use renderdoc_sys as rdoc;
 
 use fonts::{FontFamily, Fonts};
@@ -14,14 +19,13 @@ use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, Access, Bind, BindDesc, BindGroupLayout, BindingType, Buffer, BufferDesc,
-    BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder, ColorSpace, ComputePipelineDesc,
-    Device, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Image, ImageAspectFlags,
-    ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout, ImageSubresourceRange,
-    ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation, Offset2d, PersistentBuffer,
-    Pipeline, PipelineLayout, PresentMode, PushConstantRange, RenderingAttachment, RenderingDesc,
-    Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, Scissor, ShaderDesc, ShaderStageFlags,
-    StoreOp, SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind, Viewport,
+    create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder,
+    ColorSpace, Device, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Image,
+    ImageAspectFlags, ImageBarrier, ImageDesc, ImageDimension, ImageFormat, ImageLayout,
+    ImageSubresourceRange, ImageTiling, ImageUsageFlags, IndexType, LoadOp, MemoryLocation,
+    Offset2d, PersistentBuffer, PresentMode, RenderingAttachment, RenderingDesc, Scissor,
+    ShaderStageFlags, StoreOp, SwapchainConfigurator, SwapchainImage, ThreadToken, TypedBind,
+    Viewport,
 };
 use narcissus_image as image;
 use narcissus_maths::{
@@ -29,8 +33,6 @@ use narcissus_maths::{
     Point3, Vec3,
 };
 use spring::simple_spring_damper_exact;
-
-use crate::pipelines::basic::BasicUniforms;
 
 mod fonts;
 mod helpers;
@@ -73,9 +75,9 @@ static GAME_VARIABLES: GameVariables = GameVariables {
 
     player_speed: 10.0,
 
-    weapon_cooldown: 0.0,
+    weapon_cooldown: 0.2,
     weapon_projectile_speed: 20.0,
-    weapon_projectile_lifetime: 6.0,
+    weapon_projectile_lifetime: 3.0,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -452,8 +454,7 @@ struct UiState<'a> {
 
     tmp_string: String,
 
-    primitive_instances: Vec<PrimitiveInstance>,
-    rects: Vec<Rect>,
+    draw_cmds: Vec<Draw2dCmd>,
 }
 
 impl<'a> UiState<'a> {
@@ -465,8 +466,7 @@ impl<'a> UiState<'a> {
             fonts,
             glyph_cache,
             tmp_string: default(),
-            primitive_instances: vec![],
-            rects: vec![],
+            draw_cmds: vec![],
         }
     }
 
@@ -476,17 +476,14 @@ impl<'a> UiState<'a> {
         let center_x = x + half_extent_x;
         let center_y = y + half_extent_y;
 
-        let rect_index = self.rects.len() as u32;
-
-        self.rects.push(Rect {
+        self.draw_cmds.push(Draw2dCmd::rect(
+            center_x,
+            center_y,
             half_extent_x,
             half_extent_y,
-            border_width: 0.0,
-            border_radius: 0.0,
-        });
-
-        self.primitive_instances.push(PrimitiveInstance::rect(
-            rect_index, 0x4400ff00, center_x, center_y,
+            1.0,
+            0x4400ff00,
+            0xffff0000,
         ))
     }
 
@@ -530,47 +527,11 @@ impl<'a> UiState<'a> {
 
             x += advance * scale;
 
-            self.primitive_instances.push(PrimitiveInstance::glyph(
-                touched_glyph_index,
-                0x880000ff,
-                x,
-                y,
-            ));
+            self.draw_cmds
+                .push(Draw2dCmd::glyph(touched_glyph_index, 0x880000ff, x, y));
 
             x += advance_width * scale;
         }
-    }
-}
-
-enum SamplerRes {
-    Bilinear,
-}
-
-pub struct Samplers {
-    bilinear: Sampler,
-}
-
-impl Index<SamplerRes> for Samplers {
-    type Output = Sampler;
-
-    fn index(&self, index: SamplerRes) -> &Self::Output {
-        match index {
-            SamplerRes::Bilinear => &self.bilinear,
-        }
-    }
-}
-
-impl Samplers {
-    fn load(gpu: &Gpu) -> Samplers {
-        let bilinear = gpu.create_sampler(&SamplerDesc {
-            filter: SamplerFilter::Bilinear,
-            address_mode: SamplerAddressMode::Clamp,
-            compare_op: None,
-            mip_lod_bias: 0.0,
-            min_lod: 0.0,
-            max_lod: 0.0,
-        });
-        Samplers { bilinear }
     }
 }
 
@@ -880,14 +841,6 @@ type Gpu = dyn Device + 'static;
 struct DrawState<'gpu> {
     gpu: &'gpu Gpu,
 
-    basic_pipeline: BasicPipeline,
-
-    compute_bind_group_layout: BindGroupLayout,
-    bin_clear_pipeline: Pipeline,
-    bin_pipeline: Pipeline,
-    rasterize_pipeline: Pipeline,
-    display_transform_pipeline: Pipeline,
-
     width: u32,
     height: u32,
 
@@ -898,11 +851,10 @@ struct DrawState<'gpu> {
     color_image: Image,
     ui_image: Image,
 
-    tiles_buffer: Buffer,
-
     glyph_atlas_image: Image,
 
-    _samplers: Samplers,
+    pipelines: Pipelines,
+
     models: Models<'gpu>,
     images: Images,
 
@@ -911,78 +863,12 @@ struct DrawState<'gpu> {
 
 impl<'gpu> DrawState<'gpu> {
     fn new(gpu: &'gpu Gpu, thread_token: &ThreadToken) -> Self {
-        let samplers = Samplers::load(gpu);
-        let immutable_samplers = &[samplers[SamplerRes::Bilinear]];
-
-        let compute_bind_group_layout = gpu.create_bind_group_layout(&[
-            // Samplers
-            BindDesc::with_immutable_samplers(ShaderStageFlags::COMPUTE, immutable_samplers),
-            // Tony mc mapface LUT
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
-            // Glyph Atlas
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::SampledImage),
-            // UI Render Target
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
-            // Color Render Target
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
-            // Composited output
-            BindDesc::new(ShaderStageFlags::COMPUTE, BindingType::StorageImage),
-        ]);
-
-        let compute_pipeline_layout = PipelineLayout {
-            bind_group_layouts: &[compute_bind_group_layout],
-            push_constant_ranges: &[PushConstantRange {
-                stage_flags: ShaderStageFlags::COMPUTE,
-                offset: 0,
-                size: std::mem::size_of::<PrimitiveUniforms>() as u32,
-            }],
-        };
-
-        let bin_clear_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
-            shader: ShaderDesc {
-                entry: c"main",
-                code: shark_shaders::PRIMITIVE_2D_BIN_CLEAR_COMP_SPV,
-            },
-            layout: &compute_pipeline_layout,
-        });
-
-        let bin_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
-            shader: ShaderDesc {
-                entry: c"main",
-                code: shark_shaders::PRIMITIVE_2D_BIN_COMP_SPV,
-            },
-            layout: &compute_pipeline_layout,
-        });
-
-        let rasterize_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
-            shader: ShaderDesc {
-                entry: c"main",
-                code: shark_shaders::PRIMITIVE_2D_RASTERIZE_COMP_SPV,
-            },
-            layout: &compute_pipeline_layout,
-        });
-
-        let display_transform_pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
-            shader: ShaderDesc {
-                entry: c"main",
-                code: shark_shaders::DISPLAY_TRANSFORM_COMP_SPV,
-            },
-            layout: &compute_pipeline_layout,
-        });
-
-        let basic_pipeline = BasicPipeline::new(gpu, immutable_samplers);
-
+        let pipelines = Pipelines::load(gpu);
         let models = Models::load(gpu);
         let images = Images::load(gpu, thread_token);
 
         Self {
             gpu,
-            basic_pipeline,
-            compute_bind_group_layout,
-            bin_clear_pipeline,
-            bin_pipeline,
-            rasterize_pipeline,
-            display_transform_pipeline,
             width: 0,
             height: 0,
             tile_resolution_x: 0,
@@ -990,9 +876,8 @@ impl<'gpu> DrawState<'gpu> {
             depth_image: default(),
             color_image: default(),
             ui_image: default(),
-            tiles_buffer: default(),
             glyph_atlas_image: default(),
-            _samplers: samplers,
+            pipelines,
             models,
             images,
             transforms: vec![],
@@ -1012,7 +897,7 @@ impl<'gpu> DrawState<'gpu> {
         let gpu = self.gpu;
 
         let half_turn_y = Mat3::from_axis_rotation(Vec3::Y, HalfTurn::new(0.5));
-        let scale = Mat3::from_scale(Vec3::splat(0.125));
+        let scale = Mat3::from_scale(Vec3::splat(0.4));
 
         fn rotate_dir(dir: Vec3, up: Vec3) -> Mat3 {
             let f = dir.normalized();
@@ -1103,33 +988,8 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.destroy_image(frame, self.color_image);
                 gpu.destroy_image(frame, self.ui_image);
 
-                let tile_resolution_x = (width + (TILE_SIZE - 1)) / TILE_SIZE;
-                let tile_resolution_y = (height + (TILE_SIZE - 1)) / TILE_SIZE;
-
-                if tile_resolution_x != self.tile_resolution_x
-                    || tile_resolution_y != self.tile_resolution_y
-                {
-                    gpu.destroy_buffer(frame, self.tiles_buffer);
-
-                    let bitmap_buffer_size = tile_resolution_x
-                        * tile_resolution_y
-                        * TILE_STRIDE
-                        * std::mem::size_of::<u32>() as u32;
-
-                    self.tiles_buffer = gpu.create_buffer(&BufferDesc {
-                        memory_location: MemoryLocation::Device,
-                        host_mapped: false,
-                        usage: BufferUsageFlags::STORAGE,
-                        size: bitmap_buffer_size.widen(),
-                    });
-
-                    gpu.debug_name_buffer(self.tiles_buffer.to_arg(), "tile bitmap");
-
-                    println!("tile_resolution: ({tile_resolution_x},{tile_resolution_y})");
-
-                    self.tile_resolution_x = tile_resolution_x;
-                    self.tile_resolution_y = tile_resolution_y;
-                }
+                self.tile_resolution_x = (width + (DRAW_2D_TILE_SIZE - 1)) / DRAW_2D_TILE_SIZE;
+                self.tile_resolution_y = (height + (DRAW_2D_TILE_SIZE - 1)) / DRAW_2D_TILE_SIZE;
 
                 self.depth_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
@@ -1320,88 +1180,97 @@ impl<'gpu> DrawState<'gpu> {
 
             // Render basic stuff.
             {
-                gpu.cmd_set_pipeline(cmd_encoder, self.basic_pipeline.pipeline);
+                let model = &self.models[ModelRes::Shark];
+                let image = self.images[ImageRes::Shark];
 
-                let basic_uniforms = BasicUniforms { clip_from_model };
+                let instance_count = self.transforms.len() as u32;
 
-                let uniform_buffer = gpu.request_transient_buffer_with_data(
+                let transform_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
-                    BufferUsageFlags::UNIFORM,
-                    &basic_uniforms,
+                    BufferUsageFlags::STORAGE,
+                    self.transforms.as_slice(),
                 );
-
-                gpu.cmd_set_bind_group(
-                    frame,
-                    cmd_encoder,
-                    self.basic_pipeline.uniforms_bind_group_layout,
-                    0,
-                    &[Bind {
-                        binding: 0,
-                        array_element: 0,
-                        typed: TypedBind::UniformBuffer(&[uniform_buffer.to_arg()]),
-                    }],
-                );
-
-                {
-                    let model = &self.models[ModelRes::Shark];
-                    let image = self.images[ImageRes::Shark];
-
-                    let transform_buffer = gpu.request_transient_buffer_with_data(
-                        frame,
-                        thread_token,
-                        BufferUsageFlags::STORAGE,
-                        self.transforms.as_slice(),
-                    );
-
-                    gpu.cmd_set_bind_group(
-                        frame,
-                        cmd_encoder,
-                        self.basic_pipeline.storage_bind_group_layout,
-                        1,
-                        &[
-                            Bind {
-                                binding: 0,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(&[model.vertex_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 1,
-                                array_element: 0,
-                                typed: TypedBind::StorageBuffer(&[transform_buffer.to_arg()]),
-                            },
-                            Bind {
-                                binding: 2,
-                                array_element: 0,
-                                typed: TypedBind::SampledImage(&[(ImageLayout::Optimal, image)]),
-                            },
-                        ],
-                    );
-
-                    gpu.cmd_set_index_buffer(
-                        cmd_encoder,
-                        model.index_buffer.to_arg(),
-                        0,
-                        IndexType::U16,
-                    );
-
-                    gpu.cmd_draw_indexed(
-                        cmd_encoder,
-                        model.indices,
-                        self.transforms.len() as u32,
-                        0,
-                        0,
-                        0,
-                    );
-                }
 
                 // We're done with you now!
                 self.transforms.clear();
+
+                let graphics_bind_group = gpu.request_transient_bind_group(
+                    frame,
+                    thread_token,
+                    self.pipelines.graphics_bind_group_layout,
+                    &[Bind {
+                        binding: GraphicsBinds::Albedo as u32,
+                        array_element: 0,
+                        typed: TypedBind::SampledImage(&[(ImageLayout::Optimal, image)]),
+                    }],
+                );
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.basic_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &graphics_bind_group);
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::VERTEX,
+                    0,
+                    &BasicConstants {
+                        clip_from_model,
+                        vertex_buffer_address: gpu.get_buffer_address(model.vertex_buffer.to_arg()),
+                        transform_buffer_address: gpu.get_buffer_address(transform_buffer.to_arg()),
+                    },
+                );
+
+                gpu.cmd_set_index_buffer(
+                    cmd_encoder,
+                    model.index_buffer.to_arg(),
+                    0,
+                    IndexType::U16,
+                );
+
+                gpu.cmd_draw_indexed(cmd_encoder, model.indices, instance_count, 0, 0, 0);
             }
 
             gpu.cmd_end_rendering(cmd_encoder);
 
             gpu.cmd_end_debug_marker(cmd_encoder);
+
+            let compute_bind_group = gpu.request_transient_bind_group(
+                frame,
+                thread_token,
+                self.pipelines.compute_bind_group_layout,
+                &[
+                    Bind {
+                        binding: ComputeBinds::TonyMcMapfaceLut as u32,
+                        array_element: 0,
+                        typed: TypedBind::SampledImage(&[(
+                            ImageLayout::Optimal,
+                            self.images[ImageRes::TonyMcMapfaceLut],
+                        )]),
+                    },
+                    Bind {
+                        binding: ComputeBinds::GlyphAtlas as u32,
+                        array_element: 0,
+                        typed: TypedBind::SampledImage(&[(
+                            ImageLayout::Optimal,
+                            self.glyph_atlas_image,
+                        )]),
+                    },
+                    Bind {
+                        binding: ComputeBinds::UiRenderTarget as u32,
+                        array_element: 0,
+                        typed: TypedBind::StorageImage(&[(ImageLayout::General, self.ui_image)]),
+                    },
+                    Bind {
+                        binding: ComputeBinds::ColorRenderTarget as u32,
+                        array_element: 0,
+                        typed: TypedBind::StorageImage(&[(ImageLayout::General, self.color_image)]),
+                    },
+                    Bind {
+                        binding: ComputeBinds::CompositedRenderTarget as u32,
+                        array_element: 0,
+                        typed: TypedBind::StorageImage(&[(ImageLayout::General, swapchain_image)]),
+                    },
+                ],
+            );
 
             // Render UI
             {
@@ -1411,110 +1280,266 @@ impl<'gpu> DrawState<'gpu> {
                     microshades::PURPLE_RGBA_F32[3],
                 );
 
-                let primitive_instance_buffer = gpu.request_transient_buffer_with_data(
+                let draw_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
-                    ui_state.primitive_instances.as_slice(),
+                    ui_state.draw_cmds.as_slice(),
                 );
+
+                let draw_buffer_len = ui_state.draw_cmds.len() as u32;
+                ui_state.draw_cmds.clear();
+
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
                     touched_glyphs,
                 );
-                let rect_buffer = gpu.request_transient_buffer_with_data(
+
+                const COARSE_BUFFER_LEN: usize = 1 << 18;
+                let coarse_buffer = gpu.request_transient_buffer(
                     frame,
                     thread_token,
                     BufferUsageFlags::STORAGE,
-                    ui_state.rects.as_slice(),
+                    COARSE_BUFFER_LEN * std::mem::size_of::<u32>(),
                 );
 
-                let num_primitives = ui_state.primitive_instances.len() as u32;
-                let num_primitives_32 = (num_primitives + 31) / 32;
-                let num_primitives_1024 = (num_primitives_32 + 31) / 32;
-
-                ui_state.primitive_instances.clear();
-
-                gpu.cmd_set_pipeline(cmd_encoder, self.bin_clear_pipeline);
-
-                gpu.cmd_set_bind_group(
+                let indirect_dispatch_buffer = gpu.request_transient_buffer(
                     frame,
-                    cmd_encoder,
-                    self.compute_bind_group_layout,
-                    0,
-                    &[
-                        Bind {
-                            binding: 1,
-                            array_element: 0,
-                            typed: TypedBind::SampledImage(&[(
-                                ImageLayout::Optimal,
-                                self.images[ImageRes::TonyMcMapfaceLut],
-                            )]),
-                        },
-                        Bind {
-                            binding: 2,
-                            array_element: 0,
-                            typed: TypedBind::SampledImage(&[(
-                                ImageLayout::Optimal,
-                                self.glyph_atlas_image,
-                            )]),
-                        },
-                        Bind {
-                            binding: 3,
-                            array_element: 0,
-                            typed: TypedBind::StorageImage(&[(
-                                ImageLayout::General,
-                                self.ui_image,
-                            )]),
-                        },
-                        Bind {
-                            binding: 4,
-                            array_element: 0,
-                            typed: TypedBind::StorageImage(&[(
-                                ImageLayout::General,
-                                self.color_image,
-                            )]),
-                        },
-                        Bind {
-                            binding: 5,
-                            array_element: 0,
-                            typed: TypedBind::StorageImage(&[(
-                                ImageLayout::General,
-                                swapchain_image,
-                            )]),
-                        },
-                    ],
+                    thread_token,
+                    BufferUsageFlags::INDIRECT,
+                    3 * std::mem::size_of::<u32>(),
                 );
 
+                let sort_tmp_buffer = gpu.request_transient_buffer(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    COARSE_BUFFER_LEN * std::mem::size_of::<u32>(),
+                );
+
+                let spine_buffer = gpu.request_transient_buffer(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    (COARSE_BUFFER_LEN / (32 * 16)) * 256 * std::mem::size_of::<u32>(), // TODO: Fix size
+                );
+
+                let draw_buffer_address = gpu.get_buffer_address(draw_buffer.to_arg());
+                let glyph_buffer_address = gpu.get_buffer_address(glyph_buffer.to_arg());
+                let coarse_buffer_address = gpu.get_buffer_address(coarse_buffer.to_arg());
+                let indirect_dispatch_buffer_address =
+                    gpu.get_buffer_address(indirect_dispatch_buffer.to_arg());
+                let sort_tmp_buffer_address = gpu.get_buffer_address(sort_tmp_buffer.to_arg());
+                let spine_buffer_address = gpu.get_buffer_address(spine_buffer.to_arg());
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_0_clear_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
                 gpu.cmd_push_constants(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
-                    &PrimitiveUniforms {
+                    &Draw2dClearConstants {
+                        coarse_buffer_address,
+                    },
+                );
+                gpu.cmd_dispatch(cmd_encoder, 1, 1, 1);
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    Some(&GlobalBarrier {
+                        prev_access: &[Access::ComputeWrite],
+                        next_access: &[Access::ComputeOtherRead],
+                    }),
+                    &[],
+                );
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_1_scatter_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
+                    &Draw2dScatterConstants {
                         screen_resolution_x: self.width,
                         screen_resolution_y: self.height,
-                        atlas_resolution_x: atlas_width,
-                        atlas_resolution_y: atlas_height,
-                        num_primitives,
-                        num_primitives_32,
-                        num_primitives_1024,
                         tile_resolution_x: self.tile_resolution_x,
                         tile_resolution_y: self.tile_resolution_y,
-                        tile_stride: self.tile_resolution_x,
-                        primitives_instances_buffer: gpu
-                            .get_buffer_address(primitive_instance_buffer.to_arg()),
-                        glyphs_buffer: gpu.get_buffer_address(glyph_buffer.to_arg()),
-                        rects_buffer: gpu.get_buffer_address(rect_buffer.to_arg()),
-                        tiles_buffer: gpu.get_buffer_address(self.tiles_buffer.to_arg()),
+                        draw_buffer_len,
+                        coarse_buffer_len: COARSE_BUFFER_LEN as u32,
+                        draw_buffer_address,
+                        glyph_buffer_address,
+                        coarse_buffer_address,
                     },
                 );
 
+                for _ in 0..4 {
+                    gpu.cmd_dispatch(
+                        cmd_encoder,
+                        (draw_buffer_len
+                            + (self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size - 1))
+                            / self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size,
+                        1,
+                        1,
+                    );
+                }
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    Some(&GlobalBarrier {
+                        prev_access: &[Access::ComputeWrite],
+                        next_access: &[Access::ComputeOtherRead],
+                    }),
+                    &[],
+                );
+
+                // let mut sort_data = Vec::new();
+                // let count = 8192u32;
+                // sort_data.push(count);
+                // for i in 0..count {
+                //     sort_data.push(255 - i / 32);
+                // }
+
+                // let sort_buffer = gpu.request_transient_buffer_with_data(
+                //     frame,
+                //     thread_token,
+                //     BufferUsageFlags::STORAGE,
+                //     sort_data.as_slice(),
+                // );
+                // let sort_buffer_address = gpu.get_buffer_address(sort_buffer.to_arg());
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_2_sort_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
+                    &Draw2dSortConstants {
+                        // -1 due to the count taking up a single slot in the buffer.
+                        coarse_buffer_len: COARSE_BUFFER_LEN as u32 - 1,
+                        _pad: 0,
+                        indirect_dispatch_buffer_address,
+                        coarse_buffer_address,
+                    },
+                );
+                gpu.cmd_dispatch(cmd_encoder, 1, 1, 1);
+
+                gpu.cmd_barrier(
+                    cmd_encoder,
+                    Some(&GlobalBarrier {
+                        prev_access: &[Access::ComputeWrite],
+                        next_access: &[Access::ComputeOtherRead, Access::IndirectBuffer],
+                    }),
+                    &[],
+                );
+
+                gpu.cmd_begin_debug_marker(
+                    cmd_encoder,
+                    "radix sort",
+                    microshades::ORANGE_RGBA_F32[2],
+                );
+
+                // First element in the scratch buffer is the count.
+                let count_buffer_address = coarse_buffer_address;
+                // Then the elements we want to sort follow.
+                let mut src_buffer_address = count_buffer_address.byte_add(4);
+                let mut dst_buffer_address = sort_tmp_buffer_address;
+
+                for pass in 0..4 {
+                    let shift = pass * 8;
+
+                    // Upsweep
+                    gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.radix_sort_0_upsweep_pipeline);
+                    gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                    gpu.cmd_push_constants(
+                        cmd_encoder,
+                        ShaderStageFlags::COMPUTE,
+                        0,
+                        &RadixSortUpsweepConstants {
+                            shift,
+                            _pad: 0,
+                            count_buffer_address,
+                            src_buffer_address,
+                            spine_buffer_address,
+                        },
+                    );
+                    gpu.cmd_dispatch_indirect(cmd_encoder, indirect_dispatch_buffer.to_arg(), 0);
+
+                    gpu.cmd_barrier(
+                        cmd_encoder,
+                        Some(&GlobalBarrier {
+                            prev_access: &[Access::ComputeWrite],
+                            next_access: &[Access::ComputeOtherRead],
+                        }),
+                        &[],
+                    );
+
+                    // Exclusive sum of the spine
+                    gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.radix_sort_1_spine_pipeline);
+                    gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                    gpu.cmd_push_constants(
+                        cmd_encoder,
+                        ShaderStageFlags::COMPUTE,
+                        0,
+                        &RadixSortSpineConstants {
+                            count_buffer_address,
+                            spine_buffer_address,
+                        },
+                    );
+                    gpu.cmd_dispatch(cmd_encoder, 1, 1, 1);
+
+                    gpu.cmd_barrier(
+                        cmd_encoder,
+                        Some(&GlobalBarrier {
+                            prev_access: &[Access::ComputeWrite],
+                            next_access: &[Access::ComputeOtherRead],
+                        }),
+                        &[],
+                    );
+
+                    // Downsweep
+                    gpu.cmd_set_pipeline(
+                        cmd_encoder,
+                        self.pipelines.radix_sort_2_downsweep_pipeline,
+                    );
+                    gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                    gpu.cmd_push_constants(
+                        cmd_encoder,
+                        ShaderStageFlags::COMPUTE,
+                        0,
+                        &RadixSortDownsweepConstants {
+                            shift,
+                            _pad: 0,
+                            count_buffer_address,
+                            src_buffer_address,
+                            dst_buffer_address,
+                            spine_buffer_address,
+                        },
+                    );
+                    gpu.cmd_dispatch_indirect(cmd_encoder, indirect_dispatch_buffer.to_arg(), 0);
+
+                    gpu.cmd_barrier(
+                        cmd_encoder,
+                        Some(&GlobalBarrier {
+                            prev_access: &[Access::ComputeWrite],
+                            next_access: &[Access::ComputeOtherRead],
+                        }),
+                        &[],
+                    );
+
+                    std::mem::swap(&mut src_buffer_address, &mut dst_buffer_address);
+                }
+
+                gpu.cmd_end_debug_marker(cmd_encoder);
+
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_3_resolve_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    (num_primitives_1024 + 63) / 64,
                     self.tile_resolution_x,
                     self.tile_resolution_y,
+                    1,
                 );
 
                 gpu.cmd_barrier(
@@ -1526,21 +1551,8 @@ impl<'gpu> DrawState<'gpu> {
                     &[],
                 );
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.bin_pipeline);
-
-                gpu.cmd_dispatch(cmd_encoder, (num_primitives + 1023) / 1024, 1, 1);
-
-                gpu.cmd_barrier(
-                    cmd_encoder,
-                    Some(&GlobalBarrier {
-                        prev_access: &[Access::ComputeWrite],
-                        next_access: &[Access::ComputeOtherRead],
-                    }),
-                    &[],
-                );
-
-                gpu.cmd_set_pipeline(cmd_encoder, self.rasterize_pipeline);
-
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_rasterize_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
                 gpu.cmd_end_debug_marker(cmd_encoder);
@@ -1579,7 +1591,8 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
 
-                gpu.cmd_set_pipeline(cmd_encoder, self.display_transform_pipeline);
+                gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.composite_pipeline);
+                gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
 
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 

@@ -1,0 +1,49 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_control_flow_attributes : require
+
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_shuffle_relative: enable
+#extension GL_KHR_shader_subgroup_vote : require
+
+#include "compute_bindings.h"
+
+#include "draw_2d.h"
+#include "indirect.h"
+#include "radix_sort.h"
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer VkDispatchIndirectCommandRef {
+    VkDispatchIndirectCommand dimensions;
+};
+
+struct Draw2dSortConstants {
+    uint coarse_buffer_len;
+    uint _pad;
+    VkDispatchIndirectCommandRef indirect_dispatch_buffer;
+    CoarseRef coarse_buffer;
+};
+
+layout(std430, push_constant) uniform Draw2dSortConstantsBlock {
+    Draw2dSortConstants constants;
+};
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    // We shouldn't overflow the coarse buffer in the scatter phase, but we can
+    // still end up with a count that's larger than the buffer size since we
+    // unconditionally atomicAdd. So we need to clamp to the actual size now
+    // before dispatching sort work.
+    const uint count = min(constants.coarse_buffer_len, constants.coarse_buffer.values[0]);
+    constants.coarse_buffer.values[0] = count;
+
+    constants.indirect_dispatch_buffer.dimensions.x = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
+    constants.indirect_dispatch_buffer.dimensions.y = 1;
+    constants.indirect_dispatch_buffer.dimensions.z = 1;
+}

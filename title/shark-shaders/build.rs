@@ -20,19 +20,39 @@ const SHADERS: &[Shader] = &[
     },
     Shader {
         stage: "comp",
-        name: "primitive_2d_bin",
+        name: "draw_2d_bin_0_clear",
     },
     Shader {
         stage: "comp",
-        name: "primitive_2d_bin_clear",
+        name: "draw_2d_bin_1_scatter",
     },
     Shader {
         stage: "comp",
-        name: "primitive_2d_rasterize",
+        name: "draw_2d_bin_2_sort",
     },
     Shader {
         stage: "comp",
-        name: "display_transform",
+        name: "draw_2d_bin_3_resolve",
+    },
+    Shader {
+        stage: "comp",
+        name: "draw_2d_rasterize",
+    },
+    Shader {
+        stage: "comp",
+        name: "radix_sort_0_upsweep",
+    },
+    Shader {
+        stage: "comp",
+        name: "radix_sort_1_spine",
+    },
+    Shader {
+        stage: "comp",
+        name: "radix_sort_2_downsweep",
+    },
+    Shader {
+        stage: "comp",
+        name: "composite",
     },
 ];
 

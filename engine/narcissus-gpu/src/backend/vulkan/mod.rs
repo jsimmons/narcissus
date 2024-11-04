@@ -9,21 +9,22 @@ use std::{
 };
 
 use narcissus_core::{
-    box_assume_init, default, is_aligned_to,
+    default, is_aligned_to,
     manual_arc::{self, ManualArc},
     raw_window::AsRawWindow,
-    zeroed_box, Arc, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
+    Arc, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
-use vulkan_sys as vk;
+use vulkan_sys::{self as vk};
 
 use crate::{
-    frame_counter::FrameCounter, Bind, BindDesc, BindGroupLayout, BindingType, Buffer, BufferArg,
-    BufferDesc, BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device,
-    Extent2d, Extent3d, Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image,
-    ImageBarrier, ImageBlit, ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc,
-    IndexType, MemoryLocation, Offset2d, Offset3d, PersistentBuffer, Pipeline, PipelineLayout,
-    Sampler, SamplerAddressMode, SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags,
+    frame_counter::FrameCounter, mapped_buffer::TransientBindGroup, Bind, BindDesc,
+    BindGroupLayout, BindingType, Buffer, BufferAddress, BufferArg, BufferDesc, BufferImageCopy,
+    BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d, Frame,
+    GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit, ImageDesc,
+    ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation, Offset2d,
+    Offset3d, PersistentBuffer, Pipeline, PipelineLayout, Sampler, SamplerAddressMode,
+    SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, SpecConstant,
     SwapchainConfigurator, SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer,
     TypedBind,
 };
@@ -384,12 +385,13 @@ pub(crate) struct VulkanDevice {
     physical_device_properties: Box<vk::PhysicalDeviceProperties2>,
     _physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties>,
     _physical_device_properties_12: Box<vk::PhysicalDeviceVulkan12Properties>,
-    _physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties>,
+    physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties>,
+    physical_device_memory_properties: Box<vk::PhysicalDeviceMemoryProperties>,
+
     _physical_device_features: Box<vk::PhysicalDeviceFeatures2>,
     _physical_device_features_11: Box<vk::PhysicalDeviceVulkan11Features>,
     _physical_device_features_12: Box<vk::PhysicalDeviceVulkan12Features>,
     _physical_device_features_13: Box<vk::PhysicalDeviceVulkan13Features>,
-    physical_device_memory_properties: Box<vk::PhysicalDeviceMemoryProperties>,
 
     _global_fn: vk::GlobalFunctions,
     instance_fn: vk::InstanceFunctions,
@@ -508,53 +510,31 @@ impl VulkanDevice {
             instance_fn.enumerate_physical_devices(instance, count, ptr)
         });
 
-        let mut physical_device_properties =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceProperties2>()) };
-        let mut physical_device_properties_11 =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan11Properties>()) };
-        let mut physical_device_properties_12 =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan12Properties>()) };
-        let mut physical_device_properties_13 =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan13Properties>()) };
+        let mut physical_device_properties: Box<vk::PhysicalDeviceProperties2> = default();
+        let mut physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties> =
+            default();
+        let mut physical_device_properties_12: Box<vk::PhysicalDeviceVulkan12Properties> =
+            default();
+        let mut physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties> =
+            default();
 
-        physical_device_properties._type = vk::StructureType::PhysicalDeviceProperties2;
-        physical_device_properties_11._type = vk::StructureType::PhysicalDeviceVulkan11Properties;
-        physical_device_properties_12._type = vk::StructureType::PhysicalDeviceVulkan12Properties;
-        physical_device_properties_13._type = vk::StructureType::PhysicalDeviceVulkan13Properties;
+        physical_device_properties_12._next =
+            physical_device_properties_13.as_mut() as *mut _ as *mut _;
+        physical_device_properties_11._next =
+            physical_device_properties_12.as_mut() as *mut _ as *mut _;
+        physical_device_properties._next =
+            physical_device_properties_11.as_mut() as *mut _ as *mut _;
 
-        physical_device_properties_12._next = physical_device_properties_13.as_mut()
-            as *mut vk::PhysicalDeviceVulkan13Properties
-            as *mut _;
-        physical_device_properties_11._next = physical_device_properties_12.as_mut()
-            as *mut vk::PhysicalDeviceVulkan12Properties
-            as *mut _;
-        physical_device_properties._next = physical_device_properties_11.as_mut()
-            as *mut vk::PhysicalDeviceVulkan11Properties
-            as *mut _;
+        let mut physical_device_features: Box<vk::PhysicalDeviceFeatures2> = default();
+        let mut physical_device_features_11: Box<vk::PhysicalDeviceVulkan11Features> = default();
+        let mut physical_device_features_12: Box<vk::PhysicalDeviceVulkan12Features> = default();
+        let mut physical_device_features_13: Box<vk::PhysicalDeviceVulkan13Features> = default();
 
-        let mut physical_device_features =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceFeatures2>()) };
-        let mut physical_device_features_11 =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan11Features>()) };
-        let mut physical_device_features_12 =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan12Features>()) };
-        let mut physical_device_features_13 =
-            unsafe { box_assume_init(zeroed_box::<vk::PhysicalDeviceVulkan13Features>()) };
-
-        physical_device_features._type = vk::StructureType::PhysicalDeviceFeatures2;
-        physical_device_features_11._type = vk::StructureType::PhysicalDeviceVulkan11Features;
-        physical_device_features_12._type = vk::StructureType::PhysicalDeviceVulkan12Features;
-        physical_device_features_13._type = vk::StructureType::PhysicalDeviceVulkan13Features;
-
-        physical_device_features_12._next = physical_device_features_13.as_mut()
-            as *mut vk::PhysicalDeviceVulkan13Features
-            as *mut _;
-        physical_device_features_11._next = physical_device_features_12.as_mut()
-            as *mut vk::PhysicalDeviceVulkan12Features
-            as *mut _;
-        physical_device_features._next = physical_device_features_11.as_mut()
-            as *mut vk::PhysicalDeviceVulkan11Features
-            as *mut _;
+        physical_device_features_12._next =
+            physical_device_features_13.as_mut() as *mut _ as *mut _;
+        physical_device_features_11._next =
+            physical_device_features_12.as_mut() as *mut _ as *mut _;
+        physical_device_features._next = physical_device_features_11.as_mut() as *mut _ as *mut _;
 
         let physical_device = physical_devices
             .iter()
@@ -573,6 +553,9 @@ impl VulkanDevice {
 
                 physical_device_properties.properties.api_version >= vk::VERSION_1_3
                     && physical_device_features_13.dynamic_rendering == vk::Bool32::True
+                    && physical_device_features_13.subgroup_size_control == vk::Bool32::True
+                    && physical_device_features_13.maintenance4 == vk::Bool32::True
+                    && physical_device_features_13.compute_full_subgroups == vk::Bool32::True
                     && physical_device_features_12.timeline_semaphore == vk::Bool32::True
                     && physical_device_features_12.descriptor_indexing == vk::Bool32::True
                     && physical_device_features_12.descriptor_binding_partially_bound
@@ -636,6 +619,9 @@ impl VulkanDevice {
             let enabled_features_13 = vk::PhysicalDeviceVulkan13Features {
                 dynamic_rendering: vk::Bool32::True,
                 synchronization2: vk::Bool32::True,
+                subgroup_size_control: vk::Bool32::True,
+                compute_full_subgroups: vk::Bool32::True,
+                maintenance4: vk::Bool32::True,
                 ..default()
             };
             let enabled_features_12 = vk::PhysicalDeviceVulkan12Features {
@@ -790,12 +776,13 @@ impl VulkanDevice {
             physical_device_properties,
             _physical_device_properties_11: physical_device_properties_11,
             _physical_device_properties_12: physical_device_properties_12,
-            _physical_device_properties_13: physical_device_properties_13,
+            physical_device_properties_13,
+            physical_device_memory_properties,
+
             _physical_device_features: physical_device_features,
             _physical_device_features_11: physical_device_features_11,
             _physical_device_features_12: physical_device_features_12,
             _physical_device_features_13: physical_device_features_13,
-            physical_device_memory_properties,
 
             _global_fn: global_fn,
             instance_fn,
@@ -1251,8 +1238,8 @@ impl Device for VulkanDevice {
             hasher.update(&bind_desc.count.to_le_bytes());
         }
 
-        let layout_bindings =
-            arena.alloc_slice_fill_iter(binds_desc.iter().enumerate().map(|(i, bind_desc)| {
+        let layout_bindings: &mut [vulkan_sys::DescriptorSetLayoutBinding] = arena
+            .alloc_slice_fill_iter(binds_desc.iter().enumerate().map(|(i, bind_desc)| {
                 let immutable_samplers = if !bind_desc.immutable_samplers.is_empty() {
                     assert_eq!(
                         bind_desc.binding_type,
@@ -1323,7 +1310,7 @@ impl Device for VulkanDevice {
     }
 
     fn create_graphics_pipeline(&self, pipeline_desc: &GraphicsPipelineDesc) -> Pipeline {
-        let pipeline_layout = self.cache_pipeline_layout(pipeline_desc.layout);
+        let pipeline_layout = self.cache_pipeline_layout(&pipeline_desc.layout);
 
         let arena = HybridArena::<1024>::new();
 
@@ -1336,6 +1323,17 @@ impl Device for VulkanDevice {
             &self.device_fn,
             self.device,
             pipeline_desc.fragment_shader.code,
+        );
+
+        assert!(
+            !(pipeline_desc.vertex_shader.required_subgroup_size.is_some()
+                || pipeline_desc
+                    .fragment_shader
+                    .required_subgroup_size
+                    .is_some()
+                || pipeline_desc.vertex_shader.allow_varying_subgroup_size
+                || pipeline_desc.fragment_shader.allow_varying_subgroup_size),
+            "subgroup size control features not implemented for graphics shader stages"
         );
 
         let stages = &[
@@ -1492,28 +1490,137 @@ impl Device for VulkanDevice {
     }
 
     fn create_compute_pipeline(&self, pipeline_desc: &ComputePipelineDesc) -> Pipeline {
-        let pipeline_layout = self.cache_pipeline_layout(pipeline_desc.layout);
+        let arena = HybridArena::<1024>::new();
+
+        let pipeline_layout = self.cache_pipeline_layout(&pipeline_desc.layout);
 
         let module = vulkan_shader_module(&self.device_fn, self.device, pipeline_desc.shader.code);
 
-        let stage = vk::PipelineShaderStageCreateInfo {
-            stage: vk::ShaderStageFlags::COMPUTE,
-            name: pipeline_desc.shader.entry.as_ptr(),
-            module,
-            ..default()
-        };
+        let mut shader_stage_create_flags = default();
 
-        let create_infos = &[vk::ComputePipelineCreateInfo {
+        if pipeline_desc.shader.require_full_subgroups {
+            shader_stage_create_flags |= vk::PipelineShaderStageCreateFlags::REQUIRE_FULL_SUBGROUPS
+        }
+
+        if pipeline_desc.shader.allow_varying_subgroup_size {
+            shader_stage_create_flags |=
+                vk::PipelineShaderStageCreateFlags::ALLOW_VARYING_SUBGROUP_SIZE;
+        }
+
+        let specialization_info: Option<&vk::SpecializationInfo> =
+            if !pipeline_desc.shader.spec_constants.is_empty() {
+                let block_len = pipeline_desc
+                    .shader
+                    .spec_constants
+                    .iter()
+                    .map(|spec_constant| match spec_constant {
+                        SpecConstant::Bool { id: _, value: _ }
+                        | SpecConstant::U32 { id: _, value: _ }
+                        | SpecConstant::I32 { id: _, value: _ }
+                        | SpecConstant::F32 { id: _, value: _ } => 4,
+                    })
+                    .sum::<usize>();
+
+                let block = arena.alloc_slice_fill_copy(block_len, 0u8);
+
+                let mut offset = 0;
+                let map_entries =
+                    arena.alloc_slice_fill_iter(pipeline_desc.shader.spec_constants.iter().map(
+                        |spec_constant| {
+                            let constant_id;
+                            let value_size;
+                            match *spec_constant {
+                                SpecConstant::Bool { id, value } => {
+                                    constant_id = id;
+                                    let value = if value {
+                                        vk::Bool32::True
+                                    } else {
+                                        vk::Bool32::False
+                                    } as u32;
+                                    value_size = std::mem::size_of_val(&value);
+                                    block[offset..offset + value_size]
+                                        .copy_from_slice(&value.to_ne_bytes())
+                                }
+                                SpecConstant::U32 { id, value } => {
+                                    constant_id = id;
+                                    value_size = std::mem::size_of_val(&value);
+                                    block[offset..offset + value_size]
+                                        .copy_from_slice(&value.to_ne_bytes());
+                                }
+                                SpecConstant::I32 { id, value } => {
+                                    constant_id = id;
+                                    value_size = std::mem::size_of_val(&value);
+                                    block[offset..offset + value_size]
+                                        .copy_from_slice(&value.to_ne_bytes());
+                                }
+                                SpecConstant::F32 { id, value } => {
+                                    constant_id = id;
+                                    value_size = std::mem::size_of_val(&value);
+                                    block[offset..offset + value_size]
+                                        .copy_from_slice(&value.to_ne_bytes());
+                                }
+                            }
+
+                            let map_entry = vk::SpecializationMapEntry {
+                                constant_id,
+                                offset: offset as u32,
+                                size: value_size,
+                            };
+
+                            offset += value_size;
+
+                            map_entry
+                        },
+                    ));
+
+                Some(arena.alloc(vk::SpecializationInfo {
+                    data: block.into(),
+                    map_entries: map_entries.into(),
+                }))
+            } else {
+                None
+            };
+
+        let compute_pipeline_create_info = arena.alloc(vk::ComputePipelineCreateInfo {
             layout: pipeline_layout.pipeline_layout,
-            stage,
+            stage: vk::PipelineShaderStageCreateInfo {
+                stage: vk::ShaderStageFlags::COMPUTE,
+                name: pipeline_desc.shader.entry.as_ptr(),
+                module,
+                flags: shader_stage_create_flags,
+                specialization_info,
+                ..default()
+            },
             ..default()
-        }];
+        });
+
+        if let Some(required_subgroup_size) = pipeline_desc.shader.required_subgroup_size {
+            assert!(self
+                .physical_device_properties_13
+                .required_subgroup_size_stages
+                .contains(vk::ShaderStageFlags::COMPUTE));
+            assert!(
+                required_subgroup_size >= self.physical_device_properties_13.min_subgroup_size
+                    && required_subgroup_size
+                        <= self.physical_device_properties_13.max_subgroup_size
+            );
+
+            let shader_stage_required_subgroup_size_create_info =
+                arena.alloc(vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo {
+                    required_subgroup_size,
+                    ..default()
+                });
+
+            // SAFETY: Both are arena allocations and therefore have identical lifetimes.
+            compute_pipeline_create_info.stage._next =
+                shader_stage_required_subgroup_size_create_info as *const _ as *const _;
+        }
 
         let mut pipelines = [vk::Pipeline::null()];
         vk_check!(self.device_fn.create_compute_pipelines(
             self.device,
             vk::PipelineCache::null(),
-            create_infos,
+            std::slice::from_ref(compute_pipeline_create_info),
             None,
             &mut pipelines
         ));
@@ -1606,6 +1713,71 @@ impl Device for VulkanDevice {
             let image_view_name_info = vk::DebugUtilsObjectNameInfoExt {
                 object_type: vk::ObjectType::ImageView,
                 object_handle: image_view_handle,
+                object_name: object_name.as_ptr(),
+                ..default()
+            };
+            unsafe {
+                debug_utils_fn.set_debug_utils_object_name_ext(self.device, &image_view_name_info)
+            }
+        }
+    }
+
+    fn debug_name_bind_group_layout(&self, bind_group_layout: BindGroupLayout, name: &str) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let descriptor_set_layout;
+            {
+                let bind_group_layout_pool = self.bind_group_layout_pool.lock();
+                let Some(bind_group_layout) = bind_group_layout_pool.get(bind_group_layout.0)
+                else {
+                    return;
+                };
+
+                descriptor_set_layout = bind_group_layout.descriptor_set_layout;
+            }
+
+            let arena = HybridArena::<512>::new();
+            let object_name = arena.alloc_cstr_from_str(name);
+
+            let image_name_info = vk::DebugUtilsObjectNameInfoExt {
+                object_type: vk::ObjectType::DescriptorSetLayout,
+                object_handle: descriptor_set_layout.as_raw(),
+                object_name: object_name.as_ptr(),
+                ..default()
+            };
+            unsafe { debug_utils_fn.set_debug_utils_object_name_ext(self.device, &image_name_info) }
+        }
+    }
+
+    fn debug_name_pipeline(&self, pipeline: Pipeline, name: &str) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let pipeline_handle;
+            let pipeline_layout_handle;
+            {
+                let pipeline_pool = self.pipeline_pool.lock();
+                let Some(pipeline) = pipeline_pool.get(pipeline.0) else {
+                    return;
+                };
+
+                pipeline_handle = pipeline.pipeline;
+                pipeline_layout_handle = pipeline.pipeline_layout.pipeline_layout;
+            }
+
+            let arena = HybridArena::<512>::new();
+            let object_name = arena.alloc_cstr_from_str(name);
+
+            let image_name_info = vk::DebugUtilsObjectNameInfoExt {
+                object_type: vk::ObjectType::Pipeline,
+                object_handle: pipeline_handle.as_raw(),
+                object_name: object_name.as_ptr(),
+                ..default()
+            };
+            unsafe { debug_utils_fn.set_debug_utils_object_name_ext(self.device, &image_name_info) }
+
+            let image_view_name_info = vk::DebugUtilsObjectNameInfoExt {
+                object_type: vk::ObjectType::PipelineLayout,
+                object_handle: pipeline_layout_handle.as_raw(),
                 object_name: object_name.as_ptr(),
                 ..default()
             };
@@ -1733,118 +1905,13 @@ impl Device for VulkanDevice {
         self.request_transient_buffer(frame, thread_token, usage, size as u64)
     }
 
-    fn request_cmd_encoder<'a, 'thread>(
+    fn request_transient_bind_group<'a>(
         &self,
-        frame: &'a Frame,
+        frame: &'a Frame<'a>,
         thread_token: &'a ThreadToken,
-    ) -> CmdEncoder<'a> {
-        let frame = self.frame(frame);
-        let per_thread = frame.per_thread.get(thread_token);
-        let mut cmd_buffer_pool = per_thread.cmd_buffer_pool.borrow_mut();
-
-        // We have consumed all available command buffers, need to allocate a new one.
-        if cmd_buffer_pool.next_free_index >= cmd_buffer_pool.command_buffers.len() {
-            let mut cmd_buffers = [vk::CommandBuffer::null(); 4];
-            let allocate_info = vk::CommandBufferAllocateInfo {
-                command_pool: cmd_buffer_pool.command_pool,
-                level: vk::CommandBufferLevel::Primary,
-                command_buffer_count: cmd_buffers.len() as u32,
-                ..default()
-            };
-            vk_check!(self.device_fn.allocate_command_buffers(
-                self.device,
-                &allocate_info,
-                cmd_buffers.as_mut_ptr()
-            ));
-            cmd_buffer_pool.command_buffers.extend(cmd_buffers.iter());
-        }
-
-        let index = cmd_buffer_pool.next_free_index;
-        cmd_buffer_pool.next_free_index += 1;
-        let command_buffer = cmd_buffer_pool.command_buffers[index];
-
-        vk_check!(self.device_fn.begin_command_buffer(
-            command_buffer,
-            &vk::CommandBufferBeginInfo {
-                flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-                ..default()
-            }
-        ));
-
-        let vulkan_cmd_encoder = per_thread.arena.alloc(VulkanCmdEncoder {
-            command_buffer,
-            ..default()
-        });
-
-        CmdEncoder {
-            cmd_encoder_addr: vulkan_cmd_encoder as *mut _ as usize,
-            thread_token,
-            phantom_unsend: PhantomUnsend {},
-        }
-    }
-
-    fn cmd_insert_debug_marker(
-        &self,
-        cmd_encoder: &mut CmdEncoder,
-        label_name: &str,
-        color: [f32; 4],
-    ) {
-        #[cfg(feature = "debug_markers")]
-        if let Some(debug_utils_fn) = &self.debug_utils_fn {
-            let arena = HybridArena::<256>::new();
-            let label_name = arena.alloc_cstr_from_str(label_name);
-
-            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-            let label_info = vk::DebugUtilsLabelExt {
-                label_name: label_name.as_ptr(),
-                color,
-                ..default()
-            };
-            unsafe {
-                debug_utils_fn.cmd_insert_debug_utils_label_ext(command_buffer, &label_info);
-            }
-        }
-    }
-
-    fn cmd_begin_debug_marker(
-        &self,
-        cmd_encoder: &mut CmdEncoder,
-        label_name: &str,
-        color: [f32; 4],
-    ) {
-        #[cfg(feature = "debug_markers")]
-        if let Some(debug_utils_fn) = &self.debug_utils_fn {
-            let arena = HybridArena::<256>::new();
-            let label_name = arena.alloc_cstr_from_str(label_name);
-
-            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-            let label_info = vk::DebugUtilsLabelExt {
-                label_name: label_name.as_ptr(),
-                color,
-                ..default()
-            };
-            unsafe {
-                debug_utils_fn.cmd_begin_debug_utils_label_ext(command_buffer, &label_info);
-            }
-        }
-    }
-
-    fn cmd_end_debug_marker(&self, cmd_encoder: &mut CmdEncoder) {
-        #[cfg(feature = "debug_markers")]
-        if let Some(debug_utils_fn) = &self.debug_utils_fn {
-            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
-            unsafe { debug_utils_fn.cmd_end_debug_utils_label_ext(command_buffer) }
-        }
-    }
-
-    fn cmd_set_bind_group(
-        &self,
-        frame: &Frame,
-        cmd_encoder: &mut CmdEncoder,
         layout: BindGroupLayout,
-        bind_group_index: u32,
         bindings: &[Bind],
-    ) {
+    ) -> TransientBindGroup<'a> {
         let arena = HybridArena::<4096>::new();
 
         let descriptor_set_layout = self
@@ -1855,7 +1922,7 @@ impl Device for VulkanDevice {
             .descriptor_set_layout;
 
         let frame = self.frame(frame);
-        let per_thread = frame.per_thread.get(cmd_encoder.thread_token);
+        let per_thread = frame.per_thread.get(thread_token);
 
         let mut descriptor_pool = per_thread.descriptor_pool.get();
         let mut allocated_pool = false;
@@ -2006,23 +2073,137 @@ impl Device for VulkanDevice {
                 .update_descriptor_sets(self.device, write_descriptors, &[])
         };
 
+        TransientBindGroup {
+            bind_group: descriptor_set.as_raw(),
+            phantom: PhantomData,
+        }
+    }
+
+    fn request_cmd_encoder<'a, 'thread>(
+        &self,
+        frame: &'a Frame,
+        thread_token: &'a ThreadToken,
+    ) -> CmdEncoder<'a> {
+        let frame = self.frame(frame);
+        let per_thread = frame.per_thread.get(thread_token);
+        let mut cmd_buffer_pool = per_thread.cmd_buffer_pool.borrow_mut();
+
+        // We have consumed all available command buffers, need to allocate a new one.
+        if cmd_buffer_pool.next_free_index >= cmd_buffer_pool.command_buffers.len() {
+            let mut cmd_buffers = [vk::CommandBuffer::null(); 4];
+            let allocate_info = vk::CommandBufferAllocateInfo {
+                command_pool: cmd_buffer_pool.command_pool,
+                level: vk::CommandBufferLevel::Primary,
+                command_buffer_count: cmd_buffers.len() as u32,
+                ..default()
+            };
+            vk_check!(self.device_fn.allocate_command_buffers(
+                self.device,
+                &allocate_info,
+                cmd_buffers.as_mut_ptr()
+            ));
+            cmd_buffer_pool.command_buffers.extend(cmd_buffers.iter());
+        }
+
+        let index = cmd_buffer_pool.next_free_index;
+        cmd_buffer_pool.next_free_index += 1;
+        let command_buffer = cmd_buffer_pool.command_buffers[index];
+
+        vk_check!(self.device_fn.begin_command_buffer(
+            command_buffer,
+            &vk::CommandBufferBeginInfo {
+                flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+                ..default()
+            }
+        ));
+
+        let vulkan_cmd_encoder = per_thread.arena.alloc(VulkanCmdEncoder {
+            command_buffer,
+            ..default()
+        });
+
+        CmdEncoder {
+            cmd_encoder_addr: vulkan_cmd_encoder as *mut _ as usize,
+            phantom: PhantomData,
+            phantom_unsend: PhantomUnsend {},
+        }
+    }
+
+    fn cmd_insert_debug_marker(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        label_name: &str,
+        color: [f32; 4],
+    ) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let arena = HybridArena::<256>::new();
+            let label_name = arena.alloc_cstr_from_str(label_name);
+
+            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+            let label_info = vk::DebugUtilsLabelExt {
+                label_name: label_name.as_ptr(),
+                color,
+                ..default()
+            };
+            unsafe {
+                debug_utils_fn.cmd_insert_debug_utils_label_ext(command_buffer, &label_info);
+            }
+        }
+    }
+
+    fn cmd_begin_debug_marker(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        label_name: &str,
+        color: [f32; 4],
+    ) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let arena = HybridArena::<256>::new();
+            let label_name = arena.alloc_cstr_from_str(label_name);
+
+            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+            let label_info = vk::DebugUtilsLabelExt {
+                label_name: label_name.as_ptr(),
+                color,
+                ..default()
+            };
+            unsafe {
+                debug_utils_fn.cmd_begin_debug_utils_label_ext(command_buffer, &label_info);
+            }
+        }
+    }
+
+    fn cmd_end_debug_marker(&self, cmd_encoder: &mut CmdEncoder) {
+        #[cfg(feature = "debug_markers")]
+        if let Some(debug_utils_fn) = &self.debug_utils_fn {
+            let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+            unsafe { debug_utils_fn.cmd_end_debug_utils_label_ext(command_buffer) }
+        }
+    }
+
+    fn cmd_set_bind_group(
+        &self,
+        cmd_encoder: &mut CmdEncoder,
+        bind_group_index: u32,
+        bind_group: &TransientBindGroup,
+    ) {
         let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
-        let VulkanBoundPipeline {
-            pipeline_layout,
-            pipeline_bind_point,
-        } = cmd_encoder
+
+        let bound_pipeline = cmd_encoder
             .bound_pipeline
             .as_ref()
-            .expect("cannot set bind groups without a pipeline bound")
-            .clone();
+            .expect("cannot set bind group without a pipeline bound");
 
         let command_buffer = cmd_encoder.command_buffer;
+        let descriptor_set = vk::DescriptorSet::from_raw(bind_group.bind_group);
 
         unsafe {
             self.device_fn.cmd_bind_descriptor_sets(
                 command_buffer,
-                pipeline_bind_point,
-                pipeline_layout,
+                bound_pipeline.pipeline_bind_point,
+                bound_pipeline.pipeline_layout,
                 bind_group_index,
                 &[descriptor_set],
                 &[],
@@ -2519,6 +2700,16 @@ impl Device for VulkanDevice {
         }
     }
 
+    fn cmd_dispatch_indirect(&self, cmd_encoder: &mut CmdEncoder, buffer: BufferArg, offset: u64) {
+        let (buffer, base_offset, _range) = self.unwrap_buffer_arg(&buffer);
+
+        let command_buffer = self.cmd_encoder_mut(cmd_encoder).command_buffer;
+        unsafe {
+            self.device_fn
+                .cmd_dispatch_indirect(command_buffer, buffer, base_offset + offset);
+        }
+    }
+
     fn submit(&self, frame: &Frame, mut cmd_encoder: CmdEncoder) {
         let fence = self.universal_queue_fence.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -2694,7 +2885,7 @@ impl Device for VulkanDevice {
         self.frame_counter.release(frame);
     }
 
-    fn get_buffer_address(&self, buffer: BufferArg) -> u64 {
+    fn get_buffer_address<'a>(&self, buffer: BufferArg<'a>) -> BufferAddress<'a> {
         let buffer = match buffer {
             BufferArg::Unmanaged(buffer) => buffer.0,
             BufferArg::Persistent(buffer) => buffer.buffer.0,
@@ -2702,7 +2893,10 @@ impl Device for VulkanDevice {
         };
         let buffer_pool = self.buffer_pool.lock();
         let buffer = buffer_pool.get(buffer).unwrap();
-        buffer.address
+        BufferAddress {
+            value: buffer.address,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -2761,6 +2955,11 @@ impl VulkanDevice {
                 )
             };
 
+            let address = BufferAddress {
+                value: address,
+                phantom: PhantomData,
+            };
+
             let ptr = NonNull::new(memory.mapped_ptr()).unwrap();
 
             frame.destroyed_buffers.lock().push_back(buffer);
@@ -2772,7 +2971,6 @@ impl VulkanDevice {
                 buffer: buffer.as_raw(),
                 address,
                 offset: 0,
-                phantom: PhantomData,
             };
         }
 
@@ -2828,6 +3026,13 @@ impl VulkanDevice {
 
         let current = allocator.current.as_ref().unwrap();
 
+        let address = BufferAddress {
+            value: current.address,
+            phantom: PhantomData,
+        };
+
+        let address = address.byte_add(allocator.offset);
+
         TransientBuffer {
             ptr: NonNull::new(
                 current
@@ -2838,9 +3043,8 @@ impl VulkanDevice {
             .unwrap(),
             len: size as usize,
             buffer: current.buffer.as_raw(),
-            address: current.address + allocator.offset,
+            address,
             offset: allocator.offset,
-            phantom: PhantomData,
         }
     }
 

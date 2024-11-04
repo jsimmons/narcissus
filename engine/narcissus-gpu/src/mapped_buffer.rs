@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
-use crate::{Buffer, BufferArg};
+use crate::{Buffer, BufferAddress, BufferArg};
 
 #[cold]
 fn overflow() -> ! {
@@ -85,8 +85,7 @@ pub struct TransientBuffer<'a> {
     pub(crate) offset: u64,
     pub(crate) len: usize,
     pub(crate) buffer: u64,
-    pub(crate) address: u64,
-    pub(crate) phantom: PhantomData<&'a u8>,
+    pub(crate) address: BufferAddress<'a>,
 }
 
 impl<'a> TransientBuffer<'a> {
@@ -101,4 +100,9 @@ impl<'a> TransientBuffer<'a> {
     pub fn copy_with_offset<T: ?Sized>(&mut self, offset: usize, src: &T) {
         unsafe { copy_from_with_offset(self.ptr, self.len, offset, src) }
     }
+}
+
+pub struct TransientBindGroup<'a> {
+    pub(crate) bind_group: u64,
+    pub(crate) phantom: PhantomData<&'a ()>,
 }

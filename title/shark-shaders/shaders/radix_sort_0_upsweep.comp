@@ -1,0 +1,84 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_control_flow_attributes : require
+
+#include "compute_bindings.h"
+
+#include "radix_sort.h"
+
+#include "draw_2d.h"
+#include "indirect.h"
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer CountRef {
+    uint value;
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer ValuesRef {
+    uint values[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) writeonly buffer SpineRef {
+    uint values[];
+};
+
+struct RadixSortUpsweepConstants {
+    uint shift;
+    uint _pad;
+    CountRef count_buffer;
+    ValuesRef src_buffer;
+    SpineRef spine_buffer;
+};
+
+layout(std430, push_constant) uniform RadixSortUpsweepConstantsBlock {
+    RadixSortUpsweepConstants constants;
+};
+
+shared uint histogram[RADIX_DIGITS];
+
+layout (local_size_x = RADIX_DIGITS, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    const uint count = constants.count_buffer.value;
+    const uint shift = constants.shift;
+
+    // Clear local histogram
+    histogram[gl_LocalInvocationID.x] = 0;
+
+    barrier();
+
+    const uint start = gl_WorkGroupID.x * RADIX_ITEMS_PER_WGP;
+    const uint end = start + RADIX_ITEMS_PER_WGP;
+
+    const bool skip_bounds_check = end <= count;
+
+    if (skip_bounds_check) {
+        for (uint i = start; i < end; i += RADIX_DIGITS) {
+            const uint index = i + gl_LocalInvocationID.x;
+            const uint value = constants.src_buffer.values[index];
+            const uint digit = (value >> shift) & RADIX_MASK;
+            atomicAdd(histogram[digit], 1);
+        }
+    } else {
+        for (uint i = start; i < end; i += RADIX_DIGITS) {
+            const uint index = i + gl_LocalInvocationID.x;
+            if (index < count) {
+                const uint value = constants.src_buffer.values[index];
+                const uint digit = (value >> shift) & RADIX_MASK;
+                atomicAdd(histogram[digit], 1);
+            }
+        }
+    }
+
+    barrier();
+
+    // Scatter to the spine, this is a striped layout so we can efficiently
+    // calculate the prefix sum. Re-calculate how many workgroups we dispatched
+    // to determine the stride we need to write at.
+    const uint wgp_count = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
+    constants.spine_buffer.values[(gl_LocalInvocationID.x * wgp_count) + gl_WorkGroupID.x] = histogram[gl_LocalInvocationID.x];
+}

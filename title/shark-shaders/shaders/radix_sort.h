@@ -1,0 +1,14 @@
+#ifndef RADIX_SORT_H
+#define RADIX_SORT_H
+
+const uint RADIX_BITS = 8;
+const uint RADIX_DIGITS = 1 << RADIX_BITS;
+const uint RADIX_MASK = RADIX_DIGITS - 1;
+
+const uint RADIX_WGP_SIZE = 256;
+const uint RADIX_ITEMS_PER_INVOCATION = 16;
+const uint RADIX_ITEMS_PER_WGP = RADIX_WGP_SIZE * RADIX_ITEMS_PER_INVOCATION;
+
+const uint RADIX_SPINE_WGP_SIZE = 256;
+
+#endif

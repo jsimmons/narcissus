@@ -1364,10 +1364,7 @@ pub struct SpecializationMapEntry {
 #[repr(C)]
 pub struct SpecializationInfo<'a> {
     pub map_entries: VulkanSlice1<'a, u32, SpecializationMapEntry, 4>,
-    ///  Size in bytes of pData
-    pub data_size: usize,
-    ///  Pointer to SpecConstant data
-    pub data: *const c_void,
+    pub data: VulkanSlice1<'a, usize, u8, 0>,
 }
 
 impl<'a> Default for SpecializationInfo<'a> {
@@ -1394,6 +1391,21 @@ impl<'a> Default for PipelineShaderStageCreateInfo<'a> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineShaderStageCreateInfo;
+        x
+    }
+}
+
+#[repr(C)]
+pub struct PipelineShaderStageRequiredSubgroupSizeCreateInfo {
+    pub _type: StructureType,
+    pub _next: *const c_void,
+    pub required_subgroup_size: u32,
+}
+
+impl Default for PipelineShaderStageRequiredSubgroupSizeCreateInfo {
+    fn default() -> Self {
+        let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
+        x._type = StructureType::PipelineShaderStageRequiredSubgroupSizeCreateInfo;
         x
     }
 }
@@ -2750,6 +2762,7 @@ impl Default for PhysicalDeviceVulkan13Features {
     }
 }
 
+#[repr(C)]
 pub struct PhysicalDeviceSwapchainMaintenance1FeaturesEXT {
     pub _type: StructureType,
     pub _next: *mut c_void,

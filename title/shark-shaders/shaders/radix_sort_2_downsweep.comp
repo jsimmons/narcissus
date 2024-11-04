@@ -1,0 +1,115 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_control_flow_attributes : require
+
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_shuffle_relative: enable
+#extension GL_KHR_shader_subgroup_vote : require
+
+//#extension GL_EXT_debug_printf : enable
+
+#include "compute_bindings.h"
+
+#include "radix_sort.h"
+
+#include "draw_2d.h"
+#include "indirect.h"
+
+layout (constant_id = 0) const uint SUBGROUP_SIZE = 64;
+
+const uint NUM_SUBGROUPS = RADIX_WGP_SIZE / SUBGROUP_SIZE;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer CountRef {
+    uint value;
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer SpineRef {
+    uint values[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer ValuesRef {
+    uint values[];
+};
+
+struct RadixSortDownsweepConstants {
+    uint shift;
+    uint _pad;
+    CountRef count_buffer;
+    SpineRef spine_buffer;
+    ValuesRef src_buffer;
+    ValuesRef dst_buffer;
+};
+
+layout(std430, push_constant) uniform RadixSortDownsweepConstantsBlock {
+    RadixSortDownsweepConstants constants;
+};
+
+shared uint values[RADIX_WGP_SIZE];
+shared uint spine[RADIX_DIGITS];
+shared uint match_masks[NUM_SUBGROUPS][RADIX_DIGITS];
+
+layout (local_size_x = RADIX_WGP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    const uint shift = constants.shift;
+    const uint count = constants.count_buffer.value;
+    const uint wgp_count = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
+
+    const uint start = gl_WorkGroupID.x * RADIX_ITEMS_PER_WGP;
+    const uint end = min(start + RADIX_ITEMS_PER_WGP, count);
+
+    const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
+
+    // Gather from spine.
+    spine[local_id] = constants.spine_buffer.values[(local_id * wgp_count) + gl_WorkGroupID.x];
+
+    for (uint value_base = start; value_base < end; value_base += RADIX_WGP_SIZE) {
+        // Clear shared memory and load values from src buffer.
+        for (uint i = 0; i < NUM_SUBGROUPS; i++) {
+            match_masks[i][local_id] = 0;
+        }
+
+        barrier();
+
+        const uint global_offset = value_base + local_id;
+        uint value = 0xffffffff;
+        uint digit = 0xff;
+
+        if (global_offset < end) {
+            value = constants.src_buffer.values[global_offset];
+            digit = (value >> shift) & RADIX_MASK;
+            atomicOr(match_masks[gl_SubgroupID][digit], 1 << gl_SubgroupInvocationID);
+        }
+
+        barrier();
+
+        if (global_offset < end) {
+            const uint peer_mask = match_masks[gl_SubgroupID][digit];
+
+            uint peer_scan = bitCount(peer_mask & gl_SubgroupLtMask.x);
+            for (uint i = 0; i < gl_NumSubgroups; i++) {
+                if (i < gl_SubgroupID) {
+                    peer_scan += bitCount(match_masks[i][digit]);
+                }
+            }
+
+            const uint dst_index = spine[digit] + peer_scan;
+            constants.dst_buffer.values[dst_index] = value;
+        }
+
+        barrier();
+
+        // Increment the spine with the counts for the workgroup we just wrote out.
+        for (uint i = 0; i < NUM_SUBGROUPS; i++) {
+            atomicAdd(spine[local_id], bitCount(match_masks[i][local_id]));
+        }
+    }
+}

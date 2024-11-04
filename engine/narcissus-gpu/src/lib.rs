@@ -1,6 +1,7 @@
 use std::{ffi::CStr, marker::PhantomData};
 
 use backend::vulkan;
+use mapped_buffer::TransientBindGroup;
 use narcissus_core::{
     default, flags_def, raw_window::AsRawWindow, thread_token_def, Handle, PhantomUnsend,
 };
@@ -115,6 +116,12 @@ impl Scissor {
             extent: Extent2d { width, height },
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PipelineBindPoint {
+    Graphics,
+    Compute,
 }
 
 flags_def!(ShaderStageFlags);
@@ -265,9 +272,33 @@ pub struct ImageBlit {
     pub dst_offset_max: Offset3d,
 }
 
+pub enum SpecConstant {
+    Bool { id: u32, value: bool },
+    U32 { id: u32, value: u32 },
+    I32 { id: u32, value: i32 },
+    F32 { id: u32, value: f32 },
+}
+
 pub struct ShaderDesc<'a> {
     pub entry: &'a CStr,
+    pub require_full_subgroups: bool,
+    pub allow_varying_subgroup_size: bool,
+    pub required_subgroup_size: Option<u32>,
+    pub spec_constants: &'a [SpecConstant],
     pub code: &'a [u8],
+}
+
+impl<'a> Default for ShaderDesc<'a> {
+    fn default() -> Self {
+        Self {
+            entry: c"main",
+            require_full_subgroups: false,
+            allow_varying_subgroup_size: false,
+            required_subgroup_size: None,
+            spec_constants: &[],
+            code: &[],
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -417,7 +448,7 @@ pub struct GraphicsPipelineAttachments<'a> {
 pub struct GraphicsPipelineDesc<'a> {
     pub vertex_shader: ShaderDesc<'a>,
     pub fragment_shader: ShaderDesc<'a>,
-    pub layout: &'a PipelineLayout<'a>,
+    pub layout: PipelineLayout<'a>,
     pub attachments: GraphicsPipelineAttachments<'a>,
     pub topology: Topology,
     pub primitive_restart: bool,
@@ -436,7 +467,7 @@ pub struct GraphicsPipelineDesc<'a> {
 
 pub struct ComputePipelineDesc<'a> {
     pub shader: ShaderDesc<'a>,
-    pub layout: &'a PipelineLayout<'a>,
+    pub layout: PipelineLayout<'a>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -544,6 +575,39 @@ pub enum TypedBind<'a> {
     StorageImage(&'a [(ImageLayout, Image)]),
     UniformBuffer(&'a [BufferArg<'a>]),
     StorageBuffer(&'a [BufferArg<'a>]),
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct BufferAddress<'a> {
+    value: u64,
+    phantom: PhantomData<&'a [u8]>,
+}
+
+impl<'a> BufferAddress<'a> {
+    #[inline(always)]
+    #[must_use]
+    pub fn as_raw(self) -> u64 {
+        self.value
+    }
+
+    #[inline(always)]
+    #[must_use]
+    pub fn byte_add(self, count: u64) -> Self {
+        Self {
+            value: self.value.wrapping_add(count),
+            phantom: self.phantom,
+        }
+    }
+
+    #[inline(always)]
+    #[must_use]
+    pub fn byte_offset(self, count: i64) -> Self {
+        Self {
+            value: self.value.wrapping_add_signed(count),
+            phantom: self.phantom,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -743,7 +807,7 @@ impl<'a> Frame<'a> {
 
 pub struct CmdEncoder<'a> {
     cmd_encoder_addr: usize,
-    thread_token: &'a ThreadToken,
+    phantom: PhantomData<&'a ()>,
     phantom_unsend: PhantomUnsend,
 }
 
@@ -788,9 +852,10 @@ pub trait Device {
 
     fn debug_name_buffer(&self, buffer: BufferArg, label_name: &str);
     fn debug_name_image(&self, image: Image, label_name: &str);
+    fn debug_name_bind_group_layout(&self, bind_group_layout: BindGroupLayout, label_name: &str);
+    fn debug_name_pipeline(&self, pipeline: Pipeline, label_name: &str);
 
-    // Danger Zone
-    fn get_buffer_address(&self, buffer: BufferArg) -> u64;
+    fn get_buffer_address<'a>(&self, buffer: BufferArg<'a>) -> BufferAddress<'a>;
 
     fn destroy_buffer(&self, frame: &Frame, buffer: Buffer);
     fn destroy_persistent_buffer(&self, frame: &Frame, buffer: PersistentBuffer);
@@ -835,6 +900,15 @@ pub trait Device {
     ) -> TransientBuffer<'a>;
 
     #[must_use]
+    fn request_transient_bind_group<'a>(
+        &self,
+        frame: &'a Frame<'a>,
+        thread_token: &'a ThreadToken,
+        layout: BindGroupLayout,
+        bindings: &[Bind],
+    ) -> TransientBindGroup<'a>;
+
+    #[must_use]
     fn request_cmd_encoder<'a>(
         &'a self,
         frame: &'a Frame<'a>,
@@ -859,11 +933,9 @@ pub trait Device {
 
     fn cmd_set_bind_group(
         &self,
-        frame: &Frame,
         cmd_encoder: &mut CmdEncoder,
-        layout: BindGroupLayout,
         bind_group_index: u32,
-        bindings: &[Bind],
+        bind_group: &TransientBindGroup,
     );
 
     fn cmd_set_index_buffer(
@@ -947,6 +1019,8 @@ pub trait Device {
         group_count_y: u32,
         group_count_z: u32,
     );
+
+    fn cmd_dispatch_indirect(&self, cmd_encoder: &mut CmdEncoder, buffer: BufferArg, offset: u64);
 
     fn submit(&self, frame: &Frame, cmd_encoder: CmdEncoder);
 
