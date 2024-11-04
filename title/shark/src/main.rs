@@ -1371,16 +1371,14 @@ impl<'gpu> DrawState<'gpu> {
                     },
                 );
 
-                for _ in 0..4 {
-                    gpu.cmd_dispatch(
-                        cmd_encoder,
-                        (draw_buffer_len
-                            + (self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size - 1))
-                            / self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size,
-                        1,
-                        1,
-                    );
-                }
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    (draw_buffer_len
+                        + (self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size - 1))
+                        / self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size,
+                    1,
+                    1,
+                );
 
                 gpu.cmd_barrier(
                     cmd_encoder,
