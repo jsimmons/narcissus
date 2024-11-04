@@ -944,8 +944,7 @@ impl Device for VulkanDevice {
 
         let create_info = vk::BufferCreateInfo {
             size: desc.size as u64,
-            usage: vulkan_buffer_usage_flags(desc.usage)
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            usage: vulkan_buffer_usage_flags(desc.usage),
             queue_family_indices: queue_family_indices.into(),
             sharing_mode: vk::SharingMode::Exclusive,
             ..default()
@@ -2856,12 +2855,13 @@ impl VulkanDevice {
         // need a single collection of temporary buffers.
         let create_info = vk::BufferCreateInfo {
             size: VULKAN_CONSTANTS.transient_buffer_size,
-            usage: vk::BufferUsageFlags::TRANSFER_DST
-                | vk::BufferUsageFlags::TRANSFER_SRC
-                | vk::BufferUsageFlags::INDEX_BUFFER
+            usage: vk::BufferUsageFlags::INDEX_BUFFER
+                | vk::BufferUsageFlags::INDIRECT_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
                 | vk::BufferUsageFlags::STORAGE_BUFFER
-                | vk::BufferUsageFlags::UNIFORM_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                | vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::TRANSFER_SRC
+                | vk::BufferUsageFlags::UNIFORM_BUFFER,
             queue_family_indices: queue_family_indices.into(),
             sharing_mode: vk::SharingMode::Exclusive,
             ..default()

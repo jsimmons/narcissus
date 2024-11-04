@@ -215,6 +215,7 @@ impl BufferUsageFlags {
     pub const STORAGE: Self = Self(1 << 1);
     pub const INDEX: Self = Self(1 << 2);
     pub const TRANSFER: Self = Self(1 << 3);
+    pub const INDIRECT: Self = Self(1 << 4);
 }
 
 pub struct BufferDesc {

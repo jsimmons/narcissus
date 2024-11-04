@@ -95,6 +95,10 @@ pub fn vulkan_buffer_usage_flags(usage: BufferUsageFlags) -> vk::BufferUsageFlag
     if usage.contains(BufferUsageFlags::TRANSFER) {
         usage_flags |= vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST;
     }
+    if usage.contains(BufferUsageFlags::INDIRECT) {
+        usage_flags |= vk::BufferUsageFlags::INDIRECT_BUFFER;
+    }
+    usage_flags |= vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
     usage_flags
 }
 
