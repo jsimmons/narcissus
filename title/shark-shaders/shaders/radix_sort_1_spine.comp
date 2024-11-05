@@ -36,12 +36,12 @@ layout(std430, push_constant) uniform RadixSortSpineConstantsBlock {
 
 layout (constant_id = 0) const uint SUBGROUP_SIZE = 64;
 
-const uint NUM_SUBGROUPS = RADIX_SPINE_WGP_SIZE / SUBGROUP_SIZE;
+const uint NUM_SUBGROUPS = RADIX_WGP_SIZE / SUBGROUP_SIZE;
 
+shared uint carry;
 shared uint sums[NUM_SUBGROUPS];
-shared uint carry_in;
 
-layout (local_size_x = RADIX_SPINE_WGP_SIZE, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = RADIX_WGP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
@@ -51,12 +51,10 @@ void main() {
     // Re-calculate how many workgroups pushed data into the spine
     const uint upsweep_wgp_count = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
 
-    carry_in = 0;
+    carry = 0;
     for (uint i = 0; i < upsweep_wgp_count; i++) {
-        const uint spine_index = i * RADIX_DIGITS + local_id;
-
         // Load values and calculate partial sums
-        const uint value = constants.spine_buffer.values[spine_index];
+        const uint value = constants.spine_buffer.values[i * RADIX_DIGITS + local_id];
         const uint sum = subgroupAdd(value);
         const uint scan = subgroupExclusiveAdd(value);
 
@@ -66,22 +64,20 @@ void main() {
 
         barrier();
 
+        const uint carry_in = carry;
+
         // Scan partials
         if (local_id < NUM_SUBGROUPS) {
             sums[local_id] = subgroupExclusiveAdd(sums[local_id]);
         }
 
-        const uint carry = carry_in;
-
         barrier();
 
         // Write out the final prefix sum, combining the carry-in, subgroup sums, and local scan
-        constants.spine_buffer.values[spine_index] = carry + sums[gl_SubgroupID] + scan;
+        constants.spine_buffer.values[i * RADIX_DIGITS + local_id] = carry_in + sums[gl_SubgroupID] + scan;
 
         if (gl_SubgroupID == gl_NumSubgroups - 1 && subgroupElect()) {
-            carry_in += sums[gl_SubgroupID] + sum;
+            atomicAdd(carry, sums[gl_NumSubgroups - 1] + sum);
         }
-
-        memoryBarrierShared();
     }
 }
