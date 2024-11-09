@@ -11,17 +11,30 @@
 #extension GL_KHR_shader_subgroup_ballot : require
 
 #include "compute_bindings.h"
+#include "draw_2d.h"
 
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+struct Draw2dRasterizeConstants {
+    uvec2 screen_resolution;
+    uvec2 tile_resolution;
+    uvec2 atlas_resolution;
+
+    Draw2dCommandRef draw_buffer;
+    GlyphRef glyph_buffer;
+    CoarseRef coarse_buffer;
+    FineRef fine_buffer;
+    TileRef tile_buffer;
+};
+
+layout(std430, push_constant) uniform Draw2dRasterizeConstantsBlock {
+    Draw2dRasterizeConstants constants;
+};
 
 /// x = (((index >> 2) & 0x0007) & 0xFFFE) | index & 0x0001
 /// y = ((index >> 1) & 0x0003) | (((index >> 3) & 0x0007) & 0xFFFC)
 
 #define DEBUG_SHOW_TILES 0
 
-#if DEBUG_SHOW_TILES != 0
-
-vec3 plasma_quintic(float x)
+vec3 plasma_quintic(in float x)
 {
 	x = clamp(x, 0.0, 1.0);
 	vec4 x1 = vec4(1.0, x, x * x, x * x * x); // 1 x x2 x3
@@ -33,113 +46,81 @@ vec3 plasma_quintic(float x)
     );
 }
 
-#endif
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
-    // const uvec2 tile_coord = gl_WorkGroupID.xy / (TILE_SIZE / gl_WorkGroupSize.xy);
-    // const uint tile_index = tile_coord.y * uniforms.tile_resolution.x + tile_coord.x;
+    const uvec2 tile_coord = gl_WorkGroupID.xy / (TILE_SIZE / gl_WorkGroupSize.xy);
+    const uint tile_index = tile_coord.y * constants.tile_resolution.x + tile_coord.x;
 
-    // TilesRead tiles_read = TilesRead(uniforms.tiles);
+    const uint lo = constants.tile_buffer.values[tile_index].min_index;
+    const uint hi = constants.tile_buffer.values[tile_index].max_index;
 
-    // const uint lo = tiles_read.values[tile_base + TILE_BITMAP_RANGE_LO_OFFSET];
-    // const uint hi = tiles_read.values[tile_base + TILE_BITMAP_RANGE_HI_OFFSET];
+    if (lo == hi) {
+        return;
+    }
 
-    // if (hi < lo) {
-    //     return;
-    // }
+#if DEBUG_SHOW_TILES == 1
 
-// #if DEBUG_SHOW_TILES == 1
+    uint count = hi - lo;
+    const vec3 color = plasma_quintic(float(count) / 50.0);
+    imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
 
-//     uint count = 0;
-//     // For each tile, iterate over all words in the L1 bitmap.
-//     for (uint index_l1 = lo; index_l1 <= hi; index_l1++) {
-//         // For each word, iterate all set bits.
-//         uint bitmap_l1 = tiles_read.values[tile_base + TILE_BITMAP_L1_OFFSET + index_l1];
+#elif DEBUG_SHOW_TILES == 2
 
-//         while (bitmap_l1 != 0) {
-//             const uint i = findLSB(bitmap_l1);
-//             bitmap_l1 ^= bitmap_l1 & -bitmap_l1;
+    uint count = 0;
+    for (uint i = lo; i < hi; i++) {
+        count += bitCount(constants.fine_buffer.values[i]);
+    }
+    const vec3 color = plasma_quintic(float(count) / 600.0);
+    imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
 
-//             // For each set bit in the L1 bitmap, iterate the set bits in the
-//             // corresponding L0 bitmap.
-//             const uint index_l0 = index_l1 * 32 + i;
-//             uint bitmap_l0 = tiles_read.values[tile_base + TILE_BITMAP_L0_OFFSET + index_l0];
+#else
 
-//             count += bitCount(bitmap_l0);
-//         }
-//     }
+    const vec2 sample_center = gl_GlobalInvocationID.xy + vec2(0.5);
 
-//     const vec3 color = plasma_quintic(float(count) / 100.0);
-//     imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
+    vec4 accum = vec4(0.0);
 
-// #elif DEBUG_SHOW_TILES == 2
+    for (uint i = lo; i < hi; i++) {
+        uint bitmap = constants.fine_buffer.values[i];
+        while (bitmap != 0) {
+            const uint index = findLSB(bitmap);
+            bitmap ^= bitmap & -bitmap;
 
-//     uint count = hi - lo;
-//     const vec3 color = plasma_quintic(float(count) / 100.0);
-//     imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
+            const uint base_index = (constants.coarse_buffer.values[i] & 0xffff) * 32;
+            const Draw2dCmd cmd = constants.draw_buffer.values[base_index + index];
 
-// #else
+            vec4 primitive_color = vec4(0.0);
+            switch (cmd.type) {
+                case DRAW_2D_CMD_RECT:
+                    const Draw2dCmdRect cmd_rect = decode_rect(cmd);
+                    const vec2 rect_min = cmd_rect.position - cmd_rect.half_extent - cmd_rect.border_width;
+                    const vec2 rect_max = cmd_rect.position + cmd_rect.half_extent + cmd_rect.border_width;
+                    if (all(greaterThanEqual(sample_center, rect_min)) && all(lessThanEqual(sample_center, rect_max))) {
+                        primitive_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
+                    }
+                    break;
+                case DRAW_2D_CMD_GLYPH:
+                    const Draw2dCmdGlyph cmd_glyph = decode_glyph(cmd);
+                    const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                    const vec2 glyph_min = cmd_glyph.position + glyph.offset_min;
+                    const vec2 glyph_max = cmd_glyph.position + glyph.offset_max;
+                    if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
+                        const vec2 glyph_size = glyph.offset_max - glyph.offset_min;
+                        const vec2 uv = mix(glyph.atlas_min, glyph.atlas_max, (sample_center - glyph_min) / glyph_size) / constants.atlas_resolution;
+                        const vec4 color = unpackUnorm4x8(cmd_glyph.color).bgra;
+                        const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r * color.a;
+                        primitive_color = color * coverage;
+                    }
+                    break;
+            }
 
-//     const vec2 sample_center = gl_GlobalInvocationID.xy + vec2(0.5);
+            // does it blend?
+            accum.rgba = primitive_color.rgba + accum.rgba * (1.0 - primitive_color.a);
+        }
+    }
 
-//     vec4 accum = vec4(0.0);
+    imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), accum);
 
-//     // For each tile, iterate over all words in the L1 bitmap.
-//     for (uint index_l1 = lo; index_l1 <= hi; index_l1++) {
-//         // For each word, iterate all set bits.
-//         uint bitmap_l1 = tiles_read.values[tile_base + TILE_BITMAP_L1_OFFSET + index_l1];
+#endif
 
-//         while (bitmap_l1 != 0) {
-//             const uint i = findLSB(bitmap_l1);
-//             bitmap_l1 ^= bitmap_l1 & -bitmap_l1;
-
-//             // For each set bit in the L1 bitmap, iterate the set bits in the
-//             // corresponding L0 bitmap.
-//             const uint index_l0 = index_l1 * 32 + i;
-//             uint bitmap_l0 = tiles_read.values[tile_base + TILE_BITMAP_L0_OFFSET + index_l0];
-//             while (bitmap_l0 != 0) {
-//                 const uint j = findLSB(bitmap_l0);
-//                 bitmap_l0 ^= bitmap_l0 & -bitmap_l0;
-
-//                 // Set bits in the L0 bitmap indicate binned primitives for this tile.
-//                 const uint primitive_index = index_l0 * 32 + j;
-//                 const Primitive2d primitive = uniforms.primitives.values[primitive_index];
-//                 const uint type = primitive.type;
-
-//                 vec4 primitive_color = vec4(0.0);
-
-//                 switch (type) {
-//                     case PRIMITIVE_TYPE_RECT: {
-//                         // const Rect rect = uniforms.rects.values[offset];
-//                         // const vec2 rect_min = primitive_instance.position - rect.half_extent - rect.border_width;
-//                         // const vec2 rect_max = primitive_instance.position + rect.half_extent + rect.border_width;
-//                         if (all(greaterThanEqual(sample_center, rect_min)) && all(lessThanEqual(sample_center, rect_max))) {
-//                             primitive_color = unpackUnorm4x8(primitive_instance.color).bgra;
-//                         }
-//                         break;
-//                     }
-//                     case PRIMITIVE_TYPE_GLYPH: {
-//                         const Glyph glyph = uniforms.glyphs.values[offset];
-//                         const vec2 glyph_min = primitive_instance.position + glyph.offset_min;
-//                         const vec2 glyph_max = primitive_instance.position + glyph.offset_max;
-//                         if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
-//                             const vec2 glyph_size = glyph.offset_max - glyph.offset_min;
-//                             const vec2 uv = mix(glyph.atlas_min, glyph.atlas_max, (sample_center - glyph_min) / glyph_size) / uniforms.atlas_resolution;
-//                             const vec4 color = unpackUnorm4x8(primitive_instance.color).bgra;
-//                             const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r * color.a;
-//                             primitive_color = color * coverage;
-//                         }
-//                         break;
-//                     }
-//                 }
-
-//                 // does it blend?
-//                 accum.rgba = primitive_color.rgba + accum.rgba * (1.0 - primitive_color.a);
-//             }
-//         }
-//     }
-
-//     imageStore(ui_layer_write, ivec2(gl_GlobalInvocationID.xy), accum);
-
-// #endif
 }

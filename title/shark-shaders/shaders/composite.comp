@@ -7,6 +7,7 @@
 #extension GL_EXT_scalar_block_layout : require
 
 #include "compute_bindings.h"
+#include "draw_2d.h"
 
 float srgb_oetf(float a) {
     return (.0031308f >= a) ? 12.92f * a : 1.055f * pow(a, .4166666666666667f) - .055f;
@@ -23,15 +24,23 @@ vec3 tony_mc_mapface(vec3 stimulus) {
     return textureLod(sampler3D(tony_mc_mapface_lut, bilinear_sampler), uv, 0.0).rgb;
 }
 
+struct CompositeConstants {
+    uvec2 tile_resolution;
+    TileRef tile_buffer;
+};
+
+layout(std430, push_constant) uniform CompositeConstantsBlock {
+    CompositeConstants constants;
+};
+
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
-    // const uvec2 tile_coord = gl_WorkGroupID.xy / 4;
-    // const uint tile_index = tile_coord.y * uniforms.tile_resolution.x + tile_coord.x;
-    
-    // TilesRead tiles_read = TilesRead(uniforms.tiles);
-    // const uint lo = tiles_read.values[tile_base + TILE_BITMAP_RANGE_LO_OFFSET];
-    // const uint hi = tiles_read.values[tile_base + TILE_BITMAP_RANGE_HI_OFFSET];
+    const uvec2 tile_coord = gl_WorkGroupID.xy / (TILE_SIZE / gl_WorkGroupSize.xy);
+    const uint tile_index = tile_coord.y * constants.tile_resolution.x + tile_coord.x;
+
+    const uint lo = constants.tile_buffer.values[tile_index].min_index;
+    const uint hi = constants.tile_buffer.values[tile_index].max_index;
 
     // Display transform
     const vec3 stimulus = imageLoad(color_layer, ivec2(gl_GlobalInvocationID.xy)).rgb;
@@ -39,10 +48,10 @@ void main() {
     vec3 composited = srgb_oetf(transformed);
 
     // UI Composite
-    // if (lo <= hi) {
-    //     const vec4 ui = imageLoad(ui_layer_read, ivec2(gl_GlobalInvocationID.xy)).rgba;
-    //     composited = ui.rgb + (composited * (1.0 - ui.a));
-    // }
+    if (lo != hi) {
+        const vec4 ui = imageLoad(ui_layer_read, ivec2(gl_GlobalInvocationID.xy)).rgba;
+        composited = ui.rgb + (composited * (1.0 - ui.a));
+    }
 
     imageStore(composited_output, ivec2(gl_GlobalInvocationID.xy), vec4(composited, 1.0));
 }

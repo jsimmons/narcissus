@@ -6,17 +6,126 @@
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
+#extension GL_EXT_control_flow_attributes2 : require
 
 #extension GL_KHR_shader_subgroup_arithmetic : require
 #extension GL_KHR_shader_subgroup_ballot : require
 #extension GL_KHR_shader_subgroup_vote : require
 
-#include "compute_bindings.h"
+#include "draw_2d.h"
 
-const uint SUBGROUP_SIZE = 64;
+struct Draw2dResolveConstants {
+    uvec2 screen_resolution;
+    uvec2 tile_resolution;
 
-// TODO: Spec constant support for different subgroup sizes.
-layout (local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+    uint draw_buffer_len;
+    uint _pad;
+
+    Draw2dCommandRef draw_buffer;
+    GlyphRef glyph_buffer;
+    CoarseRef coarse_buffer;
+    FineRef fine_buffer;
+    TileRef tile_buffer;
+};
+
+layout(std430, push_constant) uniform Draw2dResolveConstantsBlock {
+    Draw2dResolveConstants constants;
+};
+
+layout (local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
+    const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
+    const uint x = gl_GlobalInvocationID.y;
+    const uint y = gl_GlobalInvocationID.z;
+    const uint tile_offset = (constants.tile_resolution.x * y + x);
+    const uint search = ((y & 0xff) << 24) | ((x & 0xff) << 16);
+    const uint count = constants.coarse_buffer.values[0];
+
+    if (count == 0) {
+        constants.tile_buffer.values[tile_offset].min_index = 0;
+        constants.tile_buffer.values[tile_offset].max_index = 0;
+        return;
+    }
+
+    // Binary search for the upper bound of the tile.
+    uint base = 0;
+    {
+        uint n = count;
+        uint mid;
+        uint max_iters = 32;
+        while (max_iters --> 0 && (mid = n / 2) > 0) {
+            const uint value = constants.coarse_buffer.values[1 + base + mid] & 0xffff0000;
+            base = value > search ? base : base + mid;
+            n -= mid;
+        }
+    }
+
+    const vec2 tile_min = uvec2(x, y) * TILE_SIZE;
+    const vec2 tile_max = min(tile_min + TILE_SIZE, constants.screen_resolution);
+
+    bool hit_opaque = false;
+    uint lo = base + 1;
+    const uint hi = base + 1;
+    for(; !hit_opaque && lo > 0; lo--) {
+        const uint i = lo;
+        const uint packed = constants.coarse_buffer.values[i];
+
+        if ((packed & 0xffff0000) != (search & 0xffff0000)) {
+            break;
+        }
+
+        const uint draw_offset = packed & 0xffff;
+        const uint draw_index = draw_offset * gl_WorkGroupSize.x + local_id;
+
+        bool intersects = false;
+        bool opaque_tile = false;
+
+        if (draw_index < constants.draw_buffer_len) {
+            vec2 cmd_min = vec2(99999.9);
+            vec2 cmd_max = vec2(-99999.9);
+
+            const Draw2dCmd cmd = constants.draw_buffer.values[draw_index];
+            for (;;) {
+                const uint scalar_type = subgroupBroadcastFirst(cmd.type);
+                [[branch]]
+                if (scalar_type == cmd.type) {
+                    switch (scalar_type) {
+                        case DRAW_2D_CMD_RECT:
+                            const Draw2dCmdRect cmd_rect = decode_rect(cmd);
+                            cmd_min = cmd_rect.position - cmd_rect.half_extent - cmd_rect.border_width;
+                            cmd_max = cmd_rect.position + cmd_rect.half_extent + cmd_rect.border_width;
+                            opaque_tile = all(greaterThanEqual(tile_min, cmd_min)) && all(lessThanEqual(tile_max, cmd_max));
+                            opaque_tile = opaque_tile && ((cmd_rect.background_color & 0xff000000) == 0xff000000);
+                            break;
+                        case DRAW_2D_CMD_GLYPH:
+                            const Draw2dCmdGlyph cmd_glyph = decode_glyph(cmd);
+                            const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                            cmd_min = cmd_glyph.position + glyph.offset_min;
+                            cmd_max = cmd_glyph.position + glyph.offset_max;
+                            break;
+                    }
+                    break;
+                }
+            }
+
+            intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
+        }
+
+        uint intersects_mask = subgroupBallot(intersects).x;
+
+        if (subgroupAny(opaque_tile)) {
+            const uvec4 opaque_tile_ballot = subgroupBallot(opaque_tile);
+            const uint first_opaque_tile = subgroupBallotFindMSB(opaque_tile_ballot);
+            const uint opaque_mask = ~((1 << first_opaque_tile) - 1);
+            intersects_mask &= opaque_mask;
+            constants.fine_buffer.values[i] = intersects_mask;
+            hit_opaque = true;
+        } else {
+            constants.fine_buffer.values[i] = intersects_mask;
+        }
+    }
+
+    constants.tile_buffer.values[tile_offset].min_index = lo + 1;
+    constants.tile_buffer.values[tile_offset].max_index = hi + 1;
 }

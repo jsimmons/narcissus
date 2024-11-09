@@ -12,8 +12,6 @@
 #extension GL_KHR_shader_subgroup_shuffle_relative: enable
 #extension GL_KHR_shader_subgroup_vote : require
 
-//#extension GL_EXT_debug_printf : enable
-
 #include "compute_bindings.h"
 
 #include "radix_sort.h"

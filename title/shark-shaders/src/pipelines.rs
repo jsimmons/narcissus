@@ -170,6 +170,46 @@ pub struct Draw2dSortConstants<'a> {
 }
 
 #[repr(C)]
+pub struct Draw2dResolveConstants<'a> {
+    pub screen_resolution_x: u32,
+    pub screen_resolution_y: u32,
+    pub tile_resolution_x: u32,
+    pub tile_resolution_y: u32,
+
+    pub draw_buffer_len: u32,
+    pub _pad: u32,
+
+    pub draw_buffer_address: BufferAddress<'a>,
+    pub glyph_buffer_address: BufferAddress<'a>,
+    pub coarse_buffer_address: BufferAddress<'a>,
+    pub fine_buffer_address: BufferAddress<'a>,
+    pub tile_buffer_address: BufferAddress<'a>,
+}
+
+#[repr(C)]
+pub struct Draw2dRasterizeConstants<'a> {
+    pub screen_resolution_x: u32,
+    pub screen_resolution_y: u32,
+    pub tile_resolution_x: u32,
+    pub tile_resolution_y: u32,
+    pub atlas_resolution_x: u32,
+    pub atlas_resolution_y: u32,
+
+    pub draw_buffer_address: BufferAddress<'a>,
+    pub glyph_buffer_address: BufferAddress<'a>,
+    pub coarse_buffer_address: BufferAddress<'a>,
+    pub fine_buffer_address: BufferAddress<'a>,
+    pub tile_buffer_address: BufferAddress<'a>,
+}
+
+#[repr(C)]
+pub struct CompositeConstants<'a> {
+    pub tile_resolution_x: u32,
+    pub tile_resolution_y: u32,
+    pub tile_buffer_address: BufferAddress<'a>,
+}
+
+#[repr(C)]
 pub struct RadixSortUpsweepConstants<'a> {
     pub shift: u32,
     pub _pad: u32,
@@ -298,48 +338,50 @@ impl Pipelines {
 
         gpu.debug_name_pipeline(basic_pipeline, "basic");
 
-        let create_compute_pipeline = |code, name, workgroup_size, push_constant_size| {
-            let push_constant_range = PushConstantRange {
-                stage_flags: ShaderStageFlags::COMPUTE,
-                offset: 0,
-                size: push_constant_size as u32,
+        let create_compute_pipeline =
+            |code, name, workgroup_size, require_full_subgroups, push_constant_size| {
+                let push_constant_range = PushConstantRange {
+                    stage_flags: ShaderStageFlags::COMPUTE,
+                    offset: 0,
+                    size: push_constant_size as u32,
+                };
+
+                let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
+                    shader: ShaderDesc {
+                        code,
+                        require_full_subgroups,
+                        required_subgroup_size: if workgroup_size != 0 {
+                            Some(workgroup_size)
+                        } else {
+                            None
+                        },
+                        spec_constants: &[SpecConstant::U32 {
+                            id: 0,
+                            value: workgroup_size,
+                        }],
+                        ..default()
+                    },
+                    layout: PipelineLayout {
+                        bind_group_layouts: &[compute_bind_group_layout],
+                        // Validation cries about push constant ranges with zero size.
+                        push_constant_ranges: if push_constant_range.size != 0 {
+                            std::slice::from_ref(&push_constant_range)
+                        } else {
+                            &[]
+                        },
+                    },
+                });
+
+                gpu.debug_name_pipeline(pipeline, name);
+
+                pipeline
             };
-
-            let pipeline = gpu.create_compute_pipeline(&ComputePipelineDesc {
-                shader: ShaderDesc {
-                    code,
-                    require_full_subgroups: workgroup_size != 0,
-                    required_subgroup_size: if workgroup_size != 0 {
-                        Some(workgroup_size)
-                    } else {
-                        None
-                    },
-                    spec_constants: &[SpecConstant::U32 {
-                        id: 0,
-                        value: workgroup_size,
-                    }],
-                    ..default()
-                },
-                layout: PipelineLayout {
-                    bind_group_layouts: &[compute_bind_group_layout],
-                    // Validation cries about push constant ranges with zero size.
-                    push_constant_ranges: if push_constant_range.size != 0 {
-                        std::slice::from_ref(&push_constant_range)
-                    } else {
-                        &[]
-                    },
-                },
-            });
-
-            gpu.debug_name_pipeline(pipeline, name);
-
-            pipeline
-        };
 
         let draw_2d_bin_0_clear_pipeline = create_compute_pipeline(
             crate::DRAW_2D_BIN_0_CLEAR_COMP_SPV,
             "draw2d_bin_clear",
             0,
+            false,
             std::mem::size_of::<Draw2dClearConstants>(),
         );
 
@@ -348,6 +390,7 @@ impl Pipelines {
             crate::DRAW_2D_BIN_1_SCATTER_COMP_SPV,
             "draw2d_bin_scatter",
             draw_2d_bin_1_scatter_pipeline_workgroup_size,
+            true,
             std::mem::size_of::<Draw2dScatterConstants>(),
         );
 
@@ -355,23 +398,31 @@ impl Pipelines {
             crate::DRAW_2D_BIN_2_SORT_COMP_SPV,
             "draw2d_bin_sort",
             0,
+            false,
             std::mem::size_of::<Draw2dSortConstants>(),
         );
 
         let draw_2d_bin_3_resolve_pipeline = create_compute_pipeline(
             crate::DRAW_2D_BIN_3_RESOLVE_COMP_SPV,
             "draw2d_bin_resolve",
-            0,
-            0,
+            32,
+            true,
+            std::mem::size_of::<Draw2dResolveConstants>(),
         );
 
-        let draw_2d_rasterize_pipeline =
-            create_compute_pipeline(crate::DRAW_2D_RASTERIZE_COMP_SPV, "draw2d_rasterize", 0, 0);
+        let draw_2d_rasterize_pipeline = create_compute_pipeline(
+            crate::DRAW_2D_RASTERIZE_COMP_SPV,
+            "draw2d_rasterize",
+            0,
+            false,
+            std::mem::size_of::<Draw2dRasterizeConstants>(),
+        );
 
         let radix_sort_0_upsweep_pipeline = create_compute_pipeline(
             crate::RADIX_SORT_0_UPSWEEP_COMP_SPV,
             "radix_sort_upsweep",
             32,
+            true,
             std::mem::size_of::<RadixSortUpsweepConstants>(),
         );
 
@@ -379,6 +430,7 @@ impl Pipelines {
             crate::RADIX_SORT_1_SPINE_COMP_SPV,
             "radix_sort_spine",
             32,
+            true,
             std::mem::size_of::<RadixSortSpineConstants>(),
         );
 
@@ -386,11 +438,17 @@ impl Pipelines {
             crate::RADIX_SORT_2_DOWNSWEEP_COMP_SPV,
             "radix_sort_downsweep",
             32,
+            true,
             std::mem::size_of::<RadixSortDownsweepConstants>(),
         );
 
-        let composite_pipeline =
-            create_compute_pipeline(crate::COMPOSITE_COMP_SPV, "composite", 0, 0);
+        let composite_pipeline = create_compute_pipeline(
+            crate::COMPOSITE_COMP_SPV,
+            "composite",
+            0,
+            false,
+            std::mem::size_of::<CompositeConstants>(),
+        );
 
         Self {
             _samplers: samplers,

@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 use narcissus_core::dds;
 
 use shark_shaders::pipelines::{
-    calculate_spine_size, BasicConstants, ComputeBinds, Draw2dClearConstants, Draw2dCmd,
-    Draw2dScatterConstants, Draw2dSortConstants, GraphicsBinds, Pipelines,
-    RadixSortDownsweepConstants, RadixSortSpineConstants, RadixSortUpsweepConstants,
-    DRAW_2D_TILE_SIZE,
+    calculate_spine_size, BasicConstants, CompositeConstants, ComputeBinds, Draw2dClearConstants,
+    Draw2dCmd, Draw2dRasterizeConstants, Draw2dResolveConstants, Draw2dScatterConstants,
+    Draw2dSortConstants, GraphicsBinds, Pipelines, RadixSortDownsweepConstants,
+    RadixSortSpineConstants, RadixSortUpsweepConstants, DRAW_2D_TILE_SIZE,
 };
 
 use renderdoc_sys as rdoc;
@@ -469,7 +469,7 @@ impl<'a> UiState<'a> {
         }
     }
 
-    fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
+    fn rect(&mut self, x: f32, y: f32, width: f32, height: f32, background_color: u32) {
         let half_extent_x = width / 2.0;
         let half_extent_y = height / 2.0;
         let center_x = x + half_extent_x;
@@ -480,8 +480,8 @@ impl<'a> UiState<'a> {
             center_y,
             half_extent_x,
             half_extent_y,
-            1.0,
-            0x4400ff00,
+            5.0,
+            background_color,
             0xffff0000,
         ))
     }
@@ -527,7 +527,7 @@ impl<'a> UiState<'a> {
             x += advance * scale;
 
             self.draw_cmds
-                .push(Draw2dCmd::glyph(touched_glyph_index, 0x880000ff, x, y));
+                .push(Draw2dCmd::glyph(touched_glyph_index, 0xff0000ff, x, y));
 
             x += advance_width * scale;
         }
@@ -1269,6 +1269,17 @@ impl<'gpu> DrawState<'gpu> {
                 ],
             );
 
+            let tile_buffer = gpu.request_transient_buffer(
+                frame,
+                thread_token,
+                BufferUsageFlags::STORAGE,
+                self.tile_resolution_x as usize
+                    * self.tile_resolution_y as usize
+                    * std::mem::size_of::<u32>()
+                    * 2,
+            );
+            let tile_buffer_address = gpu.get_buffer_address(tile_buffer.to_arg());
+
             // Render UI
             {
                 gpu.cmd_begin_debug_marker(
@@ -1515,11 +1526,29 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_3_resolve_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
+                    &Draw2dResolveConstants {
+                        screen_resolution_x: self.width,
+                        screen_resolution_y: self.height,
+                        tile_resolution_x: self.tile_resolution_x,
+                        tile_resolution_y: self.tile_resolution_y,
+                        draw_buffer_len,
+                        _pad: 0,
+                        draw_buffer_address,
+                        glyph_buffer_address,
+                        coarse_buffer_address,
+                        fine_buffer_address: tmp_buffer_address,
+                        tile_buffer_address,
+                    },
+                );
                 gpu.cmd_dispatch(
                     cmd_encoder,
+                    1,
                     self.tile_resolution_x,
                     self.tile_resolution_y,
-                    1,
                 );
 
                 gpu.cmd_barrier(
@@ -1533,6 +1562,24 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_rasterize_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
+                    &Draw2dRasterizeConstants {
+                        screen_resolution_x: self.width,
+                        screen_resolution_y: self.height,
+                        tile_resolution_x: self.tile_resolution_x,
+                        tile_resolution_y: self.tile_resolution_y,
+                        atlas_resolution_x: atlas_width,
+                        atlas_resolution_y: atlas_height,
+                        draw_buffer_address,
+                        glyph_buffer_address,
+                        coarse_buffer_address,
+                        fine_buffer_address: tmp_buffer_address,
+                        tile_buffer_address,
+                    },
+                );
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
                 gpu.cmd_end_debug_marker(cmd_encoder);
@@ -1542,7 +1589,7 @@ impl<'gpu> DrawState<'gpu> {
             {
                 gpu.cmd_begin_debug_marker(
                     cmd_encoder,
-                    "display transform",
+                    "composite",
                     microshades::GREEN_RGBA_F32[3],
                 );
 
@@ -1573,7 +1620,16 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.composite_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-
+                gpu.cmd_push_constants(
+                    cmd_encoder,
+                    ShaderStageFlags::COMPUTE,
+                    0,
+                    &CompositeConstants {
+                        tile_resolution_x: self.tile_resolution_x,
+                        tile_resolution_y: self.tile_resolution_y,
+                        tile_buffer_address,
+                    },
+                );
                 gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
 
                 gpu.cmd_end_debug_marker(cmd_encoder);
@@ -1753,10 +1809,16 @@ pub fn main() {
             let base_y = (base_y + 1.0) * 0.5;
 
             for _ in 0..100 {
-                ui_state.rect(0.0, 0.0, width as f32, height as f32);
+                ui_state.rect(
+                    100.0,
+                    100.0,
+                    width as f32 - 200.0,
+                    height as f32 - 200.0,
+                    0x88008800,
+                );
             }
 
-            for i in 0..80 {
+            for i in 0..1 {
                 let i = i as f32;
                 ui_state.text_fmt(
                     base_x * 100.0 * scale - 5.0,
@@ -1780,16 +1842,10 @@ pub fn main() {
                     );
             }
 
-            ui_state.rect(base_x * 60.0, base_y * 60.0, 120.0, 120.0);
-            ui_state.rect(base_x * 500.0, base_y * 100.0, 120.0, 120.0);
-            ui_state.rect(base_x * 90.0, base_y * 290.0, 140.0, 120.0);
-            ui_state.rect(base_x * 800.0, base_y * 320.0, 120.0, 120.0);
-            ui_state.rect(base_x * 200.0, base_y * 200.0, 120.0, 120.0);
-            ui_state.rect(base_x * 300.0, base_y * 120.0, 120.0, 170.0);
-            ui_state.rect(base_x * 1000.0, base_y * 30.0, 50.0, 120.0);
-            ui_state.rect(base_x * 340.0, base_y * 400.0, 120.0, 110.0);
-            ui_state.rect(base_x * 290.0, base_y * 80.0, 120.0, 10.0);
-            ui_state.rect(base_x * 310.0, base_y * 190.0, 10.0, 120.0);
+            for _ in 0..500 {
+                ui_state.rect(base_x * 60.0, base_y * 60.0, 2400.0, 900.0, 0xff00ff00);
+            }
+            ui_state.rect(base_x * 60.0, base_y * 60.0, 2400.0, 900.0, 0xffff0000);
 
             draw_state.draw(
                 thread_token,

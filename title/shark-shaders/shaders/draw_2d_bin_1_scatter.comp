@@ -33,7 +33,7 @@ layout (local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
-    const uint draw_index = gl_WorkGroupID.x * gl_WorkGroupSize.x +  local_id;
+    const uint draw_index = gl_WorkGroupID.x * gl_WorkGroupSize.x + local_id;
 
     // Bounds for this command, any tiles which intersect this AABB will be written.
     vec2 cmd_min = vec2(99999.9);
@@ -82,8 +82,47 @@ void main() {
     const bool cmd_absolute_max = cmd_max_tile == cmds_max_tile;
     const bool use_individual_bounds = !any(notEqual(subgroupBallot(cmd_absolute_min) & subgroupBallot(cmd_absolute_max), uvec4(0)));
 
-    if (false && use_individual_bounds) {
+    if (use_individual_bounds) {
+        uint count = 0;
 
+        for (uint y = cmds_min_tile.y; y <= cmds_max_tile.y; y++) {
+            for (uint x = cmds_min_tile.x; x <= cmds_max_tile.x; x++) {
+                const vec2 tile_min = uvec2(x, y) * TILE_SIZE;
+                const vec2 tile_max = min(tile_min + TILE_SIZE, constants.screen_resolution);
+
+                const bool intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
+                const uvec4 ballot = subgroupBallot(intersects);
+
+                if (subgroupElect()) {
+                    count += uint(ballot.x != 0);
+                }
+            }
+        }
+
+        uint offset;
+        if (subgroupElect()) {
+            offset = atomicAdd(constants.coarse_buffer.values[0], count) + 1;
+        }
+        offset = subgroupBroadcastFirst(offset);
+
+        if (offset >= constants.coarse_buffer_len) {
+            return;
+        }
+
+        for (uint y = cmds_min_tile.y; y <= cmds_max_tile.y; y++) {
+            for (uint x = cmds_min_tile.x; x <= cmds_max_tile.x; x++) {
+                const vec2 tile_min = uvec2(x, y) * TILE_SIZE;
+                const vec2 tile_max = min(tile_min + TILE_SIZE, constants.screen_resolution);
+
+                const bool intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
+                const uvec4 ballot = subgroupBallot(intersects);
+
+                if (subgroupElect() && ballot.x != 0 && offset < constants.coarse_buffer_len) {
+                    const uint packed = ((y & 0xff) << 24) | ((x & 0xff) << 16) | (gl_WorkGroupID.x & 0xffff);
+                    constants.coarse_buffer.values[offset++] = packed;
+                }
+            }
+        }
     } else {
         const uvec2 tile_count = cmds_max_tile - cmds_min_tile + uvec2(1);
         const uint count = tile_count.x * tile_count.y;
@@ -112,78 +151,4 @@ void main() {
             offset += tile_count.x;
         }
     }
-
-    // if (gl_SubgroupSize == 32 && fullscreen_ballot.x != 0) {
-    //     uint offset;
-    //     if (subgroupElect()) {
-    //         const uint count = constants.tile_resolution.x * constants.tile_resolution.y;
-    //         offset = atomicAdd(constants.coarse_buffer.values[0], count) + 1;
-    //     }
-    //     offset = subgroupBroadcastFirst(offset);
-
-    //     if (offset >= constants.coarse_buffer_len) {
-    //         return;
-    //     }
-
-    //     const uint word_index = gl_WorkGroupID.x;
-
-    //     for (uint y = 0; y < constants.tile_resolution.y; y++) {
-    //         for (uint x = 0; x < constants.tile_resolution.x; x++) {
-    //             const uint tile_index = y * constants.tile_resolution.x + x;
-    //             const uint packed = (tile_index << 16) | word_index;
-    //             if (subgroupElect() && offset + tile_index < constants.coarse_buffer_len) {
-    //                 constants.coarse_buffer.values[offset + tile_index] = packed;
-    //             }
-    //         }
-    //     }
-
-    //     return;
-    // }
-
-    // uint count = 0;
-
-    // for (uint y = cmds_min_tile.y; y <= cmds_max_tile.y; y++) {
-    //     for (uint x = cmds_min_tile.x; x <= cmds_max_tile.x; x++) {
-    //         const vec2 tile_min = uvec2(x, y) * TILE_SIZE;
-    //         const vec2 tile_max = min(tile_min + TILE_SIZE, constants.screen_resolution);
-
-    //         const bool intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
-    //         const uvec4 ballot = subgroupBallot(intersects);
-
-    //         if (subgroupElect()) {
-    //             count += uint(ballot.x != 0);
-    //         }
-    //     }
-    // }
-
-    // if (count == 0) {
-    //     return;
-    // }
-
-    // uint offset;
-    // if (subgroupElect()) {
-    //     offset = atomicAdd(constants.coarse_buffer.values[0], count) + 1;
-    // }
-    // offset = subgroupBroadcastFirst(offset);
-
-    // if (offset >= constants.coarse_buffer_len) {
-    //     return;
-    // }
-
-    // for (uint y = cmds_min_tile.y; y <= cmds_max_tile.y; y++) {
-    //     for (uint x = cmds_min_tile.x; x <= cmds_max_tile.x; x++) {
-    //         const vec2 tile_min = uvec2(x, y) * TILE_SIZE;
-    //         const vec2 tile_max = min(tile_min + TILE_SIZE, constants.screen_resolution);
-    //         const uint tile_index = y * constants.tile_resolution.x + x;
-
-    //         const bool intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
-    //         const uvec4 ballot = subgroupBallot(intersects);
-
-    //         if (subgroupElect() && ballot.x != 0 && offset < constants.coarse_buffer_len) {
-    //             const uint word_index = gl_WorkGroupID.x;
-    //             const uint packed = (tile_index << 16) | word_index;
-    //             constants.coarse_buffer.values[offset++] = packed;
-    //         }
-    //     }
-    // }
 }
