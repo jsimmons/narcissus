@@ -41,9 +41,11 @@ void main() {
     const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
     const uint draw_index = gl_WorkGroupID.x * gl_WorkGroupSize.x + local_id;
 
+    const bool in_bounds = draw_index < constants.draw_buffer_len;
+
     vec2 cmd_min = vec2(99999.9);
     vec2 cmd_max = vec2(-99999.9);
-    if (draw_index < constants.draw_buffer_len) {
+    if (in_bounds) {
         const Draw2dCmd cmd = constants.draw_buffer.values[draw_index];
         const uint type = cmd.type;
         for (;;) {
@@ -112,9 +114,25 @@ void main() {
 
         subgroupBarrier();
 
-        for (uint y = cmd_min_tile.y; y <= cmd_max_tile.y; y++) {
-            for (uint x = cmd_min_tile.x; x <= cmd_max_tile.x; x++) {
-                atomicOr(intersected_tiles[y * BITMAP_STRIDE + x / 32], 1 << (x & 31));
+        {
+            const uint min_word = cmd_min_tile.x / 32;
+            const uint max_word = cmd_max_tile.x / 32;
+            const uint min_bit = cmd_min_tile.x & 31;
+            const uint max_bit = cmd_max_tile.x & 31;
+            const uint lsb = ~((1 << min_bit) - 1);
+            const uint msb = ((1 << max_bit) - 1) | 1 << max_bit;
+            if (min_word == max_word) {
+                for (uint y = cmd_min_tile.y; y <= cmd_max_tile.y; y++) {
+                    atomicOr(intersected_tiles[y * BITMAP_STRIDE + min_word], lsb & msb);
+                }
+            } else {
+                for (uint y = cmd_min_tile.y; y <= cmd_max_tile.y; y++) {
+                    atomicOr(intersected_tiles[y * BITMAP_STRIDE + min_word], lsb);
+                    for (uint i = min_word + 1; i <= (max_word - 1); i++) {
+                        intersected_tiles[y * BITMAP_STRIDE + i] = 0xffffffff;
+                    }
+                    atomicOr(intersected_tiles[y * BITMAP_STRIDE + max_word], msb);
+                }
             }
         }
 
@@ -135,7 +153,10 @@ void main() {
         }
         offset = subgroupBroadcastFirst(offset);
 
-        for (uint i = 0; i < BITMAP_SIZE; i += gl_SubgroupSize) {
+        const uint start = cmds_min_tile.y * BITMAP_STRIDE + cmds_min_tile.x / 32;
+        const uint end = cmds_max_tile.y * BITMAP_STRIDE + cmds_max_tile.x / 32;
+
+        for (uint i = start; i <= end; i += gl_SubgroupSize) {
             const uint ii = i + gl_SubgroupInvocationID;
             uint bitmap = intersected_tiles[ii];
             const uint count = bitCount(bitmap);
