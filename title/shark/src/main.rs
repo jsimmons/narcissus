@@ -452,7 +452,6 @@ struct UiState<'a> {
     glyph_cache: GlyphCache<'a, Fonts<'a>>,
 
     tmp_string: String,
-    tmp_glyphs: Vec<GlyphIndex>,
 
     draw_cmds: Vec<Draw2dCmd>,
 }
@@ -466,7 +465,6 @@ impl<'a> UiState<'a> {
             fonts,
             glyph_cache,
             tmp_string: default(),
-            tmp_glyphs: default(),
             draw_cmds: vec![],
         }
     }
@@ -505,13 +503,11 @@ impl<'a> UiState<'a> {
         self.tmp_string.clear();
         self.tmp_string.write_fmt(args).unwrap();
 
-        self.tmp_glyphs.clear();
-        self.tmp_glyphs.extend(self.tmp_string.chars().map(|c| {
-            font.glyph_index(c)
-                .unwrap_or_else(|| font.glyph_index('□').unwrap())
-        }));
+        for c in self.tmp_string.chars() {
+            let glyph_index = font
+                .glyph_index(c)
+                .unwrap_or_else(|| font.glyph_index('□').unwrap());
 
-        for glyph_index in self.tmp_glyphs.iter().copied() {
             let touched_glyph_index =
                 self.glyph_cache
                     .touch_glyph(font_family, glyph_index, font_size_px);

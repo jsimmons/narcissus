@@ -1,10 +1,10 @@
-use rustc_hash::FxHashMap;
+use narcissus_core::zeroed_box;
 use stb_truetype_sys::{
     stbtt_FindGlyphIndex, stbtt_GetFontOffsetForIndex, stbtt_GetFontVMetrics,
     stbtt_GetGlyphBitmapBoxSubpixel, stbtt_GetGlyphHMetrics, stbtt_GetGlyphKernAdvance,
     stbtt_InitFont, stbtt_MakeGlyphBitmapSubpixelPrefilter, truetype,
 };
-use std::{cell::RefCell, marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
+use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Oversample {
@@ -85,12 +85,20 @@ pub struct GlyphBitmapBox {
     pub y1: i32,
 }
 
+const ASCII_PRINTABLE_FIRST: i32 = 32;
+const ASCII_PRINTABLE_LAST: i32 = 127;
+const ASCII_PRINTABLE_COUNT: usize = (ASCII_PRINTABLE_LAST - ASCII_PRINTABLE_FIRST + 1) as usize;
+
+const KERNING_CACHE_FIRST: i32 = 0;
+const KERNING_CACHE_LAST: i32 = 127;
+const KERNING_CACHE_COUNT: usize = (KERNING_CACHE_LAST - KERNING_CACHE_FIRST + 1) as usize;
+
 pub struct Font<'a> {
     info: truetype::FontInfo,
     phantom: PhantomData<&'a [u8]>,
     vertical_metrics: VerticalMetrics,
-    glyph_index_cache: [Option<GlyphIndex>; 256],
-    kerning_cache: RefCell<FxHashMap<(GlyphIndex, GlyphIndex), f32>>,
+    glyph_index_cache: [Option<GlyphIndex>; ASCII_PRINTABLE_COUNT],
+    kerning_cache: Box<[[f32; KERNING_CACHE_COUNT]; KERNING_CACHE_COUNT]>,
 }
 
 impl<'a> Font<'a> {
@@ -125,10 +133,21 @@ impl<'a> Font<'a> {
             }
         };
 
-        let mut glyph_index_cache = [None; 256];
-        for (i, glyph_index) in glyph_index_cache.iter_mut().enumerate() {
-            *glyph_index =
-                NonZeroI32::new(unsafe { stbtt_FindGlyphIndex(&info, i as i32) }).map(GlyphIndex);
+        let mut glyph_index_cache = [None; ASCII_PRINTABLE_COUNT];
+        for (i, printable) in (ASCII_PRINTABLE_FIRST..=ASCII_PRINTABLE_LAST).enumerate() {
+            glyph_index_cache[i] =
+                NonZeroI32::new(unsafe { stbtt_FindGlyphIndex(&info, printable as i32) })
+                    .map(GlyphIndex);
+        }
+
+        // SAFETY: Safe to zero as all zero bytes f32 is 0.0
+        let mut kerning_cache: Box<[[f32; KERNING_CACHE_COUNT]; KERNING_CACHE_COUNT]> =
+            unsafe { zeroed_box().assume_init() };
+        for (i, second) in (KERNING_CACHE_FIRST..=KERNING_CACHE_LAST).enumerate() {
+            for (j, first) in (KERNING_CACHE_FIRST..=KERNING_CACHE_LAST).enumerate() {
+                kerning_cache[i][j] =
+                    unsafe { stbtt_GetGlyphKernAdvance(&info, first, second) as f32 };
+            }
         }
 
         Self {
@@ -136,7 +155,7 @@ impl<'a> Font<'a> {
             phantom: PhantomData,
             vertical_metrics,
             glyph_index_cache,
-            kerning_cache: Default::default(),
+            kerning_cache,
         }
     }
 
@@ -167,8 +186,8 @@ impl<'a> Font<'a> {
     /// Return the `GlyphIndex` for the character, or `None` if the font has no
     /// matching glyph.
     pub fn glyph_index(&self, c: char) -> Option<GlyphIndex> {
-        if (c as usize) < 256 {
-            self.glyph_index_cache[c as usize]
+        if (c as i32) >= ASCII_PRINTABLE_FIRST && (c as i32) <= ASCII_PRINTABLE_LAST {
+            self.glyph_index_cache[(c as i32 - ASCII_PRINTABLE_FIRST) as usize]
         } else {
             let glyph_index = unsafe { stbtt_FindGlyphIndex(&self.info, c as i32) };
             NonZeroI32::new(glyph_index).map(GlyphIndex)
@@ -263,13 +282,19 @@ impl<'a> Font<'a> {
         }
     }
 
-    pub fn kerning_advance(&self, glyph_1: GlyphIndex, glyph_2: GlyphIndex) -> f32 {
-        let mut cache = self.kerning_cache.try_borrow_mut().unwrap();
-        let entry = cache.entry((glyph_1, glyph_2));
-        let advance = entry.or_insert_with(|| unsafe {
-            stbtt_GetGlyphKernAdvance(&self.info, glyph_1.0.get(), glyph_2.0.get()) as f32
-        });
-        *advance
+    pub fn kerning_advance(&self, glyph1: GlyphIndex, glyph2: GlyphIndex) -> f32 {
+        let glyph1 = glyph1.0.get();
+        let glyph2 = glyph2.0.get();
+        if glyph1 >= KERNING_CACHE_FIRST
+            && glyph1 <= KERNING_CACHE_LAST
+            && glyph2 >= KERNING_CACHE_FIRST
+            && glyph2 <= KERNING_CACHE_LAST
+        {
+            self.kerning_cache[(glyph2 - KERNING_CACHE_FIRST) as usize]
+                [(glyph1 - KERNING_CACHE_FIRST) as usize]
+        } else {
+            unsafe { stbtt_GetGlyphKernAdvance(&self.info, glyph1, glyph2) as f32 }
+        }
     }
 }
 
