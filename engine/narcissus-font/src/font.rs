@@ -1,9 +1,10 @@
+use rustc_hash::FxHashMap;
 use stb_truetype_sys::{
     stbtt_FindGlyphIndex, stbtt_GetFontOffsetForIndex, stbtt_GetFontVMetrics,
     stbtt_GetGlyphBitmapBoxSubpixel, stbtt_GetGlyphHMetrics, stbtt_GetGlyphKernAdvance,
     stbtt_InitFont, stbtt_MakeGlyphBitmapSubpixelPrefilter, truetype,
 };
-use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
+use std::{cell::RefCell, marker::PhantomData, mem::MaybeUninit, num::NonZeroI32};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Oversample {
@@ -88,6 +89,8 @@ pub struct Font<'a> {
     info: truetype::FontInfo,
     phantom: PhantomData<&'a [u8]>,
     vertical_metrics: VerticalMetrics,
+    glyph_index_cache: [Option<GlyphIndex>; 256],
+    kerning_cache: RefCell<FxHashMap<(GlyphIndex, GlyphIndex), f32>>,
 }
 
 impl<'a> Font<'a> {
@@ -122,10 +125,18 @@ impl<'a> Font<'a> {
             }
         };
 
+        let mut glyph_index_cache = [None; 256];
+        for (i, glyph_index) in glyph_index_cache.iter_mut().enumerate() {
+            *glyph_index =
+                NonZeroI32::new(unsafe { stbtt_FindGlyphIndex(&info, i as i32) }).map(GlyphIndex);
+        }
+
         Self {
             info,
             phantom: PhantomData,
             vertical_metrics,
+            glyph_index_cache,
+            kerning_cache: Default::default(),
         }
     }
 
@@ -156,8 +167,12 @@ impl<'a> Font<'a> {
     /// Return the `GlyphIndex` for the character, or `None` if the font has no
     /// matching glyph.
     pub fn glyph_index(&self, c: char) -> Option<GlyphIndex> {
-        let glyph_index = unsafe { stbtt_FindGlyphIndex(&self.info, c as i32) };
-        NonZeroI32::new(glyph_index).map(GlyphIndex)
+        if (c as usize) < 256 {
+            self.glyph_index_cache[c as usize]
+        } else {
+            let glyph_index = unsafe { stbtt_FindGlyphIndex(&self.info, c as i32) };
+            NonZeroI32::new(glyph_index).map(GlyphIndex)
+        }
     }
 
     pub fn glyph_bitmap_box(
@@ -249,7 +264,12 @@ impl<'a> Font<'a> {
     }
 
     pub fn kerning_advance(&self, glyph_1: GlyphIndex, glyph_2: GlyphIndex) -> f32 {
-        unsafe { stbtt_GetGlyphKernAdvance(&self.info, glyph_1.0.get(), glyph_2.0.get()) as f32 }
+        let mut cache = self.kerning_cache.try_borrow_mut().unwrap();
+        let entry = cache.entry((glyph_1, glyph_2));
+        let advance = entry.or_insert_with(|| unsafe {
+            stbtt_GetGlyphKernAdvance(&self.info, glyph_1.0.get(), glyph_2.0.get()) as f32
+        });
+        *advance
     }
 }
 
