@@ -44,11 +44,7 @@ const SHADERS: &[Shader] = &[
     },
     Shader {
         stage: "comp",
-        name: "radix_sort_1_spine",
-    },
-    Shader {
-        stage: "comp",
-        name: "radix_sort_2_downsweep",
+        name: "radix_sort_1_downsweep",
     },
     Shader {
         stage: "comp",

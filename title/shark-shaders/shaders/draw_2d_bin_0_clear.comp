@@ -14,6 +14,7 @@
 #include "radix_sort.h"
 
 struct Draw2dClearConstants {
+    FinishedRef finished_buffer;
     CoarseRef coarse_buffer;
 };
 
@@ -24,5 +25,6 @@ layout(std430, push_constant) uniform Draw2dClearConstantsBlock {
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
+    constants.finished_buffer.value = 0;
     constants.coarse_buffer.values[0] = 0;
 }

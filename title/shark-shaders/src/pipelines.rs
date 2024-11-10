@@ -142,6 +142,7 @@ pub struct BasicConstants<'a> {
 
 #[repr(C)]
 pub struct Draw2dClearConstants<'a> {
+    pub finished_buffer_address: BufferAddress<'a>,
     pub coarse_buffer_address: BufferAddress<'a>,
 }
 
@@ -212,14 +213,9 @@ pub struct CompositeConstants<'a> {
 pub struct RadixSortUpsweepConstants<'a> {
     pub shift: u32,
     pub _pad: u32,
+    pub finished_buffer_address: BufferAddress<'a>,
     pub count_buffer_address: BufferAddress<'a>,
     pub src_buffer_address: BufferAddress<'a>,
-    pub spine_buffer_address: BufferAddress<'a>,
-}
-
-#[repr(C)]
-pub struct RadixSortSpineConstants<'a> {
-    pub count_buffer_address: BufferAddress<'a>,
     pub spine_buffer_address: BufferAddress<'a>,
 }
 
@@ -261,8 +257,7 @@ pub struct Pipelines {
     pub draw_2d_rasterize_pipeline: Pipeline,
 
     pub radix_sort_0_upsweep_pipeline: Pipeline,
-    pub radix_sort_1_spine_pipeline: Pipeline,
-    pub radix_sort_2_downsweep_pipeline: Pipeline,
+    pub radix_sort_1_downsweep_pipeline: Pipeline,
 
     pub composite_pipeline: Pipeline,
 }
@@ -425,16 +420,8 @@ impl Pipelines {
             std::mem::size_of::<RadixSortUpsweepConstants>(),
         );
 
-        let radix_sort_1_spine_pipeline = create_compute_pipeline(
-            crate::RADIX_SORT_1_SPINE_COMP_SPV,
-            "radix_sort_spine",
-            32,
-            true,
-            std::mem::size_of::<RadixSortSpineConstants>(),
-        );
-
-        let radix_sort_2_downsweep_pipeline = create_compute_pipeline(
-            crate::RADIX_SORT_2_DOWNSWEEP_COMP_SPV,
+        let radix_sort_1_downsweep_pipeline = create_compute_pipeline(
+            crate::RADIX_SORT_1_DOWNSWEEP_COMP_SPV,
             "radix_sort_downsweep",
             32,
             true,
@@ -465,8 +452,7 @@ impl Pipelines {
             draw_2d_rasterize_pipeline,
 
             radix_sort_0_upsweep_pipeline,
-            radix_sort_1_spine_pipeline,
-            radix_sort_2_downsweep_pipeline,
+            radix_sort_1_downsweep_pipeline,
 
             composite_pipeline,
         }

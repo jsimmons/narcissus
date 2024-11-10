@@ -7,6 +7,11 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
 
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_shuffle_relative: enable
+#extension GL_KHR_shader_subgroup_vote : require
+
 #include "compute_bindings.h"
 
 #include "radix_sort.h"
@@ -14,17 +19,22 @@
 #include "draw_2d.h"
 #include "indirect.h"
 
+layout (constant_id = 0) const uint SUBGROUP_SIZE = 64;
+
+const uint NUM_SUBGROUPS = RADIX_WGP_SIZE / SUBGROUP_SIZE;
+
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer ValuesRef {
     uint values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 4) writeonly buffer SpineRef {
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer SpineRef {
     uint values[];
 };
 
 struct RadixSortUpsweepConstants {
     uint shift;
     uint _pad;
+    FinishedRef finished_buffer;
     CountRef count_buffer;
     ValuesRef src_buffer;
     SpineRef spine_buffer;
@@ -36,14 +46,18 @@ layout(std430, push_constant) uniform RadixSortUpsweepConstantsBlock {
 
 shared uint histogram[RADIX_DIGITS];
 
+shared bool finished;
+shared uint carry;
+shared uint sums[NUM_SUBGROUPS];
+
 layout (local_size_x = RADIX_DIGITS, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     const uint shift = constants.shift;
     const uint count = constants.count_buffer.value;
+    const uint workgroup_count = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
 
-    const uint wgp_count = (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP;
-    const bool needs_bounds_check = gl_WorkGroupID.x == wgp_count - 1;
+    const bool needs_bounds_check = gl_WorkGroupID.x == workgroup_count - 1;
 
     // Clear local histogram
     histogram[gl_LocalInvocationID.x] = 0;
@@ -73,5 +87,52 @@ void main() {
     // Scatter to the spine, this is a striped layout so we can efficiently
     // calculate the prefix sum. Re-calculate how many workgroups we dispatched
     // to determine the stride we need to write at.
-    constants.spine_buffer.values[(gl_LocalInvocationID.x * wgp_count) + gl_WorkGroupID.x] = histogram[gl_LocalInvocationID.x];
+    constants.spine_buffer.values[(gl_LocalInvocationID.x * workgroup_count) + gl_WorkGroupID.x] = histogram[gl_LocalInvocationID.x];
+
+    barrier();
+
+    if (gl_SubgroupID == 0 && subgroupElect()) {
+        finished = atomicAdd(constants.finished_buffer.value, 1) < workgroup_count - 1;
+    }
+
+    barrier();
+
+    if (finished) {
+        return;
+    }
+
+    // reset for the next pass
+    constants.finished_buffer.value = 0;
+
+    const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
+
+    carry = 0;
+    for (uint i = 0; i < workgroup_count; i++) {
+        // Load values and calculate partial sums
+        const uint value = constants.spine_buffer.values[i * RADIX_DIGITS + local_id];
+        const uint sum = subgroupAdd(value);
+        const uint scan = subgroupExclusiveAdd(value);
+
+        if (subgroupElect()) {
+            sums[gl_SubgroupID] = sum;
+        }
+
+        barrier();
+
+        const uint carry_in = carry;
+
+        // Scan partials
+        if (local_id < NUM_SUBGROUPS) {
+            sums[local_id] = subgroupExclusiveAdd(sums[local_id]);
+        }
+
+        barrier();
+
+        // Write out the final prefix sum, combining the carry-in, subgroup sums, and local scan
+        constants.spine_buffer.values[i * RADIX_DIGITS + local_id] = carry_in + sums[gl_SubgroupID] + scan;
+
+        if (gl_SubgroupID == gl_NumSubgroups - 1 && subgroupElect()) {
+            atomicAdd(carry, sums[gl_NumSubgroups - 1] + sum);
+        }
+    }
 }

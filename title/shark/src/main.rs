@@ -9,7 +9,7 @@ use shark_shaders::pipelines::{
     calculate_spine_size, BasicConstants, CompositeConstants, ComputeBinds, Draw2dClearConstants,
     Draw2dCmd, Draw2dRasterizeConstants, Draw2dResolveConstants, Draw2dScatterConstants,
     Draw2dSortConstants, GraphicsBinds, Pipelines, RadixSortDownsweepConstants,
-    RadixSortSpineConstants, RadixSortUpsweepConstants, DRAW_2D_TILE_SIZE,
+    RadixSortUpsweepConstants, DRAW_2D_TILE_SIZE,
 };
 
 use renderdoc_sys as rdoc;
@@ -18,7 +18,7 @@ use fonts::{FontFamily, Fonts};
 use helpers::load_obj;
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
-use narcissus_font::{FontCollection, GlyphCache, GlyphIndex, HorizontalMetrics};
+use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
     create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder,
     ColorSpace, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Gpu, Image, ImageAspectFlags,
@@ -1320,6 +1320,13 @@ impl<'gpu> DrawState<'gpu> {
                     3 * std::mem::size_of::<u32>(),
                 );
 
+                let finished_buffer = gpu.request_transient_buffer(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::INDIRECT,
+                    std::mem::size_of::<u32>(),
+                );
+
                 let tmp_buffer = gpu.request_transient_buffer(
                     frame,
                     thread_token,
@@ -1339,6 +1346,7 @@ impl<'gpu> DrawState<'gpu> {
                 let coarse_buffer_address = gpu.get_buffer_address(coarse_buffer.to_arg());
                 let indirect_dispatch_buffer_address =
                     gpu.get_buffer_address(indirect_dispatch_buffer.to_arg());
+                let finished_buffer_address = gpu.get_buffer_address(finished_buffer.to_arg());
                 let tmp_buffer_address = gpu.get_buffer_address(tmp_buffer.to_arg());
                 let spine_buffer_address = gpu.get_buffer_address(spine_buffer.to_arg());
 
@@ -1349,6 +1357,7 @@ impl<'gpu> DrawState<'gpu> {
                     ShaderStageFlags::COMPUTE,
                     0,
                     &Draw2dClearConstants {
+                        finished_buffer_address,
                         coarse_buffer_address,
                     },
                 );
@@ -1450,6 +1459,7 @@ impl<'gpu> DrawState<'gpu> {
                         &RadixSortUpsweepConstants {
                             shift,
                             _pad: 0,
+                            finished_buffer_address,
                             count_buffer_address,
                             src_buffer_address,
                             spine_buffer_address,
@@ -1466,33 +1476,10 @@ impl<'gpu> DrawState<'gpu> {
                         &[],
                     );
 
-                    // Exclusive sum of the spine
-                    gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.radix_sort_1_spine_pipeline);
-                    gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                    gpu.cmd_push_constants(
-                        cmd_encoder,
-                        ShaderStageFlags::COMPUTE,
-                        0,
-                        &RadixSortSpineConstants {
-                            count_buffer_address,
-                            spine_buffer_address,
-                        },
-                    );
-                    gpu.cmd_dispatch(cmd_encoder, 1, 1, 1);
-
-                    gpu.cmd_barrier(
-                        cmd_encoder,
-                        Some(&GlobalBarrier {
-                            prev_access: &[Access::ComputeWrite],
-                            next_access: &[Access::ComputeOtherRead],
-                        }),
-                        &[],
-                    );
-
                     // Downsweep
                     gpu.cmd_set_pipeline(
                         cmd_encoder,
-                        self.pipelines.radix_sort_2_downsweep_pipeline,
+                        self.pipelines.radix_sort_1_downsweep_pipeline,
                     );
                     gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
                     gpu.cmd_push_constants(

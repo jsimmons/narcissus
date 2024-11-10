@@ -5,7 +5,7 @@ use narcissus_gpu::{
 };
 use shark_shaders::pipelines::{
     calcuate_workgroup_count, calculate_spine_size, Pipelines, RadixSortDownsweepConstants,
-    RadixSortSpineConstants, RadixSortUpsweepConstants,
+    RadixSortUpsweepConstants,
 };
 
 fn gpu_sort(values: &mut [u32]) {
@@ -33,6 +33,13 @@ fn gpu_sort(values: &mut [u32]) {
         size: std::mem::size_of_val(values),
     });
 
+    let finished_buffer = gpu.create_buffer(&BufferDesc {
+        memory_location: MemoryLocation::Device,
+        host_mapped: false,
+        usage: BufferUsageFlags::STORAGE,
+        size: std::mem::size_of::<u32>(),
+    });
+
     let spine_buffer = gpu.create_buffer(&BufferDesc {
         memory_location: MemoryLocation::Device,
         host_mapped: false,
@@ -41,6 +48,7 @@ fn gpu_sort(values: &mut [u32]) {
     });
 
     let count_buffer_address = gpu.get_buffer_address(count_buffer.to_arg());
+    let finished_buffer_address = gpu.get_buffer_address(finished_buffer.to_arg());
     let spine_buffer_address = gpu.get_buffer_address(spine_buffer.to_arg());
     let mut src_buffer_address = gpu.get_buffer_address(sort_buffer.to_arg());
     let mut dst_buffer_address = gpu.get_buffer_address(tmp_buffer.to_arg());
@@ -67,6 +75,7 @@ fn gpu_sort(values: &mut [u32]) {
                     &RadixSortUpsweepConstants {
                         shift,
                         _pad: 0,
+                        finished_buffer_address,
                         count_buffer_address,
                         src_buffer_address,
                         spine_buffer_address,
@@ -88,30 +97,8 @@ fn gpu_sort(values: &mut [u32]) {
                     &[],
                 );
 
-                // Exclusive sum of the spine
-                gpu.cmd_set_pipeline(cmd_encoder, pipelines.radix_sort_1_spine_pipeline);
-                gpu.cmd_push_constants(
-                    cmd_encoder,
-                    ShaderStageFlags::COMPUTE,
-                    0,
-                    &RadixSortSpineConstants {
-                        count_buffer_address,
-                        spine_buffer_address,
-                    },
-                );
-                gpu.cmd_dispatch(cmd_encoder, 1, 1, 1);
-
-                gpu.cmd_barrier(
-                    cmd_encoder,
-                    Some(&GlobalBarrier {
-                        prev_access: &[Access::ComputeWrite],
-                        next_access: &[Access::ComputeOtherRead],
-                    }),
-                    &[],
-                );
-
                 // Downsweep
-                gpu.cmd_set_pipeline(cmd_encoder, pipelines.radix_sort_2_downsweep_pipeline);
+                gpu.cmd_set_pipeline(cmd_encoder, pipelines.radix_sort_1_downsweep_pipeline);
                 gpu.cmd_push_constants(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
