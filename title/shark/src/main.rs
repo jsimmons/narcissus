@@ -18,7 +18,7 @@ use fonts::{FontFamily, Fonts};
 use helpers::load_obj;
 use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
-use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
+use narcissus_font::{FontCollection, GlyphCache, GlyphIndex, HorizontalMetrics};
 use narcissus_gpu::{
     create_device, Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder,
     ColorSpace, DeviceExt, Extent2d, Extent3d, Frame, GlobalBarrier, Gpu, Image, ImageAspectFlags,
@@ -452,6 +452,7 @@ struct UiState<'a> {
     glyph_cache: GlyphCache<'a, Fonts<'a>>,
 
     tmp_string: String,
+    tmp_glyphs: Vec<GlyphIndex>,
 
     draw_cmds: Vec<Draw2dCmd>,
 }
@@ -465,6 +466,7 @@ impl<'a> UiState<'a> {
             fonts,
             glyph_cache,
             tmp_string: default(),
+            tmp_glyphs: default(),
             draw_cmds: vec![],
         }
     }
@@ -503,11 +505,13 @@ impl<'a> UiState<'a> {
         self.tmp_string.clear();
         self.tmp_string.write_fmt(args).unwrap();
 
-        for c in self.tmp_string.chars() {
-            let glyph_index = font
-                .glyph_index(c)
-                .unwrap_or_else(|| font.glyph_index('□').unwrap());
+        self.tmp_glyphs.clear();
+        self.tmp_glyphs.extend(self.tmp_string.chars().map(|c| {
+            font.glyph_index(c)
+                .unwrap_or_else(|| font.glyph_index('□').unwrap())
+        }));
 
+        for glyph_index in self.tmp_glyphs.iter().copied() {
             let touched_glyph_index =
                 self.glyph_cache
                     .touch_glyph(font_family, glyph_index, font_size_px);
@@ -1719,6 +1723,8 @@ pub fn main() {
     }
     let mut swapchain_configurator = Configurator();
 
+    let mut draw_duration = Duration::ZERO;
+
     'main: loop {
         let frame = gpu.begin_frame();
         {
@@ -1802,8 +1808,8 @@ pub fn main() {
                 tick_accumulator -= target_dt;
             }
 
-            let tick_duration = Instant::now() - tick_start;
-
+            let draw_start = Instant::now();
+            let tick_duration = draw_start - tick_start;
             let (base_x, base_y) = sin_cos_pi_f32(game_state.time);
             let base_x = (base_x + 1.0) * 0.5;
             let base_y = (base_y + 1.0) * 0.5;
@@ -1815,17 +1821,6 @@ pub fn main() {
                     width as f32 - 200.0,
                     height as f32 - 200.0,
                     0x88008800,
-                );
-            }
-
-            for i in 0..1 {
-                let i = i as f32;
-                ui_state.text_fmt(
-                    base_x * 100.0 * scale - 5.0,
-                    base_y * 150.0 * scale + i * 15.0 * scale,
-                    FontFamily::RobotoRegular,
-                    20.0,
-                    format_args!("tick: {:?}", tick_duration),
                 );
             }
 
@@ -1842,10 +1837,39 @@ pub fn main() {
                     );
             }
 
-            for _ in 0..500 {
-                ui_state.rect(base_x * 60.0, base_y * 60.0, 2400.0, 900.0, 0xff00ff00);
+            for i in 0..500 {
+                let (rect_x, rect_y) = sin_cos_pi_f32(game_state.time * 0.1 + i as f32 * 0.01);
+                ui_state.rect(
+                    (width as f32 / 2.0) - rect_x * 1000.0,
+                    (height as f32 / 2.0) - rect_y * 1000.0,
+                    500.0,
+                    500.0,
+                    0xff00ff00,
+                );
             }
-            ui_state.rect(base_x * 60.0, base_y * 60.0, 2400.0, 900.0, 0xffff0000);
+            ui_state.rect(base_x * 60.0, base_y * 60.0, 100.0, 100.0, 0xffff0000);
+
+            for i in 0..10 {
+                if i & 1 != 0 {
+                    let i = i as f32;
+                    ui_state.text_fmt(
+                        base_x * 100.0 * scale - 5.0,
+                        base_y * 150.0 * scale + i * 50.0 * scale,
+                        FontFamily::RobotoRegular,
+                        20.0,
+                        format_args!("tick: {:?}", tick_duration),
+                    );
+                } else {
+                    let i = i as f32;
+                    ui_state.text_fmt(
+                        base_x * 100.0 * scale - 5.0,
+                        base_y * 150.0 * scale + i * 50.0 * scale,
+                        FontFamily::RobotoRegular,
+                        20.0,
+                        format_args!("draw: {:?}", draw_duration),
+                    );
+                }
+            }
 
             draw_state.draw(
                 thread_token,
@@ -1856,6 +1880,8 @@ pub fn main() {
                 height,
                 swapchain_image,
             );
+
+            draw_duration = Instant::now() - draw_start;
         }
 
         gpu.end_frame(frame);
