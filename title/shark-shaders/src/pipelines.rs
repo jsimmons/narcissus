@@ -19,7 +19,7 @@ pub struct Vertex {
     pub texcoord: [f32; 4],
 }
 
-#[repr(u32)]
+#[repr(u8)]
 enum Draw2dCmdType {
     Rect,
     Glyph,
@@ -32,23 +32,23 @@ pub union Draw2dCmd {
     glyph: CmdGlyph,
 }
 
+const _: () = assert!(std::mem::size_of::<Draw2dCmd>() == 32);
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct CmdGlyph {
-    r#type: u32,
-    index: u32,
+    packed: u32,
     x: f32,
     y: f32,
     color: u32,
-    _padding: [u8; 12],
 }
 
-const _: () = assert!(std::mem::size_of::<CmdGlyph>() == std::mem::size_of::<Draw2dCmd>());
+const _: () = assert!(std::mem::size_of::<CmdGlyph>() == 16);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct CmdRect {
-    r#type: u32,
+    packed: u32,
     border_width: f32,
     x: f32,
     y: f32,
@@ -58,19 +58,18 @@ struct CmdRect {
     border_color: u32,
 }
 
-const _: () = assert!(std::mem::size_of::<CmdRect>() == std::mem::size_of::<Draw2dCmd>());
+const _: () = assert!(std::mem::size_of::<CmdRect>() == 32);
 
 impl Draw2dCmd {
     #[inline(always)]
-    pub fn glyph(glyph_index: TouchedGlyphIndex, color: u32, x: f32, y: f32) -> Self {
+    pub fn glyph(touched_glyph_index: TouchedGlyphIndex, color: u32, x: f32, y: f32) -> Self {
         Self {
             glyph: CmdGlyph {
-                r#type: Draw2dCmdType::Glyph as u32,
-                index: glyph_index.as_u32(),
+                packed: (Draw2dCmdType::Glyph as u32) << 24
+                    | (touched_glyph_index.as_u32() & 0xffffff),
                 x,
                 y,
                 color,
-                _padding: default(),
             },
         }
     }
@@ -87,7 +86,7 @@ impl Draw2dCmd {
     ) -> Self {
         Self {
             rect: CmdRect {
-                r#type: Draw2dCmdType::Rect as u32,
+                packed: (Draw2dCmdType::Rect as u32) << 24,
                 border_width,
                 x,
                 y,

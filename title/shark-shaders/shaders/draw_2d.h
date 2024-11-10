@@ -20,7 +20,7 @@ struct Glyph {
 };
 
 struct Draw2dCmd {
-    uint type;
+    uint packed_type;
     uint words[7];
 };
 
@@ -50,9 +50,9 @@ Draw2dCmdRect decode_rect(Draw2dCmd cmd) {
 
 Draw2dCmdGlyph decode_glyph(Draw2dCmd cmd) {
     return Draw2dCmdGlyph(
-        cmd.words[0],
-        vec2(uintBitsToFloat(cmd.words[1]), uintBitsToFloat(cmd.words[2])),
-        cmd.words[3]
+        cmd.packed_type & 0xffffff,
+        vec2(uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1])),
+        cmd.words[2]
     );
 }
 

@@ -88,9 +88,10 @@ void main() {
 
             const uint base_index = (constants.coarse_buffer.values[i] & 0xffff) * 32;
             const Draw2dCmd cmd = constants.draw_buffer.values[base_index + index];
+            const uint cmd_type = cmd.packed_type >> 24;
 
             vec4 primitive_color = vec4(0.0);
-            switch (cmd.type) {
+            switch (cmd_type) {
                 case DRAW_2D_CMD_RECT:
                     const Draw2dCmdRect cmd_rect = decode_rect(cmd);
                     const vec2 rect_min = cmd_rect.position - cmd_rect.half_extent - cmd_rect.border_width;

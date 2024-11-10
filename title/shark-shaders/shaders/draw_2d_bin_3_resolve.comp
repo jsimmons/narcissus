@@ -85,10 +85,12 @@ void main() {
             vec2 cmd_max = vec2(-99999.9);
 
             const Draw2dCmd cmd = constants.draw_buffer.values[draw_index];
+            const uint cmd_type = cmd.packed_type >> 24;
+
             for (;;) {
-                const uint scalar_type = subgroupBroadcastFirst(cmd.type);
+                const uint scalar_type = subgroupBroadcastFirst(cmd_type);
                 [[branch]]
-                if (scalar_type == cmd.type) {
+                if (scalar_type == cmd_type) {
                     switch (scalar_type) {
                         case DRAW_2D_CMD_RECT:
                             const Draw2dCmdRect cmd_rect = decode_rect(cmd);
