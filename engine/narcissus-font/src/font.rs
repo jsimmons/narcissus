@@ -285,10 +285,8 @@ impl<'a> Font<'a> {
     pub fn kerning_advance(&self, glyph1: GlyphIndex, glyph2: GlyphIndex) -> f32 {
         let glyph1 = glyph1.0.get();
         let glyph2 = glyph2.0.get();
-        if glyph1 >= KERNING_CACHE_FIRST
-            && glyph1 <= KERNING_CACHE_LAST
-            && glyph2 >= KERNING_CACHE_FIRST
-            && glyph2 <= KERNING_CACHE_LAST
+        if (KERNING_CACHE_FIRST..=KERNING_CACHE_LAST).contains(&glyph1)
+            && (KERNING_CACHE_FIRST..=KERNING_CACHE_LAST).contains(&glyph2)
         {
             self.kerning_cache[(glyph2 - KERNING_CACHE_FIRST) as usize]
                 [(glyph1 - KERNING_CACHE_FIRST) as usize]
