@@ -70,51 +70,62 @@ void main() {
         }
     }
 
-    const uvec2 cmd_min_tile = uvec2(floor(max(min(cmd_min, constants.screen_resolution), 0.0) / TILE_SIZE));
-    const uvec2 cmd_max_tile = uvec2(floor(max(min(cmd_max, constants.screen_resolution), 0.0) / TILE_SIZE));
-    const uvec2 cmds_min_tile = subgroupMin(cmd_min_tile);
-    const uvec2 cmds_max_tile = subgroupMax(cmd_max_tile);
+    // For any out-of-bounds draws, we'll get the defaults of 99999.9 and -99999.9, which will fail
+    // here. Out-of-bounds draws are therefore off-screen. Well, so long as you don't have 27 4k
+    // monitors arranged horizontally.
+    const bool offscreen = any(greaterThan(cmd_min, constants.screen_resolution)) || any(lessThan(cmd_max, vec2(0.0)));
 
-    // Is any single command responsible for the entire bounds?
-    const bool cmd_absolute_min = cmd_min_tile == cmds_min_tile;
-    const bool cmd_absolute_max = cmd_max_tile == cmds_max_tile;
-    const bool use_combined_bounds = subgroupAny(cmd_absolute_min && cmd_absolute_max);
+    // Are all draws off-screen?
+    if (subgroupAll(offscreen)) {
+        return;
+    }
+
+    // Make sure off-screen commands don't contribute to the bounds.
+    const uvec2 cmds_min_tile = uvec2(clamp(subgroupMin(offscreen ? ivec2(999999) : ivec2(floor(cmd_min / TILE_SIZE))), ivec2(0), ivec2(constants.tile_resolution)));
+    const uvec2 cmds_max_tile = uvec2(clamp(subgroupMax(offscreen ? ivec2(-999999) : ivec2(floor(cmd_max / TILE_SIZE))), ivec2(0), ivec2(constants.tile_resolution)));
+    const uvec2 cmd_min_tile = uvec2(clamp(ivec2(floor(cmd_min / TILE_SIZE)), ivec2(0), ivec2(constants.tile_resolution)));
+    const uvec2 cmd_max_tile = uvec2(clamp(ivec2(floor(cmd_max / TILE_SIZE)), ivec2(0), ivec2(constants.tile_resolution)));
+
+    const bool cmd_dominates_bounds = all(equal(cmd_min_tile, cmds_min_tile)) && all(equal(cmd_max_tile, cmds_max_tile));
+    const bool use_combined_bounds = subgroupAny(cmd_dominates_bounds);
 
     if (use_combined_bounds) {
-        const uvec2 tile_count = cmds_max_tile - cmds_min_tile + uvec2(1);
-        const uint count = tile_count.x * tile_count.y;
+        const uvec2 tile_count = cmds_max_tile - cmds_min_tile + ivec2(1);
 
         uint offset;
         if (subgroupElect()) {
-            offset = atomicAdd(constants.coarse_buffer.values[0], count) + 1;
+            offset = atomicAdd(constants.coarse_buffer.values[0], tile_count.x * tile_count.y) + 1;
         }
         offset = subgroupBroadcastFirst(offset);
 
-        if (offset >= constants.coarse_buffer_len) {
-            return;
-        }
-
-        for (uint y = 0; y < tile_count.y; y++) {
-            for (uint x = 0; x < tile_count.x; x += gl_SubgroupSize) {
-                const uint local_x = x + gl_SubgroupInvocationID;
-                if (local_x < tile_count.x) {
-                    const uint yy = cmds_min_tile.y + y;
-                    const uint xx = cmds_min_tile.x + local_x;
-                    const uint packed = ((yy & 0xff) << 24) | ((xx & 0xff) << 16) | (gl_WorkGroupID.x & 0xffff);
-                    constants.coarse_buffer.values[offset + local_x] = packed;
+        for (uint i = 0; i < tile_count.y; i++) {
+            for (uint j = 0; j < tile_count.x; j += gl_SubgroupSize) {
+                const uint jj = j + gl_SubgroupInvocationID;
+                const uint y = cmds_min_tile.y + i;
+                const uint x = cmds_min_tile.x + jj;
+                if (jj < tile_count.x) {
+                    const uint packed = ((y & 0xff) << 24) | ((x & 0xff) << 16) | (gl_WorkGroupID.x & 0xffff);
+                    const uint index = offset + i * tile_count.x + jj;
+                    if (index < constants.coarse_buffer_len) {
+                        constants.coarse_buffer.values[index] = packed;
+                    }
                 }
-                subgroupBarrier();
             }
-            offset += tile_count.x;
         }
     } else {
-        for (uint i = 0; i < BITMAP_SIZE; i += gl_SubgroupSize) {
-            intersected_tiles[i + gl_SubgroupInvocationID] = 0;
+        const uint start = cmds_min_tile.y * BITMAP_STRIDE + cmds_min_tile.x / 32;
+        const uint end = cmds_max_tile.y * BITMAP_STRIDE + cmds_max_tile.x / 32;
+
+        for (uint i = start; i <= end; i += gl_SubgroupSize) {
+            const uint ii = i + gl_SubgroupInvocationID;
+            if (ii < BITMAP_SIZE) {
+                intersected_tiles[ii] = 0;
+            }
         }
 
         subgroupBarrier();
 
-        {
+        if (!offscreen) {
             const uint min_word = cmd_min_tile.x / 32;
             const uint max_word = cmd_max_tile.x / 32;
             const uint min_bit = cmd_min_tile.x & 31;
@@ -139,8 +150,9 @@ void main() {
         subgroupBarrier();
 
         uint count = 0;
-        for (uint i = 0; i < BITMAP_SIZE; i += gl_SubgroupSize) {
-            count += subgroupAdd(bitCount(intersected_tiles[i + gl_SubgroupInvocationID]));
+        for (uint i = start; i <= end; i += gl_SubgroupSize) {
+            const uint ii = i + gl_SubgroupInvocationID;
+            count += subgroupAdd(ii < BITMAP_SIZE ? bitCount(intersected_tiles[ii]) : 0);
         }
 
         if (count == 0) {
@@ -153,11 +165,12 @@ void main() {
         }
         offset = subgroupBroadcastFirst(offset);
 
-        const uint start = cmds_min_tile.y * BITMAP_STRIDE + cmds_min_tile.x / 32;
-        const uint end = cmds_max_tile.y * BITMAP_STRIDE + cmds_max_tile.x / 32;
-
         for (uint i = start; i <= end; i += gl_SubgroupSize) {
             const uint ii = i + gl_SubgroupInvocationID;
+            if (ii >= BITMAP_SIZE) {
+                continue;
+            }
+
             uint bitmap = intersected_tiles[ii];
             const uint count = bitCount(bitmap);
             uint scan = subgroupExclusiveAdd(count);
@@ -168,7 +181,9 @@ void main() {
                 const uint y = (ii * 32 + index) / MAX_TILES;
                 const uint x = (ii * 32 + index) & (MAX_TILES - 1);
                 const uint packed = (y << 24) | (x << 16) | (gl_WorkGroupID.x & 0xffff);
-                constants.coarse_buffer.values[offset + scan] = packed;
+                if (offset + scan < constants.coarse_buffer_len) {
+                    constants.coarse_buffer.values[offset + scan] = packed;
+                }
                 scan++;
             }
 

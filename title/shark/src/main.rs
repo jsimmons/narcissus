@@ -1305,7 +1305,7 @@ impl<'gpu> DrawState<'gpu> {
                     touched_glyphs,
                 );
 
-                const COARSE_BUFFER_LEN: usize = 1 << 18;
+                const COARSE_BUFFER_LEN: usize = 1 << 20;
                 let coarse_buffer = gpu.request_transient_buffer(
                     frame,
                     thread_token,
