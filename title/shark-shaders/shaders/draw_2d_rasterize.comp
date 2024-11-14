@@ -12,6 +12,7 @@
 
 #include "compute_bindings.h"
 #include "draw_2d.h"
+#include "sdf.h"
 
 struct Draw2dRasterizeConstants {
     uvec2 screen_resolution;
@@ -87,22 +88,42 @@ void main() {
             bitmap ^= bitmap & -bitmap;
 
             const uint base_index = (constants.coarse_buffer.values[i] & 0xffff) * 32;
-            const Draw2dCmd cmd = constants.draw_buffer.values[base_index + index];
-            const uint cmd_type = cmd.packed_type >> 24;
+            const uint packed_type = constants.draw_buffer.values[base_index + index].packed_type;
+            const uint cmd_type = packed_type >> 24;
+            const uint cmd_packed = packed_type & 0xffffff;
 
             vec4 primitive_color = vec4(0.0);
             switch (cmd_type) {
                 case DRAW_2D_CMD_RECT:
-                    const Draw2dCmdRect cmd_rect = decode_rect(cmd);
-                    const vec2 rect_min = cmd_rect.position - cmd_rect.half_extent - cmd_rect.border_width;
-                    const vec2 rect_max = cmd_rect.position + cmd_rect.half_extent + cmd_rect.border_width;
-                    if (all(greaterThanEqual(sample_center, rect_min)) && all(lessThanEqual(sample_center, rect_max))) {
+                    const Draw2dCmdRect cmd_rect = decode_rect(constants.draw_buffer.values[base_index + index]);
+
+                    const float border_width = float(cmd_packed & 0xff);
+                    const vec4 border_radii = unpackUnorm4x8(cmd_rect.border_radii) * 255.0;
+                    const float max_border_radius = max(border_radii.x, max(border_radii.y, max(border_radii.z, border_radii.w)));
+                    const float shrink = (2.0 - sqrt(2.0)) * max_border_radius;
+
+                    if (all(greaterThan(sample_center, cmd_rect.bounds_min + border_width + shrink)) && all(lessThan(sample_center, cmd_rect.bounds_max - border_width - shrink))) {
                         primitive_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
+                    } else {
+                        const vec2 b = (cmd_rect.bounds_max - cmd_rect.bounds_min) / 2.0;
+                        const vec2 p = cmd_rect.bounds_min + b - sample_center;
+
+                        float d;
+                        if (all(equal(border_radii, vec4(0.0)))) {
+                            d = sdf_box(p, b);
+                        } else {
+                            d = sdf_rounded_box(p, b, border_radii);
+                        }
+
+                        const vec4 background_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
+                        const vec4 border_color = unpackUnorm4x8(cmd_rect.border_color).bgra;
+                        primitive_color = mix(background_color, border_color, smoothstep(1.0, 0.0, 1.0 - d - border_width));
+                        primitive_color = mix(primitive_color, vec4(0), smoothstep(1.0, 0.0, 1.0 - d));
                     }
                     break;
                 case DRAW_2D_CMD_GLYPH:
-                    const Draw2dCmdGlyph cmd_glyph = decode_glyph(cmd);
-                    const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                    const Draw2dCmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[base_index + index]);
+                    const Glyph glyph = constants.glyph_buffer.values[cmd_packed];
                     const vec2 glyph_min = cmd_glyph.position + glyph.offset_min;
                     const vec2 glyph_max = cmd_glyph.position + glyph.offset_max;
                     if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {

@@ -25,35 +25,33 @@ struct Draw2dCmd {
 };
 
 struct Draw2dCmdRect {
-    float border_width;
-    vec2 position;
-    vec2 half_extent;
-    uint background_color;
+    vec2 bounds_min;
+    vec2 bounds_max;
+
+    uint border_radii;
     uint border_color;
+
+    uint background_color;
 };
 
 struct Draw2dCmdGlyph {
-    uint index;
     vec2 position;
     uint color;
 };
 
 Draw2dCmdRect decode_rect(Draw2dCmd cmd) {
-    return Draw2dCmdRect(
-        uintBitsToFloat(cmd.words[0]),
-        vec2(uintBitsToFloat(cmd.words[1]), uintBitsToFloat(cmd.words[2])),
-        vec2(uintBitsToFloat(cmd.words[3]), uintBitsToFloat(cmd.words[4])),
-        cmd.words[5],
-        cmd.words[6]
-    );
+    Draw2dCmdRect rect = {
+        { uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1]) }, // bounds_min
+        { uintBitsToFloat(cmd.words[2]), uintBitsToFloat(cmd.words[3]) }, // bounds_max
+        cmd.words[4], // border_radii
+        cmd.words[5], // border_color
+        cmd.words[6], // background_color
+    };
+    return rect;
 }
 
-Draw2dCmdGlyph decode_glyph(Draw2dCmd cmd) {
-    return Draw2dCmdGlyph(
-        cmd.packed_type & 0xffffff,
-        vec2(uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1])),
-        cmd.words[2]
-    );
+Draw2dCmdGlyph decode_glyph(in Draw2dCmd cmd) {
+    return Draw2dCmdGlyph(vec2(uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1])), cmd.words[2]);
 }
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Draw2dCommandRef

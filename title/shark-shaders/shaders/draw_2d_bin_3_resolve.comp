@@ -84,8 +84,9 @@ void main() {
             vec2 cmd_min = vec2(99999.9);
             vec2 cmd_max = vec2(-99999.9);
 
-            const Draw2dCmd cmd = constants.draw_buffer.values[draw_index];
-            const uint cmd_type = cmd.packed_type >> 24;
+            const uint packed_type = constants.draw_buffer.values[draw_index].packed_type;
+            const uint cmd_type = packed_type >> 24;
+            const uint cmd_packed = packed_type & 0xffffff;
 
             for (;;) {
                 const uint scalar_type = subgroupBroadcastFirst(cmd_type);
@@ -93,15 +94,20 @@ void main() {
                 if (scalar_type == cmd_type) {
                     switch (scalar_type) {
                         case DRAW_2D_CMD_RECT:
-                            const Draw2dCmdRect cmd_rect = decode_rect(cmd);
-                            cmd_min = cmd_rect.position - cmd_rect.half_extent - cmd_rect.border_width;
-                            cmd_max = cmd_rect.position + cmd_rect.half_extent + cmd_rect.border_width;
-                            opaque_tile = all(greaterThanEqual(tile_min, cmd_min)) && all(lessThanEqual(tile_max, cmd_max));
-                            opaque_tile = opaque_tile && ((cmd_rect.background_color & 0xff000000) == 0xff000000);
+                            const Draw2dCmdRect cmd_rect = decode_rect(constants.draw_buffer.values[draw_index]);
+                            cmd_min = cmd_rect.bounds_min;
+                            cmd_max = cmd_rect.bounds_max;
+                            if ((cmd_rect.background_color & 0xff000000) == 0xff000000) {
+                                const float border_width = float(cmd_packed & 0xff);
+                                const vec4 border_radii = unpackUnorm4x8(cmd_rect.border_radii);
+                                const float max_border_radius = max(border_radii.x, max(border_radii.y, max(border_radii.z, border_radii.w))) * 255.0;
+                                const float shrink = (2.0 - sqrt(2.0)) * max_border_radius + (cmd_rect.border_color & 0xff000000) == 0xff000000 ? 0.0 : border_width;
+                                opaque_tile = all(greaterThanEqual(tile_min, cmd_min + shrink)) && all(lessThanEqual(tile_max, cmd_max - shrink));
+                            }
                             break;
                         case DRAW_2D_CMD_GLYPH:
-                            const Draw2dCmdGlyph cmd_glyph = decode_glyph(cmd);
-                            const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                            const Draw2dCmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[draw_index]);
+                            const Glyph glyph = constants.glyph_buffer.values[cmd_packed];
                             cmd_min = cmd_glyph.position + glyph.offset_min;
                             cmd_max = cmd_glyph.position + glyph.offset_max;
                             break;

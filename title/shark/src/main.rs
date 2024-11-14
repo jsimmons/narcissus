@@ -29,8 +29,8 @@ use narcissus_gpu::{
 };
 use narcissus_image as image;
 use narcissus_maths::{
-    clamp, perlin_noise3, sin_cos_pi_f32, sin_pi_f32, vec3, Affine3, Deg, HalfTurn, Mat3, Mat4,
-    Point3, Vec3,
+    clamp, perlin_noise3, sin_cos_pi_f32, sin_pi_f32, vec2, vec3, Affine3, Deg, HalfTurn, Mat3,
+    Mat4, Point3, Vec2, Vec3,
 };
 use spring::simple_spring_damper_exact;
 
@@ -469,20 +469,28 @@ impl<'a> UiState<'a> {
         }
     }
 
-    fn rect(&mut self, x: f32, y: f32, width: f32, height: f32, background_color: u32) {
-        let half_extent_x = width / 2.0;
-        let half_extent_y = height / 2.0;
-        let center_x = x + half_extent_x;
-        let center_y = y + half_extent_y;
+    fn rect(
+        &mut self,
+        position: Vec2,
+        bounds: Vec2,
+        border_width: f32,
+        border_radii: [f32; 4],
+        border_color: u32,
+        background_color: u32,
+    ) {
+        let bounds_min = position;
+        let bounds_max = position + bounds;
+
+        let border_width = border_width.clamp(0.0, 255.0).floor() as u8;
+        let border_radii = border_radii.map(|radius| radius.clamp(0.0, 255.0).floor() as u8);
 
         self.draw_cmds.push(Draw2dCmd::rect(
-            center_x,
-            center_y,
-            half_extent_x,
-            half_extent_y,
-            5.0,
+            bounds_min,
+            bounds_max,
+            border_width,
+            border_radii,
+            border_color,
             background_color,
-            0xffff0000,
         ))
     }
 
@@ -526,8 +534,11 @@ impl<'a> UiState<'a> {
 
             x += advance * scale;
 
-            self.draw_cmds
-                .push(Draw2dCmd::glyph(touched_glyph_index, 0xff0000ff, x, y));
+            self.draw_cmds.push(Draw2dCmd::glyph(
+                touched_glyph_index,
+                microshades::GRAY_RGBA8[4].rotate_right(8),
+                vec2(x, y),
+            ));
 
             x += advance_width * scale;
         }
@@ -1799,11 +1810,12 @@ pub fn main() {
 
             for _ in 0..100 {
                 ui_state.rect(
-                    100.0,
-                    100.0,
-                    width as f32 - 200.0,
-                    height as f32 - 200.0,
-                    0x88008800,
+                    vec2(100.0, 100.0),
+                    vec2(1000.0, 1000.0),
+                    0.0,
+                    [25.0; 4],
+                    0,
+                    0x88442211,
                 );
             }
 
@@ -1821,16 +1833,27 @@ pub fn main() {
             }
 
             for i in 0..500 {
-                let (rect_x, rect_y) = sin_cos_pi_f32(game_state.time * 0.1 + i as f32 * 0.01);
+                let (rect_x, rect_y) = sin_cos_pi_f32(game_state.time * 0.1 + i as f32 * 1.01);
                 ui_state.rect(
-                    (width as f32 / 2.0) - rect_x * 1000.0,
-                    (height as f32 / 2.0) - rect_y * 1000.0,
-                    500.0,
-                    500.0,
-                    0xff00ff00,
+                    (vec2(width as f32, height as f32) / 2.0)
+                        - 250.0
+                        - vec2(rect_x, rect_y) * 1000.0,
+                    vec2(500.0, 500.0),
+                    10.0,
+                    [rect_x * 50.0, rect_y * 50.0, 25.0, 25.0],
+                    0xffffffff,
+                    microshades::BLUE_RGBA8[4].rotate_right(8),
                 );
             }
-            ui_state.rect(base_x * 60.0, base_y * 60.0, 100.0, 100.0, 0xffff0000);
+
+            ui_state.rect(
+                vec2(base_x, base_y) * 60.0,
+                vec2(400.0, 400.0),
+                0.0,
+                [0.0; 4],
+                0,
+                microshades::ORANGE_RGBA8[2].rotate_right(8),
+            );
 
             for i in 0..10 {
                 if i & 1 != 0 {

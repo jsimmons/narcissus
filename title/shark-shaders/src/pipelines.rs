@@ -7,7 +7,7 @@ use narcissus_gpu::{
     Sampler, SamplerAddressMode, SamplerDesc, SamplerFilter, ShaderDesc, ShaderStageFlags,
     SpecConstant, Topology,
 };
-use narcissus_maths::Mat4;
+use narcissus_maths::{Mat4, Vec2};
 
 pub const DRAW_2D_TILE_SIZE: u32 = 32;
 
@@ -38,8 +38,7 @@ const _: () = assert!(std::mem::size_of::<Draw2dCmd>() == 32);
 #[derive(Clone, Copy)]
 struct CmdGlyph {
     packed: u32,
-    x: f32,
-    y: f32,
+    position: Vec2,
     color: u32,
 }
 
@@ -48,27 +47,32 @@ const _: () = assert!(std::mem::size_of::<CmdGlyph>() == 16);
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct CmdRect {
+    /// 31       .          .          .          0
+    ///  tttt tttt  0000 0000  0000 0000  bbbb bbbb
+    ///
+    /// t: Type
+    /// b: Border width
     packed: u32,
-    border_width: f32,
-    x: f32,
-    y: f32,
-    half_extent_x: f32,
-    half_extent_y: f32,
-    background_color: u32,
+
+    bounds_min: Vec2,
+    bounds_max: Vec2,
+
+    border_radii: u32,
     border_color: u32,
+
+    background_color: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<CmdRect>() == 32);
 
 impl Draw2dCmd {
     #[inline(always)]
-    pub fn glyph(touched_glyph_index: TouchedGlyphIndex, color: u32, x: f32, y: f32) -> Self {
+    pub fn glyph(touched_glyph_index: TouchedGlyphIndex, color: u32, position: Vec2) -> Self {
         Self {
             glyph: CmdGlyph {
                 packed: (Draw2dCmdType::Glyph as u32) << 24
                     | (touched_glyph_index.as_u32() & 0xffffff),
-                x,
-                y,
+                position,
                 color,
             },
         }
@@ -76,22 +80,19 @@ impl Draw2dCmd {
 
     #[inline(always)]
     pub fn rect(
-        x: f32,
-        y: f32,
-        half_extent_x: f32,
-        half_extent_y: f32,
-        border_width: f32,
-        background_color: u32,
+        bounds_min: Vec2,
+        bounds_max: Vec2,
+        border_width: u8,
+        border_radii: [u8; 4],
         border_color: u32,
+        background_color: u32,
     ) -> Self {
         Self {
             rect: CmdRect {
-                packed: (Draw2dCmdType::Rect as u32) << 24,
-                border_width,
-                x,
-                y,
-                half_extent_x,
-                half_extent_y,
+                packed: (Draw2dCmdType::Rect as u32) << 24 | border_width as u32,
+                bounds_min,
+                bounds_max,
+                border_radii: u32::from_ne_bytes(border_radii),
                 background_color,
                 border_color,
             },

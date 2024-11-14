@@ -46,21 +46,23 @@ void main() {
     vec2 cmd_min = vec2(99999.9);
     vec2 cmd_max = vec2(-99999.9);
     if (in_bounds) {
-        const Draw2dCmd cmd = constants.draw_buffer.values[draw_index];
-        const uint cmd_type = cmd.packed_type >> 24;
+        const uint packed_type = constants.draw_buffer.values[draw_index].packed_type;
+        const uint cmd_type = packed_type >> 24;
+        const uint cmd_packed = packed_type & 0xffffff;
+
         for (;;) {
             const uint scalar_type = subgroupBroadcastFirst(cmd_type);
             [[branch]]
             if (scalar_type == cmd_type) {
                 switch (scalar_type) {
                     case DRAW_2D_CMD_RECT:
-                        const Draw2dCmdRect cmd_rect = decode_rect(cmd);
-                        cmd_min = cmd_rect.position - cmd_rect.half_extent - cmd_rect.border_width;
-                        cmd_max = cmd_rect.position + cmd_rect.half_extent + cmd_rect.border_width;
+                        const Draw2dCmdRect cmd_rect = decode_rect(constants.draw_buffer.values[draw_index]);
+                        cmd_min = cmd_rect.bounds_min;
+                        cmd_max = cmd_rect.bounds_max;
                         break;
                     case DRAW_2D_CMD_GLYPH:
-                        const Draw2dCmdGlyph cmd_glyph = decode_glyph(cmd);
-                        const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                        const Draw2dCmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[draw_index]);
+                        const Glyph glyph = constants.glyph_buffer.values[cmd_packed];
                         cmd_min = cmd_glyph.position + glyph.offset_min;
                         cmd_max = cmd_glyph.position + glyph.offset_max;
                         break;
@@ -73,7 +75,7 @@ void main() {
     // For any out-of-bounds draws, we'll get the defaults of 99999.9 and -99999.9, which will fail
     // here. Out-of-bounds draws are therefore off-screen. Well, so long as you don't have 27 4k
     // monitors arranged horizontally.
-    const bool offscreen = any(greaterThan(cmd_min, constants.screen_resolution)) || any(lessThan(cmd_max, vec2(0.0)));
+    const bool offscreen = any(greaterThanEqual(cmd_min, cmd_max)) || any(greaterThan(cmd_min, constants.screen_resolution)) || any(lessThan(cmd_max, vec2(0.0)));
 
     // Are all draws off-screen?
     if (subgroupAll(offscreen)) {
