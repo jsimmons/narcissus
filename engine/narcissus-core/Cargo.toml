@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fast-float = "0.2"
+fast-float2 = "0.2.3"
 memchr = { version = "2" }

@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use fast_float::parse_partial;
+use fast_float2::parse_partial;
 
 const MAX_LINE_SIZE: usize = 8 * 1024;
 
