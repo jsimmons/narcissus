@@ -2732,7 +2732,7 @@ impl Device for VulkanDevice {
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
                 src_stage_mask: stage_mask,
                 src_access_mask: access_mask,
-                dst_stage_mask: stage_mask,
+                dst_stage_mask: vk::PipelineStageFlags2::BOTTOM_OF_PIPE,
                 dst_access_mask: vk::AccessFlags2::NONE,
                 src_queue_family_index: self.universal_queue_family_index,
                 dst_queue_family_index: self.universal_queue_family_index,
