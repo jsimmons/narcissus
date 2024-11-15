@@ -859,7 +859,8 @@ struct DrawState<'gpu> {
     color_image: Image,
     ui_image: Image,
 
-    glyph_atlas_image: Image,
+    glyph_atlas_images: [Image; 2],
+    glyph_atlas_image_index: usize,
 
     pipelines: Pipelines,
 
@@ -884,7 +885,8 @@ impl<'gpu> DrawState<'gpu> {
             depth_image: default(),
             color_image: default(),
             ui_image: default(),
-            glyph_atlas_image: default(),
+            glyph_atlas_images: default(),
+            glyph_atlas_image_index: 0,
             pipelines,
             models,
             images,
@@ -962,33 +964,35 @@ impl<'gpu> DrawState<'gpu> {
         {
             let cmd_encoder = &mut cmd_encoder;
 
-            if self.glyph_atlas_image.is_null() {
-                self.glyph_atlas_image = gpu.create_image(&ImageDesc {
-                    memory_location: MemoryLocation::Device,
-                    host_mapped: false,
-                    usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
-                    dimension: ImageDimension::Type2d,
-                    format: ImageFormat::R8_SRGB,
-                    tiling: ImageTiling::Optimal,
-                    width: atlas_width,
-                    height: atlas_height,
-                    depth: 1,
-                    layer_count: 1,
-                    mip_levels: 1,
-                });
+            for glyph_atlas_image in &mut self.glyph_atlas_images {
+                if glyph_atlas_image.is_null() {
+                    *glyph_atlas_image = gpu.create_image(&ImageDesc {
+                        memory_location: MemoryLocation::Device,
+                        host_mapped: false,
+                        usage: ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER,
+                        dimension: ImageDimension::Type2d,
+                        format: ImageFormat::R8_SRGB,
+                        tiling: ImageTiling::Optimal,
+                        width: atlas_width,
+                        height: atlas_height,
+                        depth: 1,
+                        layer_count: 1,
+                        mip_levels: 1,
+                    });
 
-                gpu.debug_name_image(self.glyph_atlas_image, "glyph atlas");
+                    gpu.debug_name_image(*glyph_atlas_image, "glyph atlas");
 
-                gpu.cmd_barrier(
-                    cmd_encoder,
-                    None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::None],
-                        &[Access::FragmentShaderSampledImageRead],
-                        self.glyph_atlas_image,
-                        ImageAspectFlags::COLOR,
-                    )],
-                );
+                    gpu.cmd_barrier(
+                        cmd_encoder,
+                        None,
+                        &[ImageBarrier::layout_optimal(
+                            &[Access::None],
+                            &[Access::FragmentShaderSampledImageRead],
+                            *glyph_atlas_image,
+                            ImageAspectFlags::COLOR,
+                        )],
+                    );
+                }
             }
 
             if width != self.width || height != self.height {
@@ -1079,13 +1083,15 @@ impl<'gpu> DrawState<'gpu> {
                     texture,
                 );
 
+                self.glyph_atlas_image_index = self.glyph_atlas_image_index.wrapping_add(1);
+
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
                     &[ImageBarrier::layout_optimal(
                         &[Access::ShaderSampledImageRead],
                         &[Access::TransferWrite],
-                        self.glyph_atlas_image,
+                        self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
                         ImageAspectFlags::COLOR,
                     )],
                 );
@@ -1093,7 +1099,7 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_copy_buffer_to_image(
                     cmd_encoder,
                     buffer.to_arg(),
-                    self.glyph_atlas_image,
+                    self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
                     ImageLayout::Optimal,
                     &[BufferImageCopy {
                         image_extent: Extent3d {
@@ -1111,7 +1117,7 @@ impl<'gpu> DrawState<'gpu> {
                     &[ImageBarrier::layout_optimal(
                         &[Access::TransferWrite],
                         &[Access::ShaderSampledImageRead],
-                        self.glyph_atlas_image,
+                        self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
                         ImageAspectFlags::COLOR,
                     )],
                 );
@@ -1259,7 +1265,7 @@ impl<'gpu> DrawState<'gpu> {
                         array_element: 0,
                         typed: TypedBind::SampledImage(&[(
                             ImageLayout::Optimal,
-                            self.glyph_atlas_image,
+                            self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
                         )]),
                     },
                     Bind {
@@ -1819,13 +1825,14 @@ pub fn main() {
                 );
             }
 
+            let (s, _) = sin_cos_pi_f32(game_state.time * 0.1);
+
             for i in 0..224 {
-                let i = i as f32;
                 ui_state.text_fmt(
                         5.0,
-                        8.0 + i * 8.0,
+                        10.0 + (i as f32) * (22.0 + s * 8.0),
                         FontFamily::NotoSansJapanese,
-                        8.0,
+                        16.0 + s * 8.0,
                         format_args!(
                             "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████"
                         ),
