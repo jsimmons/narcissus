@@ -150,17 +150,19 @@ where
     }
 
     pub fn update_atlas(&mut self) -> (&[TouchedGlyph], Option<&[u8]>) {
-        // We might have touched more, or fewer, glyphs this iteration, so
-        // update the touched glyphs array.
-        self.touched_glyphs
-            .resize(self.touched_glyph_lookup.len(), TouchedGlyph::default());
-
         // We can only repack once.
         let mut is_emergency_repack = false;
 
         let updated_atlas = 'emergency_repack: loop {
             let cached_glyphs_len = self.cached_glyphs.len();
             let sorted_indices = self.cached_glyph_indices_sorted.as_slice();
+
+            // We might have touched more, or fewer, glyphs this iteration, so
+            // update the touched glyphs array.
+            if self.touched_glyphs.len() < self.touched_glyph_lookup.len() {
+                self.touched_glyphs
+                    .resize(self.touched_glyph_lookup.len(), TouchedGlyph::default());
+            }
 
             // For each touched glyph, try and find it in our cached glyph list.
             for (glyph_key, touched_glyph_index) in self.touched_glyph_lookup.iter() {
@@ -213,7 +215,7 @@ where
                         });
 
                         self.rects.push(Rect {
-                            id: 0,
+                            id: touched_glyph_index.as_u32() as i32,
                             w,
                             h,
                             x: 0,
@@ -248,6 +250,7 @@ where
                 // update.
                 self.cached_glyph_indices_sorted.clear();
                 self.cached_glyphs.clear();
+                self.touched_glyphs.clear();
                 self.rects.clear();
                 self.packer.clear();
                 self.texture.fill(0);
