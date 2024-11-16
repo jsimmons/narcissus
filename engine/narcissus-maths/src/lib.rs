@@ -215,9 +215,9 @@ pub fn lerp(t: f32, a: f32, b: f32) -> f32 {
 /// # Notes
 ///
 /// `f32::to_int_unchecked<T>` can lead to UB when converting an `x` that:
-///   * Is Inf
-///   * Is NaN
-///   * Would produce a value that is out of bounds for <T>
+///   * Is `Inf`
+///   * Is `NaN`
+///   * Would produce a value that is out of bounds for `T`
 ///
 /// This function performs the same operation, but returns an implementation
 /// defined value for these cases.
@@ -243,9 +243,9 @@ pub fn f32_to_i32(x: f32) -> i32 {
 /// # Notes
 ///
 /// `f32::to_int_unchecked<T>` can lead to UB when converting an `x` that:
-///   * Is Inf
-///   * Is NaN
-///   * Would produce a value that is out of bounds for <T>
+///   * Is `Inf`
+///   * Is `NaN`
+///   * Would produce a value that is out of bounds for `T`
 ///
 /// This function performs the same operation, but returns an implementation
 /// defined value for these cases.
