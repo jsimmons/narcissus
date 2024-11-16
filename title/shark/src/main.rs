@@ -16,7 +16,7 @@ use renderdoc_sys as rdoc;
 
 use fonts::{FontFamily, Fonts};
 use helpers::load_obj;
-use narcissus_app::{create_app, Event, Key, PressedState, WindowDesc};
+use narcissus_app::{create_app, Event, Key, WindowDesc};
 use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
@@ -447,9 +447,10 @@ impl GameState {
 }
 
 struct UiState<'a> {
-    scale: f32,
     fonts: &'a Fonts<'a>,
     glyph_cache: GlyphCache<'a, Fonts<'a>>,
+
+    scale: f32,
 
     tmp_string: String,
 
@@ -457,13 +458,13 @@ struct UiState<'a> {
 }
 
 impl<'a> UiState<'a> {
-    fn new(fonts: &'a Fonts<'a>, scale: f32) -> Self {
+    fn new(fonts: &'a Fonts<'a>) -> Self {
         let glyph_cache = GlyphCache::new(fonts, GLYPH_CACHE_SIZE, GLYPH_CACHE_SIZE, 1);
 
         Self {
-            scale,
             fonts,
             glyph_cache,
+            scale: 1.0,
             tmp_string: default(),
             draw_cmds: vec![],
         }
@@ -478,11 +479,14 @@ impl<'a> UiState<'a> {
         border_color: u32,
         background_color: u32,
     ) {
+        let bounds = bounds * self.scale;
+
         let bounds_min = position;
         let bounds_max = position + bounds;
 
-        let border_width = border_width.clamp(0.0, 255.0).floor() as u8;
-        let border_radii = border_radii.map(|radius| radius.clamp(0.0, 255.0).floor() as u8);
+        let border_width = (border_width * self.scale).clamp(0.0, 255.0).floor() as u8;
+        let border_radii =
+            border_radii.map(|radius| (radius * self.scale).clamp(0.0, 255.0).floor() as u8);
 
         self.draw_cmds.push(Draw2dCmd::rect(
             bounds_min,
@@ -501,7 +505,7 @@ impl<'a> UiState<'a> {
         font_family: FontFamily,
         font_size_px: f32,
         args: std::fmt::Arguments,
-    ) {
+    ) -> f32 {
         let font = self.fonts.font(font_family);
         let font_size_px = font_size_px * self.scale;
         let scale = font.scale_for_size_px(font_size_px);
@@ -542,6 +546,8 @@ impl<'a> UiState<'a> {
 
             x += advance_width * scale;
         }
+
+        (font.ascent() - font.descent() + font.line_gap()) * scale
     }
 }
 
@@ -1657,6 +1663,9 @@ pub fn main() {
         std::env::set_var("SDL_VIDEODRIVER", "wayland")
     }
 
+    let ui_scale_override =
+        std::env::var("NARCISSUS_UI_SCALE").map_or(None, |scale| scale.parse::<f32>().ok());
+
     let app = create_app();
     let gpu = create_device(narcissus_gpu::DeviceBackend::Vulkan);
 
@@ -1666,15 +1675,13 @@ pub fn main() {
         height: 600,
     });
 
-    let scale = 1.0;
-
     let thread_token = ThreadToken::new();
     let thread_token = &thread_token;
 
     let mut action_queue = Vec::new();
 
     let fonts = Fonts::new();
-    let mut ui_state = UiState::new(&fonts, scale);
+    let mut ui_state = UiState::new(&fonts);
     let mut game_state = GameState::new();
     let mut draw_state = DrawState::new(gpu.as_ref(), thread_token);
 
@@ -1735,21 +1742,19 @@ pub fn main() {
                 height,
                 image: swapchain_image,
             } = loop {
-                let (_width, height) = window.extent();
-                let (drawable_width, drawable_height) = window.drawable_extent();
-
-                ui_state.scale = drawable_height as f32 / height as f32;
-
+                let (width, height) = window.size_in_pixels();
                 if let Ok(result) = gpu.acquire_swapchain(
                     frame,
                     window.upcast(),
-                    drawable_width,
-                    drawable_height,
+                    width,
+                    height,
                     &mut swapchain_configurator,
                 ) {
                     break result;
                 }
             };
+
+            let mut window_display_scale = window.display_scale();
 
             let tick_start = Instant::now();
             'tick: loop {
@@ -1760,7 +1765,7 @@ pub fn main() {
                             window_id: _,
                             key,
                             repeat,
-                            pressed,
+                            down,
                             modifiers: _,
                         } => {
                             if repeat {
@@ -1777,19 +1782,19 @@ pub fn main() {
                                 _ => None,
                             };
 
-                            let value = match pressed {
-                                PressedState::Released => 0.0,
-                                PressedState::Pressed => 1.0,
-                            };
+                            let value = if down { 1.0 } else { 0.0 };
 
                             if let Some(action) = action {
                                 action_queue.push(ActionEvent { action, value })
                             }
                         }
+                        ScaleChanged { window_id: _ } => {
+                            window_display_scale = window.display_scale()
+                        }
                         Quit => {
                             break 'main;
                         }
-                        Close { window_id } => {
+                        CloseRequested { window_id } => {
                             let window = app.window(window_id);
                             gpu.destroy_swapchain(window.upcast());
                         }
@@ -1808,11 +1813,13 @@ pub fn main() {
                 tick_accumulator -= target_dt;
             }
 
+            ui_state.scale = ui_scale_override.unwrap_or(window_display_scale);
+
             let draw_start = Instant::now();
             let tick_duration = draw_start - tick_start;
             let (base_x, base_y) = sin_cos_pi_f32(game_state.time);
-            let base_x = (base_x + 1.0) * 0.5;
-            let base_y = (base_y + 1.0) * 0.5;
+            let base_x = (base_x + 1.0) * 0.5 * ui_state.scale;
+            let base_y = (base_y + 1.0) * 0.5 * ui_state.scale;
 
             for _ in 0..100 {
                 ui_state.rect(
@@ -1827,16 +1834,18 @@ pub fn main() {
 
             let (s, _) = sin_cos_pi_f32(game_state.time * 0.1);
 
-            for i in 0..224 {
-                ui_state.text_fmt(
+            let mut y = 8.0 * ui_state.scale;
+            for _ in 0..224 {
+                let vertical_advance = ui_state.text_fmt(
                         5.0,
-                        10.0 + (i as f32) * (22.0 + s * 8.0),
+                        y,
                         FontFamily::NotoSansJapanese,
                         16.0 + s * 8.0,
                         format_args!(
                             "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████"
                         ),
                     );
+                y += vertical_advance;
             }
 
             for i in 0..500 {
@@ -1845,7 +1854,7 @@ pub fn main() {
                     (vec2(width as f32, height as f32) / 2.0)
                         - 250.0
                         - vec2(rect_x, rect_y) * 1000.0,
-                    vec2(500.0, 500.0),
+                    vec2(400.0, 400.0),
                     10.0,
                     [rect_x * 50.0, rect_y * 50.0, 25.0, 25.0],
                     0xffffffff,
@@ -1862,21 +1871,20 @@ pub fn main() {
                 microshades::ORANGE_RGBA8[2].rotate_right(8),
             );
 
+            y = base_y * 150.0;
             for i in 0..10 {
                 if i & 1 != 0 {
-                    let i = i as f32;
-                    ui_state.text_fmt(
-                        base_x * 100.0 * scale - 5.0,
-                        base_y * 150.0 * scale + i * 50.0 * scale,
+                    y += ui_state.text_fmt(
+                        base_x * 100.0 - 5.0,
+                        y,
                         FontFamily::RobotoRegular,
                         20.0,
                         format_args!("tick: {:?}", tick_duration),
                     );
                 } else {
-                    let i = i as f32;
-                    ui_state.text_fmt(
-                        base_x * 100.0 * scale - 5.0,
-                        base_y * 150.0 * scale + i * 50.0 * scale,
+                    y += ui_state.text_fmt(
+                        base_x * 100.0 - 5.0,
+                        y,
                         FontFamily::RobotoRegular,
                         20.0,
                         format_args!("draw: {:?}", draw_duration),

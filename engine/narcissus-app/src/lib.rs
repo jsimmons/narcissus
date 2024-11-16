@@ -1,4 +1,3 @@
-mod button;
 mod key;
 mod sdl;
 
@@ -6,13 +5,15 @@ use std::rc::Rc;
 
 use narcissus_core::{flags_def, raw_window::AsRawWindow, Upcast};
 
-pub use button::Button;
 pub use key::Key;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub enum PressedState {
-    Released,
-    Pressed,
+flags_def!(ButtonFlags);
+impl ButtonFlags {
+    pub const LEFT: Self = Self(1 << 0);
+    pub const MIDDLE: Self = Self(1 << 1);
+    pub const RIGHT: Self = Self(1 << 2);
+    pub const X1: Self = Self(1 << 3);
+    pub const X2: Self = Self(1 << 4);
 }
 
 flags_def!(ModifierFlags);
@@ -35,11 +36,13 @@ pub struct WindowId(u64);
 pub trait Window: AsRawWindow + Upcast<dyn AsRawWindow> {
     fn id(&self) -> WindowId;
 
-    fn extent(&self) -> (u32, u32);
-    fn drawable_extent(&self) -> (u32, u32);
+    fn size(&self) -> (u32, u32);
+    fn size_in_pixels(&self) -> (u32, u32);
+
+    fn display_scale(&self) -> f32;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 #[non_exhaustive]
 pub enum Event {
     Unknown,
@@ -49,20 +52,20 @@ pub enum Event {
         window_id: WindowId,
         key: Key,
         repeat: bool,
-        pressed: PressedState,
+        down: bool,
         modifiers: ModifierFlags,
     },
 
     ButtonPress {
         window_id: WindowId,
-        button: Button,
-        pressed: PressedState,
+        buttons: ButtonFlags,
+        down: bool,
     },
 
     MouseMotion {
         window_id: WindowId,
-        x: i32,
-        y: i32,
+        x: f32,
+        y: f32,
     },
 
     /// A window has gained mouse focus.
@@ -80,28 +83,46 @@ pub enum Event {
     },
 
     /// A window has gained keyboard focus.
-    FocusIn {
+    FocusGained {
         window_id: WindowId,
     },
 
     /// A window has lost keyboard focus.
-    FocusOut {
+    FocusLost {
         window_id: WindowId,
     },
 
-    /// The window has been resized.
+    /// A window has been resized.
+    ///
+    /// `width` contains the new window size in logical pixel units.
+    /// `height` contains the new window size in logical pixel units.
     Resize {
         window_id: WindowId,
         width: u32,
         height: u32,
     },
 
-    // The close button has been pressed on the window.
-    Close {
+    /// A window has been resized.
+    ///
+    /// `width` contains the new window size in native pixel units.
+    /// `height` contains the new window size in native pixel units.
+    ResizePixels {
+        window_id: WindowId,
+        width: u32,
+        height: u32,
+    },
+
+    /// A window has changed display scale.
+    ScaleChanged {
         window_id: WindowId,
     },
 
-    // The window has been destroyed.
+    /// The close button has been pressed on the window.
+    CloseRequested {
+        window_id: WindowId,
+    },
+
+    /// The window has been destroyed.
     Destroy {
         window_id: WindowId,
     },

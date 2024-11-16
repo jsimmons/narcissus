@@ -67,7 +67,7 @@ name = "narcissus-app"
 version = "0.1.0"
 dependencies = [
  "narcissus-core",
- "sdl2-sys",
+ "sdl3-sys",
 ]
 
 [[package]]
@@ -171,8 +171,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
-name = "sdl2-sys"
-version = "0.1.0"
+name = "sdl3-sys"
+version = "0.1.2+SDL3-preview-3.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48501d90bf219bf3126b26155c04834af300088432f98c6985aa8ad3a2441baa"
 
 [[package]]
 name = "shark"

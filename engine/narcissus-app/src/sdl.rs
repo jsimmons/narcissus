@@ -1,69 +1,139 @@
-use std::{collections::HashMap, ffi::CString, mem::MaybeUninit, rc::Rc};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString},
+    mem::MaybeUninit,
+    rc::Rc,
+};
 
-use crate::{App, Button, Event, Key, ModifierFlags, PressedState, Window, WindowId};
+use crate::{App, ButtonFlags, Event, Key, ModifierFlags, Window, WindowId};
 
 use narcissus_core::{
     raw_window::{AsRawWindow, RawWindow, WaylandWindow, XlibWindow},
     Mutex, Upcast,
 };
-use sdl2_sys as sdl;
+use sdl3_sys::{
+    events::{
+        SDL_EventType, SDL_PollEvent, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP,
+        SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP, SDL_EVENT_MOUSE_MOTION,
+        SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED, SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED,
+        SDL_EVENT_WINDOW_FOCUS_GAINED, SDL_EVENT_WINDOW_FOCUS_LOST, SDL_EVENT_WINDOW_MOUSE_ENTER,
+        SDL_EVENT_WINDOW_MOUSE_LEAVE, SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED,
+        SDL_EVENT_WINDOW_RESIZED,
+    },
+    init::{SDL_InitSubSystem, SDL_Quit, SDL_INIT_VIDEO},
+    keycode::*,
+    mouse::{
+        SDL_BUTTON_LMASK, SDL_BUTTON_MMASK, SDL_BUTTON_RMASK, SDL_BUTTON_X1MASK, SDL_BUTTON_X2MASK,
+    },
+    properties::{SDL_GetNumberProperty, SDL_GetPointerProperty},
+    scancode::*,
+    video::{
+        SDL_CreateWindow, SDL_DestroyWindow, SDL_GetCurrentVideoDriver, SDL_GetWindowDisplayScale,
+        SDL_GetWindowID, SDL_GetWindowProperties, SDL_GetWindowSize, SDL_GetWindowSizeInPixels,
+        SDL_Window, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER,
+        SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, SDL_PROP_WINDOW_X11_DISPLAY_POINTER,
+        SDL_PROP_WINDOW_X11_WINDOW_NUMBER, SDL_WINDOW_HIGH_PIXEL_DENSITY, SDL_WINDOW_RESIZABLE,
+        SDL_WINDOW_VULKAN,
+    },
+};
 
 fn sdl_window_id(window_id: u32) -> WindowId {
     WindowId(window_id as u64)
 }
 
 struct SdlWindow {
-    window: *mut sdl::Window,
+    window: *mut SDL_Window,
 }
 
 impl Window for SdlWindow {
     fn id(&self) -> WindowId {
-        sdl_window_id(unsafe { sdl::SDL_GetWindowID(self.window) })
+        sdl_window_id(unsafe { SDL_GetWindowID(self.window) })
     }
 
-    fn extent(&self) -> (u32, u32) {
+    fn size(&self) -> (u32, u32) {
         let mut width = 0;
         let mut height = 0;
-        unsafe {
-            sdl::SDL_GetWindowSize(self.window, &mut width, &mut height);
+        if !unsafe { SDL_GetWindowSize(self.window, &mut width, &mut height) } {
+            #[cfg(debug_assertions)]
+            panic!("failed to retreive window size");
         }
         (width as u32, height as u32)
     }
 
-    fn drawable_extent(&self) -> (u32, u32) {
+    fn size_in_pixels(&self) -> (u32, u32) {
         let mut width = 0;
         let mut height = 0;
-        unsafe {
-            sdl::SDL_Vulkan_GetDrawableSize(self.window, &mut width, &mut height);
+        if !unsafe { SDL_GetWindowSizeInPixels(self.window, &mut width, &mut height) } {
+            #[cfg(debug_assertions)]
+            panic!("failed to retreive window size in pixels");
         }
         (width as u32, height as u32)
+    }
+
+    fn display_scale(&self) -> f32 {
+        unsafe { SDL_GetWindowDisplayScale(self.window) }
     }
 }
 
 impl AsRawWindow for SdlWindow {
     fn as_raw_window(&self) -> RawWindow {
-        let wm_info = unsafe {
-            let mut wm_info = MaybeUninit::<sdl::SysWMinfo>::zeroed();
-            std::ptr::write(
-                std::ptr::addr_of_mut!((*wm_info.as_mut_ptr()).version),
-                sdl::Version::current(),
-            );
-            let res = sdl::SDL_GetWindowWMInfo(self.window, wm_info.as_mut_ptr());
-            assert_eq!(res, sdl::Bool::True);
-            wm_info.assume_init()
-        };
+        let properties = unsafe { SDL_GetWindowProperties(self.window) };
 
-        match wm_info.subsystem {
-            sdl::SysWMType::X11 => RawWindow::Xlib(XlibWindow {
-                display: unsafe { wm_info.info.x11.display },
-                window: unsafe { wm_info.info.x11.window },
-            }),
-            sdl::SysWMType::WAYLAND => RawWindow::Wayland(WaylandWindow {
-                display: unsafe { wm_info.info.wayland.display },
-                surface: unsafe { wm_info.info.wayland.surface },
-            }),
-            _ => panic!("unspported wm system"),
+        #[cfg(target_os = "linux")]
+        {
+            let current_video_driver = unsafe { SDL_GetCurrentVideoDriver() };
+            assert_ne!(
+                current_video_driver,
+                core::ptr::null(),
+                "no video driver initialized"
+            );
+
+            // Safety: null-checked above, SDL ensures return value is a null-terminated ascii string.
+            let current_video_driver = unsafe {
+                CStr::from_ptr(current_video_driver)
+                    .to_str()
+                    .expect("invalid video driver")
+            };
+
+            match current_video_driver {
+                "wayland" => {
+                    let display = unsafe {
+                        SDL_GetPointerProperty(
+                            properties,
+                            SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER,
+                            core::ptr::null_mut(),
+                        )
+                    };
+                    let surface = unsafe {
+                        SDL_GetPointerProperty(
+                            properties,
+                            SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER,
+                            core::ptr::null_mut(),
+                        )
+                    };
+                    RawWindow::Wayland(WaylandWindow { display, surface })
+                }
+                "x11" => {
+                    let display = unsafe {
+                        SDL_GetPointerProperty(
+                            properties,
+                            SDL_PROP_WINDOW_X11_DISPLAY_POINTER,
+                            core::ptr::null_mut(),
+                        )
+                    };
+                    let window = unsafe {
+                        SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0)
+                    } as i32;
+                    RawWindow::Xlib(XlibWindow { display, window })
+                }
+                _ => {
+                    panic!("unknown sdl video driver")
+                }
+            }
         }
+
+        #[cfg(not(target_os = "linux"))]
+        panic!("unsupported os")
     }
 }
 
@@ -79,7 +149,10 @@ pub struct SdlApp {
 
 impl SdlApp {
     pub fn new() -> Result<Self, ()> {
-        unsafe { sdl::SDL_Init(sdl::INIT_VIDEO) };
+        if !unsafe { SDL_InitSubSystem(SDL_INIT_VIDEO) } {
+            panic!("failed to initalize sdl");
+        }
+
         Ok(Self {
             windows: Mutex::new(HashMap::new()),
         })
@@ -89,9 +162,9 @@ impl SdlApp {
 impl Drop for SdlApp {
     fn drop(&mut self) {
         for window in self.windows.get_mut().values() {
-            unsafe { sdl::SDL_DestroyWindow(window.window) };
+            unsafe { SDL_DestroyWindow(window.window) };
         }
-        unsafe { sdl::SDL_Quit() };
+        unsafe { SDL_Quit() };
     }
 }
 
@@ -99,20 +172,15 @@ impl App for SdlApp {
     fn create_window(&self, desc: &crate::WindowDesc) -> Rc<dyn Window> {
         let title = CString::new(desc.title).unwrap();
         let window = unsafe {
-            sdl::SDL_CreateWindow(
+            SDL_CreateWindow(
                 title.as_ptr(),
-                0,
-                0,
                 desc.width as i32,
                 desc.height as i32,
-                sdl::WINDOW_VULKAN
-                    | sdl::WINDOW_SHOWN
-                    | sdl::WINDOW_RESIZABLE
-                    | sdl::WINDOW_ALLOW_HIGHDPI,
+                SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE,
             )
         };
         assert!(!window.is_null());
-        let window_id = WindowId(unsafe { sdl::SDL_GetWindowID(window) } as u64);
+        let window_id = WindowId(unsafe { SDL_GetWindowID(window) } as u64);
         let window = Rc::new(SdlWindow { window });
         self.windows.lock().insert(window_id, window.clone());
         window
@@ -124,89 +192,82 @@ impl App for SdlApp {
         if let Some(mut window) = self.windows.lock().remove(&window_id) {
             let window = Rc::get_mut(&mut window)
                 .expect("tried to destroy a window while there are outstanding references");
-            unsafe { sdl::SDL_DestroyWindow(window.window) };
+            unsafe { SDL_DestroyWindow(window.window) };
         }
     }
 
     fn poll_event(&self) -> Option<Event> {
-        let mut event = MaybeUninit::uninit();
-        if unsafe { sdl::SDL_PollEvent(event.as_mut_ptr()) } == 0 {
-            return None;
-        }
+        let event = unsafe {
+            let mut event = MaybeUninit::uninit();
+            if !SDL_PollEvent(event.as_mut_ptr()) {
+                return None;
+            }
+            event.assume_init()
+        };
 
-        let event = unsafe { event.assume_init() };
-        let e = match unsafe { event.r#type } {
-            sdl::EventType::QUIT => Event::Quit,
-            sdl::EventType::WINDOWEVENT => match unsafe { event.window.event } {
-                sdl::WindowEventId::None => Event::Unknown,
-                sdl::WindowEventId::Shown => Event::Unknown,
-                sdl::WindowEventId::Hidden => Event::Unknown,
-                sdl::WindowEventId::Exposed => Event::Unknown,
-                sdl::WindowEventId::Moved => Event::Unknown,
-                sdl::WindowEventId::Resized => Event::Resize {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                    width: unsafe { event.window.data1 } as u32,
-                    height: unsafe { event.window.data2 } as u32,
-                },
-                sdl::WindowEventId::SizeChanged => Event::Unknown,
-                sdl::WindowEventId::Minimized => Event::Unknown,
-                sdl::WindowEventId::Maximized => Event::Unknown,
-                sdl::WindowEventId::Restored => Event::Unknown,
-                sdl::WindowEventId::Enter => Event::MouseEnter {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                    x: unsafe { event.window.data1 },
-                    y: unsafe { event.window.data2 },
-                },
-                sdl::WindowEventId::Leave => Event::MouseLeave {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                    x: unsafe { event.window.data1 },
-                    y: unsafe { event.window.data2 },
-                },
-                sdl::WindowEventId::FocusGained => Event::FocusIn {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                },
-                sdl::WindowEventId::FocusLost => Event::FocusOut {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                },
-                sdl::WindowEventId::Close => Event::Close {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                },
-                sdl::WindowEventId::TakeFocus => Event::Unknown,
-                sdl::WindowEventId::HitTest => Event::Unknown,
-                sdl::WindowEventId::IccprofChanged => Event::Unknown,
-                sdl::WindowEventId::DisplayChanged => Event::Unknown,
+        let e = match SDL_EventType(unsafe { event.r#type }) {
+            SDL_EVENT_QUIT => Event::Quit,
+            SDL_EVENT_WINDOW_RESIZED => Event::Resize {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+                width: unsafe { event.window.data1 } as u32,
+                height: unsafe { event.window.data2 } as u32,
             },
-            sdl::EventType::KEYUP | sdl::EventType::KEYDOWN => {
-                let scancode = unsafe { event.key.keysym.scancode };
-                let modifiers = unsafe { event.key.keysym.modifiers };
-                let repeat = unsafe { event.key.repeat } != 0;
-                let state = unsafe { event.key.state };
+            SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED => Event::ResizePixels {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+                width: unsafe { event.window.data1 } as u32,
+                height: unsafe { event.window.data2 } as u32,
+            },
+            SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED => Event::ScaleChanged {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+            },
+            SDL_EVENT_WINDOW_MOUSE_ENTER => Event::MouseEnter {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+                x: unsafe { event.window.data1 },
+                y: unsafe { event.window.data2 },
+            },
+            SDL_EVENT_WINDOW_MOUSE_LEAVE => Event::MouseLeave {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+                x: unsafe { event.window.data1 },
+                y: unsafe { event.window.data2 },
+            },
+            SDL_EVENT_WINDOW_FOCUS_GAINED => Event::FocusGained {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+            },
+            SDL_EVENT_WINDOW_FOCUS_LOST => Event::FocusLost {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+            },
+            SDL_EVENT_WINDOW_CLOSE_REQUESTED => Event::CloseRequested {
+                window_id: sdl_window_id(unsafe { event.window.windowID }),
+            },
+            SDL_EVENT_KEY_UP | SDL_EVENT_KEY_DOWN => {
+                let scancode = unsafe { event.key.scancode };
+                let modifiers = unsafe { event.key.r#mod };
+                let repeat = unsafe { event.key.repeat };
+                let down = unsafe { event.key.down };
                 let key = map_sdl_scancode(scancode);
                 let modifiers = map_sdl_modifiers(modifiers);
-                let pressed = map_sdl_pressed_state(state);
                 Event::KeyPress {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
+                    window_id: sdl_window_id(unsafe { event.window.windowID }),
                     key,
                     repeat,
-                    pressed,
+                    down,
                     modifiers,
                 }
             }
-            sdl::EventType::MOUSEBUTTONUP | sdl::EventType::MOUSEBUTTONDOWN => {
+            SDL_EVENT_MOUSE_BUTTON_UP | SDL_EVENT_MOUSE_BUTTON_DOWN => {
                 let button = unsafe { event.button.button };
-                let state = unsafe { event.button.state };
-                let button = map_sdl_button(button);
-                let pressed = map_sdl_pressed_state(state);
+                let down = unsafe { event.button.down };
+                let buttons = map_sdl_buttons(button as u32);
                 Event::ButtonPress {
-                    window_id: sdl_window_id(unsafe { event.window.window_id }),
-                    button,
-                    pressed,
+                    window_id: sdl_window_id(unsafe { event.window.windowID }),
+                    buttons,
+                    down,
                 }
             }
-            sdl::EventType::MOUSEMOTION => Event::MouseMotion {
-                window_id: sdl_window_id(unsafe { event.window.window_id }),
-                x: unsafe { event.window.data1 },
-                y: unsafe { event.window.data2 },
+            SDL_EVENT_MOUSE_MOTION => Event::MouseMotion {
+                window_id: sdl_window_id(unsafe { event.motion.windowID }),
+                x: unsafe { event.motion.x },
+                y: unsafe { event.motion.y },
             },
             _ => Event::Unknown,
         };
@@ -219,234 +280,221 @@ impl App for SdlApp {
     }
 }
 
-fn map_sdl_button(button: sdl::MouseButton) -> Button {
-    match button {
-        sdl::MouseButton::Left => Button::Left,
-        sdl::MouseButton::Middle => Button::Middle,
-        sdl::MouseButton::Right => Button::Right,
-        sdl::MouseButton::X1 => Button::X1,
-        sdl::MouseButton::X2 => Button::X2,
+fn map_sdl_buttons(buttons: u32) -> ButtonFlags {
+    let mut flags = ButtonFlags::default();
+    if buttons & SDL_BUTTON_LMASK != 0 {
+        flags |= ButtonFlags::LEFT
     }
-}
-
-fn map_sdl_pressed_state(pressed_state: sdl::PressedState) -> PressedState {
-    match pressed_state {
-        sdl::PressedState::Released => PressedState::Released,
-        sdl::PressedState::Pressed => PressedState::Pressed,
+    if buttons & SDL_BUTTON_MMASK != 0 {
+        flags |= ButtonFlags::MIDDLE
     }
-}
-
-fn map_sdl_modifiers(modifiers: sdl::Keymod) -> ModifierFlags {
-    let mut flags = ModifierFlags::default();
-    if modifiers.0 & sdl::Keymod::ALT.0 != 0 {
-        flags &= ModifierFlags::ALT
+    if buttons & SDL_BUTTON_RMASK != 0 {
+        flags |= ButtonFlags::RIGHT
     }
-    if modifiers.0 & sdl::Keymod::SHIFT.0 != 0 {
-        flags &= ModifierFlags::SHIFT
+    if buttons & SDL_BUTTON_X1MASK != 0 {
+        flags |= ButtonFlags::X1
     }
-    if modifiers.0 & sdl::Keymod::CTRL.0 != 0 {
-        flags &= ModifierFlags::CTRL
-    }
-    if modifiers.0 & sdl::Keymod::GUI.0 != 0 {
-        flags &= ModifierFlags::META
+    if buttons & SDL_BUTTON_X2MASK != 0 {
+        flags |= ButtonFlags::X2
     }
     flags
 }
 
-fn map_sdl_scancode(scancode: sdl::Scancode) -> Key {
+fn map_sdl_modifiers(modifiers: SDL_Keymod) -> ModifierFlags {
+    let mut flags = ModifierFlags::default();
+    if modifiers & SDL_KMOD_ALT != 0 {
+        flags |= ModifierFlags::ALT
+    }
+    if modifiers & SDL_KMOD_SHIFT != 0 {
+        flags |= ModifierFlags::SHIFT
+    }
+    if modifiers & SDL_KMOD_CTRL != 0 {
+        flags |= ModifierFlags::CTRL
+    }
+    if modifiers & SDL_KMOD_GUI != 0 {
+        flags |= ModifierFlags::META
+    }
+    flags
+}
+
+fn map_sdl_scancode(scancode: SDL_Scancode) -> Key {
     match scancode {
-        sdl::Scancode::A => Key::A,
-        sdl::Scancode::B => Key::B,
-        sdl::Scancode::C => Key::C,
-        sdl::Scancode::D => Key::D,
-        sdl::Scancode::E => Key::E,
-        sdl::Scancode::F => Key::F,
-        sdl::Scancode::G => Key::G,
-        sdl::Scancode::H => Key::H,
-        sdl::Scancode::I => Key::I,
-        sdl::Scancode::J => Key::J,
-        sdl::Scancode::K => Key::K,
-        sdl::Scancode::L => Key::L,
-        sdl::Scancode::M => Key::M,
-        sdl::Scancode::N => Key::N,
-        sdl::Scancode::O => Key::O,
-        sdl::Scancode::P => Key::P,
-        sdl::Scancode::Q => Key::Q,
-        sdl::Scancode::R => Key::R,
-        sdl::Scancode::S => Key::S,
-        sdl::Scancode::T => Key::T,
-        sdl::Scancode::U => Key::U,
-        sdl::Scancode::V => Key::V,
-        sdl::Scancode::W => Key::W,
-        sdl::Scancode::X => Key::X,
-        sdl::Scancode::Y => Key::Y,
-        sdl::Scancode::Z => Key::Z,
+        SDL_SCANCODE_A => Key::A,
+        SDL_SCANCODE_B => Key::B,
+        SDL_SCANCODE_C => Key::C,
+        SDL_SCANCODE_D => Key::D,
+        SDL_SCANCODE_E => Key::E,
+        SDL_SCANCODE_F => Key::F,
+        SDL_SCANCODE_G => Key::G,
+        SDL_SCANCODE_H => Key::H,
+        SDL_SCANCODE_I => Key::I,
+        SDL_SCANCODE_J => Key::J,
+        SDL_SCANCODE_K => Key::K,
+        SDL_SCANCODE_L => Key::L,
+        SDL_SCANCODE_M => Key::M,
+        SDL_SCANCODE_N => Key::N,
+        SDL_SCANCODE_O => Key::O,
+        SDL_SCANCODE_P => Key::P,
+        SDL_SCANCODE_Q => Key::Q,
+        SDL_SCANCODE_R => Key::R,
+        SDL_SCANCODE_S => Key::S,
+        SDL_SCANCODE_T => Key::T,
+        SDL_SCANCODE_U => Key::U,
+        SDL_SCANCODE_V => Key::V,
+        SDL_SCANCODE_W => Key::W,
+        SDL_SCANCODE_X => Key::X,
+        SDL_SCANCODE_Y => Key::Y,
+        SDL_SCANCODE_Z => Key::Z,
 
-        sdl::Scancode::SCANCODE_1 => Key::Key1,
-        sdl::Scancode::SCANCODE_2 => Key::Key2,
-        sdl::Scancode::SCANCODE_3 => Key::Key3,
-        sdl::Scancode::SCANCODE_4 => Key::Key4,
-        sdl::Scancode::SCANCODE_5 => Key::Key5,
-        sdl::Scancode::SCANCODE_6 => Key::Key6,
-        sdl::Scancode::SCANCODE_7 => Key::Key7,
-        sdl::Scancode::SCANCODE_8 => Key::Key8,
-        sdl::Scancode::SCANCODE_9 => Key::Key9,
-        sdl::Scancode::SCANCODE_0 => Key::Key0,
+        SDL_SCANCODE_1 => Key::Key1,
+        SDL_SCANCODE_2 => Key::Key2,
+        SDL_SCANCODE_3 => Key::Key3,
+        SDL_SCANCODE_4 => Key::Key4,
+        SDL_SCANCODE_5 => Key::Key5,
+        SDL_SCANCODE_6 => Key::Key6,
+        SDL_SCANCODE_7 => Key::Key7,
+        SDL_SCANCODE_8 => Key::Key8,
+        SDL_SCANCODE_9 => Key::Key9,
+        SDL_SCANCODE_0 => Key::Key0,
 
-        sdl::Scancode::RETURN => Key::Return,
-        sdl::Scancode::ESCAPE => Key::Escape,
-        sdl::Scancode::BACKSPACE => Key::Backspace,
-        sdl::Scancode::DELETE => Key::Delete,
-        sdl::Scancode::TAB => Key::Tab,
-        sdl::Scancode::SPACE => Key::Space,
-        sdl::Scancode::MINUS => Key::Minus,
-        sdl::Scancode::EQUALS => Key::Equal,
-        sdl::Scancode::LEFTBRACKET => Key::LeftBrace,
-        sdl::Scancode::RIGHTBRACKET => Key::RightBrace,
-        sdl::Scancode::BACKSLASH => Key::Backslash,
-        sdl::Scancode::SEMICOLON => Key::Semicolon,
-        sdl::Scancode::APOSTROPHE => Key::Apostrophe,
-        sdl::Scancode::GRAVE => Key::Grave,
-        sdl::Scancode::COMMA => Key::Comma,
-        sdl::Scancode::PERIOD => Key::Period,
-        sdl::Scancode::SLASH => Key::Slash,
-        sdl::Scancode::CAPSLOCK => Key::CapsLock,
+        SDL_SCANCODE_RETURN => Key::Return,
+        SDL_SCANCODE_ESCAPE => Key::Escape,
+        SDL_SCANCODE_BACKSPACE => Key::Backspace,
+        SDL_SCANCODE_DELETE => Key::Delete,
+        SDL_SCANCODE_TAB => Key::Tab,
+        SDL_SCANCODE_SPACE => Key::Space,
+        SDL_SCANCODE_MINUS => Key::Minus,
+        SDL_SCANCODE_EQUALS => Key::Equal,
+        SDL_SCANCODE_LEFTBRACKET => Key::LeftBrace,
+        SDL_SCANCODE_RIGHTBRACKET => Key::RightBrace,
+        SDL_SCANCODE_BACKSLASH => Key::Backslash,
+        SDL_SCANCODE_SEMICOLON => Key::Semicolon,
+        SDL_SCANCODE_APOSTROPHE => Key::Apostrophe,
+        SDL_SCANCODE_GRAVE => Key::Grave,
+        SDL_SCANCODE_COMMA => Key::Comma,
+        SDL_SCANCODE_PERIOD => Key::Period,
+        SDL_SCANCODE_SLASH => Key::Slash,
+        SDL_SCANCODE_CAPSLOCK => Key::CapsLock,
 
-        sdl::Scancode::F1 => Key::F1,
-        sdl::Scancode::F2 => Key::F2,
-        sdl::Scancode::F3 => Key::F3,
-        sdl::Scancode::F4 => Key::F4,
-        sdl::Scancode::F5 => Key::F5,
-        sdl::Scancode::F6 => Key::F6,
-        sdl::Scancode::F7 => Key::F7,
-        sdl::Scancode::F8 => Key::F8,
-        sdl::Scancode::F9 => Key::F9,
-        sdl::Scancode::F10 => Key::F10,
-        sdl::Scancode::F11 => Key::F11,
-        sdl::Scancode::F12 => Key::F12,
-        sdl::Scancode::F13 => Key::F13,
-        sdl::Scancode::F14 => Key::F14,
-        sdl::Scancode::F15 => Key::F15,
-        sdl::Scancode::F16 => Key::F16,
-        sdl::Scancode::F17 => Key::F17,
-        sdl::Scancode::F18 => Key::F18,
-        sdl::Scancode::F19 => Key::F19,
-        sdl::Scancode::F20 => Key::F20,
-        sdl::Scancode::F21 => Key::F21,
-        sdl::Scancode::F22 => Key::F22,
-        sdl::Scancode::F23 => Key::F23,
-        sdl::Scancode::F24 => Key::F24,
+        SDL_SCANCODE_F1 => Key::F1,
+        SDL_SCANCODE_F2 => Key::F2,
+        SDL_SCANCODE_F3 => Key::F3,
+        SDL_SCANCODE_F4 => Key::F4,
+        SDL_SCANCODE_F5 => Key::F5,
+        SDL_SCANCODE_F6 => Key::F6,
+        SDL_SCANCODE_F7 => Key::F7,
+        SDL_SCANCODE_F8 => Key::F8,
+        SDL_SCANCODE_F9 => Key::F9,
+        SDL_SCANCODE_F10 => Key::F10,
+        SDL_SCANCODE_F11 => Key::F11,
+        SDL_SCANCODE_F12 => Key::F12,
+        SDL_SCANCODE_F13 => Key::F13,
+        SDL_SCANCODE_F14 => Key::F14,
+        SDL_SCANCODE_F15 => Key::F15,
+        SDL_SCANCODE_F16 => Key::F16,
+        SDL_SCANCODE_F17 => Key::F17,
+        SDL_SCANCODE_F18 => Key::F18,
+        SDL_SCANCODE_F19 => Key::F19,
+        SDL_SCANCODE_F20 => Key::F20,
+        SDL_SCANCODE_F21 => Key::F21,
+        SDL_SCANCODE_F22 => Key::F22,
+        SDL_SCANCODE_F23 => Key::F23,
+        SDL_SCANCODE_F24 => Key::F24,
 
-        sdl::Scancode::SCROLLLOCK => Key::ScrollLock,
-        sdl::Scancode::INSERT => Key::Insert,
-        sdl::Scancode::HOME => Key::Home,
-        sdl::Scancode::END => Key::End,
-        sdl::Scancode::PAGEUP => Key::PageUp,
-        sdl::Scancode::PAGEDOWN => Key::PageDown,
+        SDL_SCANCODE_SCROLLLOCK => Key::ScrollLock,
+        SDL_SCANCODE_INSERT => Key::Insert,
+        SDL_SCANCODE_HOME => Key::Home,
+        SDL_SCANCODE_END => Key::End,
+        SDL_SCANCODE_PAGEUP => Key::PageUp,
+        SDL_SCANCODE_PAGEDOWN => Key::PageDown,
 
-        sdl::Scancode::LEFT => Key::Left,
-        sdl::Scancode::RIGHT => Key::Right,
-        sdl::Scancode::UP => Key::Up,
-        sdl::Scancode::DOWN => Key::Down,
+        SDL_SCANCODE_LEFT => Key::Left,
+        SDL_SCANCODE_RIGHT => Key::Right,
+        SDL_SCANCODE_UP => Key::Up,
+        SDL_SCANCODE_DOWN => Key::Down,
 
-        sdl::Scancode::NUMLOCKCLEAR => Key::NumLock,
-        sdl::Scancode::KP_DIVIDE => Key::NumpadDivide,
-        sdl::Scancode::KP_MULTIPLY => Key::NumpadMultiply,
-        sdl::Scancode::KP_MINUS => Key::NumpadSubtract,
-        sdl::Scancode::KP_PLUS => Key::NumpadAdd,
-        sdl::Scancode::KP_ENTER => Key::NumpadEnter,
-        sdl::Scancode::KP_1 => Key::Numpad1,
-        sdl::Scancode::KP_2 => Key::Numpad2,
-        sdl::Scancode::KP_3 => Key::Numpad3,
-        sdl::Scancode::KP_4 => Key::Numpad4,
-        sdl::Scancode::KP_5 => Key::Numpad5,
-        sdl::Scancode::KP_6 => Key::Numpad6,
-        sdl::Scancode::KP_7 => Key::Numpad7,
-        sdl::Scancode::KP_8 => Key::Numpad8,
-        sdl::Scancode::KP_9 => Key::Numpad9,
-        sdl::Scancode::KP_0 => Key::Numpad0,
-        sdl::Scancode::KP_PERIOD => Key::NumpadPeriod,
-        sdl::Scancode::KP_EQUALS => Key::NumpadEquals,
-        sdl::Scancode::KP_LEFTPAREN => Key::NumpadLeftParen,
-        sdl::Scancode::KP_RIGHTPAREN => Key::NumpadRightParen,
-        sdl::Scancode::KP_PLUSMINUS => Key::NumpadPlusMinus,
-        sdl::Scancode::KP_COMMA => Key::NumpadComma,
+        SDL_SCANCODE_NUMLOCKCLEAR => Key::NumLock,
+        SDL_SCANCODE_KP_DIVIDE => Key::NumpadDivide,
+        SDL_SCANCODE_KP_MULTIPLY => Key::NumpadMultiply,
+        SDL_SCANCODE_KP_MINUS => Key::NumpadSubtract,
+        SDL_SCANCODE_KP_PLUS => Key::NumpadAdd,
+        SDL_SCANCODE_KP_ENTER => Key::NumpadEnter,
+        SDL_SCANCODE_KP_1 => Key::Numpad1,
+        SDL_SCANCODE_KP_2 => Key::Numpad2,
+        SDL_SCANCODE_KP_3 => Key::Numpad3,
+        SDL_SCANCODE_KP_4 => Key::Numpad4,
+        SDL_SCANCODE_KP_5 => Key::Numpad5,
+        SDL_SCANCODE_KP_6 => Key::Numpad6,
+        SDL_SCANCODE_KP_7 => Key::Numpad7,
+        SDL_SCANCODE_KP_8 => Key::Numpad8,
+        SDL_SCANCODE_KP_9 => Key::Numpad9,
+        SDL_SCANCODE_KP_0 => Key::Numpad0,
+        SDL_SCANCODE_KP_PERIOD => Key::NumpadPeriod,
+        SDL_SCANCODE_KP_EQUALS => Key::NumpadEquals,
+        SDL_SCANCODE_KP_LEFTPAREN => Key::NumpadLeftParen,
+        SDL_SCANCODE_KP_RIGHTPAREN => Key::NumpadRightParen,
+        SDL_SCANCODE_KP_PLUSMINUS => Key::NumpadPlusMinus,
+        SDL_SCANCODE_KP_COMMA => Key::NumpadComma,
 
-        sdl::Scancode::EJECT => Key::Eject,
-        sdl::Scancode::STOP => Key::Stop,
-        sdl::Scancode::MUTE => Key::Mute,
-        sdl::Scancode::VOLUMEUP => Key::VolumeUp,
-        sdl::Scancode::VOLUMEDOWN => Key::VolumeDown,
-        sdl::Scancode::POWER => Key::Power,
+        SDL_SCANCODE_MEDIA_EJECT => Key::MediaEject,
+        SDL_SCANCODE_STOP => Key::Stop,
+        SDL_SCANCODE_MUTE => Key::Mute,
+        SDL_SCANCODE_VOLUMEUP => Key::VolumeUp,
+        SDL_SCANCODE_VOLUMEDOWN => Key::VolumeDown,
+        SDL_SCANCODE_POWER => Key::Power,
 
-        sdl::Scancode::APPLICATION => Key::Compose,
-        sdl::Scancode::SLEEP => Key::Sleep,
+        SDL_SCANCODE_APPLICATION => Key::Compose,
+        SDL_SCANCODE_SLEEP => Key::Sleep,
 
-        sdl::Scancode::LSHIFT => Key::LeftShift,
-        sdl::Scancode::RSHIFT => Key::RightShift,
-        sdl::Scancode::LCTRL => Key::LeftControl,
-        sdl::Scancode::RCTRL => Key::RightControl,
-        sdl::Scancode::LALT => Key::LeftAlt,
-        sdl::Scancode::RALT => Key::RightAlt,
-        sdl::Scancode::LGUI => Key::LeftMeta,
-        sdl::Scancode::RGUI => Key::RightMeta,
+        SDL_SCANCODE_LSHIFT => Key::LeftShift,
+        SDL_SCANCODE_RSHIFT => Key::RightShift,
+        SDL_SCANCODE_LCTRL => Key::LeftControl,
+        SDL_SCANCODE_RCTRL => Key::RightControl,
+        SDL_SCANCODE_LALT => Key::LeftAlt,
+        SDL_SCANCODE_RALT => Key::RightAlt,
+        SDL_SCANCODE_LGUI => Key::LeftMeta,
+        SDL_SCANCODE_RGUI => Key::RightMeta,
 
-        sdl::Scancode::MENU => Key::Menu,
-        sdl::Scancode::PAUSE => Key::Pause,
+        SDL_SCANCODE_MENU => Key::Menu,
+        SDL_SCANCODE_PAUSE => Key::Pause,
 
-        sdl::Scancode::NONUSBACKSLASH => Key::NonUSBackslash,
-        sdl::Scancode::SYSREQ => Key::SysReq,
-        sdl::Scancode::AGAIN => Key::Again,
-        sdl::Scancode::UNDO => Key::Undo,
-        sdl::Scancode::COPY => Key::Copy,
-        sdl::Scancode::PASTE => Key::Paste,
-        sdl::Scancode::FIND => Key::Find,
-        sdl::Scancode::CUT => Key::Cut,
-        sdl::Scancode::HELP => Key::Help,
-        sdl::Scancode::CALCULATOR => Key::Calculator,
-        sdl::Scancode::ALTERASE => Key::AltErase,
-        sdl::Scancode::CANCEL => Key::Cancel,
+        SDL_SCANCODE_NONUSBACKSLASH => Key::NonUSBackslash,
+        SDL_SCANCODE_SYSREQ => Key::SysReq,
+        SDL_SCANCODE_AGAIN => Key::Again,
+        SDL_SCANCODE_UNDO => Key::Undo,
+        SDL_SCANCODE_COPY => Key::Copy,
+        SDL_SCANCODE_PASTE => Key::Paste,
+        SDL_SCANCODE_FIND => Key::Find,
+        SDL_SCANCODE_CUT => Key::Cut,
+        SDL_SCANCODE_HELP => Key::Help,
+        SDL_SCANCODE_ALTERASE => Key::AltErase,
+        SDL_SCANCODE_CANCEL => Key::Cancel,
 
-        sdl::Scancode::BRIGHTNESSUP => Key::BrightnessUp,
-        sdl::Scancode::BRIGHTNESSDOWN => Key::BrightnessDown,
+        SDL_SCANCODE_AC_BOOKMARKS => Key::ACBookmarks,
+        SDL_SCANCODE_AC_BACK => Key::ACBack,
+        SDL_SCANCODE_AC_FORWARD => Key::ACForward,
+        SDL_SCANCODE_AC_HOME => Key::ACHome,
+        SDL_SCANCODE_AC_REFRESH => Key::ACRefresh,
+        SDL_SCANCODE_AC_SEARCH => Key::ACSearch,
 
-        sdl::Scancode::DISPLAYSWITCH => Key::SwitchVideoMode,
+        SDL_SCANCODE_MEDIA_NEXT_TRACK => Key::MediaNextTrack,
+        SDL_SCANCODE_MEDIA_PLAY => Key::MediaPlay,
+        SDL_SCANCODE_MEDIA_PREVIOUS_TRACK => Key::MediaPreviousTrack,
+        SDL_SCANCODE_MEDIA_STOP => Key::MediaStop,
+        SDL_SCANCODE_MEDIA_REWIND => Key::MediaRewind,
+        SDL_SCANCODE_MEDIA_FAST_FORWARD => Key::MediaFastForward,
 
-        sdl::Scancode::KBDILLUMTOGGLE => Key::KeyboardIlluminationToggle,
-        sdl::Scancode::KBDILLUMDOWN => Key::KeyboardIlluminationDown,
-        sdl::Scancode::KBDILLUMUP => Key::KeyboardIlluminationUp,
+        SDL_SCANCODE_LANG1 => Key::Language1,
+        SDL_SCANCODE_LANG2 => Key::Language2,
+        SDL_SCANCODE_LANG3 => Key::Language3,
+        SDL_SCANCODE_LANG4 => Key::Language4,
+        SDL_SCANCODE_LANG5 => Key::Language5,
 
-        sdl::Scancode::APP1 => Key::App1,
-        sdl::Scancode::APP2 => Key::App2,
-        sdl::Scancode::WWW => Key::WWW,
-        sdl::Scancode::MAIL => Key::Mail,
-        sdl::Scancode::COMPUTER => Key::Computer,
-
-        sdl::Scancode::AC_BOOKMARKS => Key::ACBookmarks,
-        sdl::Scancode::AC_BACK => Key::ACBack,
-        sdl::Scancode::AC_FORWARD => Key::ACForward,
-        sdl::Scancode::AC_HOME => Key::ACHome,
-        sdl::Scancode::AC_REFRESH => Key::ACRefresh,
-        sdl::Scancode::AC_SEARCH => Key::ACSearch,
-
-        sdl::Scancode::AUDIONEXT => Key::AudioNext,
-        sdl::Scancode::AUDIOPLAY => Key::AudioPlay,
-        sdl::Scancode::AUDIOPREV => Key::AudioPrev,
-        sdl::Scancode::AUDIOSTOP => Key::AudioStop,
-        sdl::Scancode::AUDIOREWIND => Key::AudioRewind,
-        sdl::Scancode::AUDIOFASTFORWARD => Key::AudioFastForward,
-
-        sdl::Scancode::LANG1 => Key::Language1,
-        sdl::Scancode::LANG2 => Key::Language2,
-        sdl::Scancode::LANG3 => Key::Language3,
-        sdl::Scancode::LANG4 => Key::Language4,
-        sdl::Scancode::LANG5 => Key::Language5,
-
-        sdl::Scancode::INTERNATIONAL1 => Key::International1,
-        sdl::Scancode::INTERNATIONAL2 => Key::International2,
-        sdl::Scancode::INTERNATIONAL3 => Key::International3,
-        sdl::Scancode::INTERNATIONAL4 => Key::International4,
-        sdl::Scancode::INTERNATIONAL5 => Key::International5,
+        SDL_SCANCODE_INTERNATIONAL1 => Key::International1,
+        SDL_SCANCODE_INTERNATIONAL2 => Key::International2,
+        SDL_SCANCODE_INTERNATIONAL3 => Key::International3,
+        SDL_SCANCODE_INTERNATIONAL4 => Key::International4,
+        SDL_SCANCODE_INTERNATIONAL5 => Key::International5,
 
         _ => Key::Unknown,
     }

@@ -119,7 +119,7 @@ pub enum Key {
     NumpadPlusMinus,
     NumpadComma,
 
-    Eject,
+    MediaEject,
     Stop,
     Mute,
     VolumeUp,
@@ -150,24 +150,8 @@ pub enum Key {
     Find,
     Cut,
     Help,
-    Calculator,
     AltErase,
     Cancel,
-
-    BrightnessUp,
-    BrightnessDown,
-
-    SwitchVideoMode,
-
-    KeyboardIlluminationToggle,
-    KeyboardIlluminationDown,
-    KeyboardIlluminationUp,
-
-    App1,
-    App2,
-    WWW,
-    Mail,
-    Computer,
 
     ACBookmarks,
     ACBack,
@@ -176,12 +160,12 @@ pub enum Key {
     ACRefresh,
     ACSearch,
 
-    AudioNext,
-    AudioPlay,
-    AudioPrev,
-    AudioStop,
-    AudioRewind,
-    AudioFastForward,
+    MediaNextTrack,
+    MediaPlay,
+    MediaPreviousTrack,
+    MediaStop,
+    MediaRewind,
+    MediaFastForward,
 
     Language1,
     Language2,
