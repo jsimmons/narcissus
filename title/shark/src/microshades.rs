@@ -11,7 +11,7 @@
 //! crafted palettes that improve CVD accessibility and may be applied to any
 //! plot.
 //!
-//! https://karstenslab.github.io/project/microshades/
+//! <https://karstenslab.github.io/project/microshades/>
 
 pub const GRAY_RGBA8: [u32; 5] = [0xd9d9_d9ff, 0xbdbdbdff, 0x969696ff, 0x737373ff, 0x525252ff];
 pub const BROWN_RGBA8: [u32; 5] = [0xd8c7beff, 0xcaa995ff, 0xb78560ff, 0x9e5c00ff, 0x7d3200ff];
