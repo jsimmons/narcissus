@@ -113,7 +113,7 @@ impl Pcg64 {
     /// # Notes
     ///
     /// Uniform point on unit disc by Marc B. Reynolds:
-    /// https://marc-b-reynolds.github.io/distribution/2016/11/28/Uniform.html
+    /// <https://marc-b-reynolds.github.io/distribution/2016/11/28/Uniform.html>
     pub fn next_uniform_unit_disc_f32(&mut self) -> (f32, [f32; 2]) {
         let mut x;
         let mut y;
@@ -134,7 +134,7 @@ impl Pcg64 {
     /// # Notes
     ///
     /// Uniform point on unit circle by Marc B. Reynolds:
-    /// https://marc-b-reynolds.github.io/distribution/2016/11/28/Uniform.html
+    /// <https://marc-b-reynolds.github.io/distribution/2016/11/28/Uniform.html>
     pub fn next_uniform_unit_circle_f32(&mut self) -> [f32; 2] {
         const BIAS: f32 = 1.0 / 68719476736.0; // 0x1p-36
         let (d, [x, y]) = self.next_uniform_unit_disc_f32();
