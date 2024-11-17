@@ -20,7 +20,7 @@ struct ResolveConstants {
     CommandRef draw_buffer;
     ScissorRef scissor_buffer;
     GlyphRef glyph_buffer;
-    CoarseRef coarse_buffer;
+    CoarseReadRef coarse_buffer;
     FineRef fine_buffer;
     TileRef tile_buffer;
 };

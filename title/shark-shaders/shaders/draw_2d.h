@@ -65,23 +65,23 @@ CmdGlyph decode_glyph(Cmd cmd) {
     return glyph;
 }
 
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer CommandRef
-{
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer CommandRef {
     Cmd values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer ScissorRef
-{
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer ScissorRef {
     Scissor values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer GlyphRef
-{
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer GlyphRef {
     Glyph values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 4) buffer CoarseRef
-{
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer CoarseRef {
+    uint values[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer CoarseReadRef {
     uint values[];
 };
 
@@ -89,7 +89,15 @@ layout(buffer_reference, std430, buffer_reference_align = 4) buffer FineRef {
     uint values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 4) buffer TileRef {
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FineReadRef {
+    uint values[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer TileRef {
+    Tile values[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer TileReadRef {
     Tile values[];
 };
 

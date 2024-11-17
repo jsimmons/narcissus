@@ -21,9 +21,9 @@ struct RasterizeConstants {
     CommandRef draw_buffer;
     ScissorRef scissor_buffer;
     GlyphRef glyph_buffer;
-    CoarseRef coarse_buffer;
-    FineRef fine_buffer;
-    TileRef tile_buffer;
+    CoarseReadRef coarse_buffer;
+    FineReadRef fine_buffer;
+    TileReadRef tile_buffer;
 };
 
 layout(std430, push_constant) uniform RasterizeConstantsBlock {
