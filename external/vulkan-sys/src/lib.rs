@@ -75,6 +75,15 @@ pub enum Bool32 {
     True = 1,
 }
 
+impl From<bool> for Bool32 {
+    fn from(value: bool) -> Self {
+        match value {
+            true => Bool32::True,
+            false => Bool32::False,
+        }
+    }
+}
+
 impl Default for Bool32 {
     fn default() -> Self {
         Bool32::False
