@@ -1200,6 +1200,8 @@ impl Device for VulkanDevice {
             Some(SamplerCompareOp::GreaterEq) => (vk::Bool32::True, vk::CompareOp::GreaterOrEqual),
         };
 
+        let unnormalized_coordinates = sampler_desc.unnormalized_coordinates.into();
+
         let mut sampler = vk::Sampler::null();
         vk_check!(self.device_fn.create_sampler(
             self.device,
@@ -1217,6 +1219,7 @@ impl Device for VulkanDevice {
                 address_mode_w: address_mode,
                 compare_enable,
                 compare_op,
+                unnormalized_coordinates,
                 ..default()
             },
             None,

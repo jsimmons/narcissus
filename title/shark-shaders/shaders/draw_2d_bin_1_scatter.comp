@@ -13,20 +13,20 @@
 
 #include "draw_2d.h"
 
-struct Draw2dScatterConstants {
-    uvec2 screen_resolution;
+struct ScatterConstants {
     uvec2 tile_resolution;
 
     uint draw_buffer_len;
     uint coarse_buffer_len;
 
-    Draw2dCommandRef draw_buffer;
+    CommandRef draw_buffer;
+    ScissorRef scissor_buffer;
     GlyphRef glyph_buffer;
     CoarseRef coarse_buffer;
 };
 
-layout(std430, push_constant) uniform Draw2dScatterConstantsBlock {
-    Draw2dScatterConstants constants;
+layout(std430, push_constant) uniform ScatterConstantsBlock {
+    ScatterConstants constants;
 };
 
 const uint MAX_TILES = 256;
@@ -43,12 +43,13 @@ void main() {
 
     const bool in_bounds = draw_index < constants.draw_buffer_len;
 
+    uint cmd_scissor = 0;
     vec2 cmd_min = vec2(99999.9);
     vec2 cmd_max = vec2(-99999.9);
     if (in_bounds) {
         const uint packed_type = constants.draw_buffer.values[draw_index].packed_type;
         const uint cmd_type = packed_type >> 24;
-        const uint cmd_packed = packed_type & 0xffffff;
+        cmd_scissor = packed_type & 0xffff;
 
         for (;;) {
             const uint scalar_type = subgroupBroadcastFirst(cmd_type);
@@ -56,13 +57,13 @@ void main() {
             if (scalar_type == cmd_type) {
                 switch (scalar_type) {
                     case DRAW_2D_CMD_RECT:
-                        const Draw2dCmdRect cmd_rect = decode_rect(constants.draw_buffer.values[draw_index]);
-                        cmd_min = cmd_rect.bounds_min;
-                        cmd_max = cmd_rect.bounds_max;
+                        const CmdRect cmd_rect = decode_rect(constants.draw_buffer.values[draw_index]);
+                        cmd_min = cmd_rect.position;
+                        cmd_max = cmd_rect.position + cmd_rect.bound;
                         break;
                     case DRAW_2D_CMD_GLYPH:
-                        const Draw2dCmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[draw_index]);
-                        const Glyph glyph = constants.glyph_buffer.values[cmd_packed];
+                        const CmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[draw_index]);
+                        const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
                         cmd_min = cmd_glyph.position + glyph.offset_min;
                         cmd_max = cmd_glyph.position + glyph.offset_max;
                         break;
@@ -72,27 +73,29 @@ void main() {
         }
     }
 
-    // For any out-of-bounds draws, we'll get the defaults of 99999.9 and -99999.9, which will fail
-    // here. Out-of-bounds draws are therefore off-screen. Well, so long as you don't have 27 4k
-    // monitors arranged horizontally.
-    const bool offscreen = any(greaterThanEqual(cmd_min, cmd_max)) || any(greaterThan(cmd_min, constants.screen_resolution)) || any(lessThan(cmd_max, vec2(0.0)));
+    const Scissor scissor = constants.scissor_buffer.values[cmd_scissor];
+
+    const bool out_of_bounds = any(greaterThanEqual(cmd_min, cmd_max)) || any(greaterThan(cmd_min, scissor.offset_max)) || any(lessThan(cmd_max, scissor.offset_min));
 
     // Are all draws off-screen?
-    if (subgroupAll(offscreen)) {
+    if (subgroupAll(out_of_bounds)) {
         return;
     }
 
-    // Make sure off-screen commands don't contribute to the bounds.
-    const uvec2 cmds_min_tile = uvec2(clamp(subgroupMin(offscreen ? ivec2(999999) : ivec2(floor(cmd_min / TILE_SIZE))), ivec2(0), ivec2(constants.tile_resolution)));
-    const uvec2 cmds_max_tile = uvec2(clamp(subgroupMax(offscreen ? ivec2(-999999) : ivec2(floor(cmd_max / TILE_SIZE))), ivec2(0), ivec2(constants.tile_resolution)));
-    const uvec2 cmd_min_tile = uvec2(clamp(ivec2(floor(cmd_min / TILE_SIZE)), ivec2(0), ivec2(constants.tile_resolution)));
-    const uvec2 cmd_max_tile = uvec2(clamp(ivec2(floor(cmd_max / TILE_SIZE)), ivec2(0), ivec2(constants.tile_resolution)));
+    cmd_min = max(cmd_min, scissor.offset_min);
+    cmd_max = min(cmd_max, scissor.offset_max);
 
-    const bool cmd_dominates_bounds = all(equal(cmd_min_tile, cmds_min_tile)) && all(equal(cmd_max_tile, cmds_max_tile));
+    // Make sure off-screen commands don't contribute to the bounds.
+    const uvec2 cmds_tile_min = uvec2(clamp(subgroupMin(out_of_bounds ? ivec2(999999) : ivec2(floor(cmd_min / TILE_SIZE))), ivec2(0), constants.tile_resolution));
+    const uvec2 cmds_tile_max = uvec2(clamp(subgroupMax(out_of_bounds ? ivec2(-999999) : ivec2(floor(cmd_max / TILE_SIZE))), ivec2(0), constants.tile_resolution));
+    const uvec2 cmd_tile_min = uvec2(clamp(ivec2(floor(cmd_min / TILE_SIZE)), ivec2(0), constants.tile_resolution));
+    const uvec2 cmd_tile_max = uvec2(clamp(ivec2(floor(cmd_max / TILE_SIZE)), ivec2(0), constants.tile_resolution));
+
+    const bool cmd_dominates_bounds = all(equal(cmd_tile_min, cmds_tile_min)) && all(equal(cmd_tile_max, cmds_tile_max));
     const bool use_combined_bounds = subgroupAny(cmd_dominates_bounds);
 
     if (use_combined_bounds) {
-        const uvec2 tile_count = cmds_max_tile - cmds_min_tile + ivec2(1);
+        const uvec2 tile_count = cmds_tile_max - cmds_tile_min + ivec2(1);
 
         uint offset;
         if (subgroupElect()) {
@@ -103,8 +106,8 @@ void main() {
         for (uint i = 0; i < tile_count.y; i++) {
             for (uint j = 0; j < tile_count.x; j += gl_SubgroupSize) {
                 const uint jj = j + gl_SubgroupInvocationID;
-                const uint y = cmds_min_tile.y + i;
-                const uint x = cmds_min_tile.x + jj;
+                const uint y = cmds_tile_min.y + i;
+                const uint x = cmds_tile_min.x + jj;
                 if (jj < tile_count.x) {
                     const uint packed = ((y & 0xff) << 24) | ((x & 0xff) << 16) | (gl_WorkGroupID.x & 0xffff);
                     const uint index = offset + i * tile_count.x + jj;
@@ -115,8 +118,8 @@ void main() {
             }
         }
     } else {
-        const uint start = cmds_min_tile.y * BITMAP_STRIDE + cmds_min_tile.x / 32;
-        const uint end = cmds_max_tile.y * BITMAP_STRIDE + cmds_max_tile.x / 32;
+        const uint start = cmds_tile_min.y * BITMAP_STRIDE + cmds_tile_min.x / 32;
+        const uint end = cmds_tile_max.y * BITMAP_STRIDE + cmds_tile_max.x / 32;
 
         for (uint i = start; i <= end; i += gl_SubgroupSize) {
             const uint ii = i + gl_SubgroupInvocationID;
@@ -127,19 +130,19 @@ void main() {
 
         subgroupBarrier();
 
-        if (!offscreen) {
-            const uint min_word = cmd_min_tile.x / 32;
-            const uint max_word = cmd_max_tile.x / 32;
-            const uint min_bit = cmd_min_tile.x & 31;
-            const uint max_bit = cmd_max_tile.x & 31;
+        if (!out_of_bounds) {
+            const uint min_word = cmd_tile_min.x / 32;
+            const uint max_word = cmd_tile_max.x / 32;
+            const uint min_bit = cmd_tile_min.x & 31;
+            const uint max_bit = cmd_tile_max.x & 31;
             const uint lsb = ~((1 << min_bit) - 1);
             const uint msb = ((1 << max_bit) - 1) | 1 << max_bit;
             if (min_word == max_word) {
-                for (uint y = cmd_min_tile.y; y <= cmd_max_tile.y; y++) {
+                for (uint y = cmd_tile_min.y; y <= cmd_tile_max.y; y++) {
                     atomicOr(intersected_tiles[y * BITMAP_STRIDE + min_word], lsb & msb);
                 }
             } else {
-                for (uint y = cmd_min_tile.y; y <= cmd_max_tile.y; y++) {
+                for (uint y = cmd_tile_min.y; y <= cmd_tile_max.y; y++) {
                     atomicOr(intersected_tiles[y * BITMAP_STRIDE + min_word], lsb);
                     for (uint i = min_word + 1; i <= (max_word - 1); i++) {
                         intersected_tiles[y * BITMAP_STRIDE + i] = 0xffffffff;

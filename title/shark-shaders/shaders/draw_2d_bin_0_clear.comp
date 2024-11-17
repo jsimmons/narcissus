@@ -13,13 +13,13 @@
 #include "draw_2d.h"
 #include "radix_sort.h"
 
-struct Draw2dClearConstants {
+struct ClearConstants {
     FinishedRef finished_buffer;
     CoarseRef coarse_buffer;
 };
 
-layout(std430, push_constant) uniform Draw2dClearConstantsBlock {
-    Draw2dClearConstants constants;
+layout(std430, push_constant) uniform ClearConstantsBlock {
+    ClearConstants constants;
 };
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;

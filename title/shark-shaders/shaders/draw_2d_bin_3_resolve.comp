@@ -13,22 +13,20 @@
 
 #include "draw_2d.h"
 
-struct Draw2dResolveConstants {
-    uvec2 screen_resolution;
-    uvec2 tile_resolution;
-
+struct ResolveConstants {
+    uint tile_stride;
     uint draw_buffer_len;
-    uint _pad;
 
-    Draw2dCommandRef draw_buffer;
+    CommandRef draw_buffer;
+    ScissorRef scissor_buffer;
     GlyphRef glyph_buffer;
     CoarseRef coarse_buffer;
     FineRef fine_buffer;
     TileRef tile_buffer;
 };
 
-layout(std430, push_constant) uniform Draw2dResolveConstantsBlock {
-    Draw2dResolveConstants constants;
+layout(std430, push_constant) uniform ResolveConstantsBlock {
+    ResolveConstants constants;
 };
 
 layout (local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
@@ -37,13 +35,13 @@ void main() {
     const uint local_id = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;
     const uint x = gl_GlobalInvocationID.y;
     const uint y = gl_GlobalInvocationID.z;
-    const uint tile_offset = (constants.tile_resolution.x * y + x);
+    const uint tile_offset = constants.tile_stride * y + x;
     const uint search = ((y & 0xff) << 24) | ((x & 0xff) << 16);
     const uint count = constants.coarse_buffer.values[0];
 
     if (count == 0) {
-        constants.tile_buffer.values[tile_offset].min_index = 0;
-        constants.tile_buffer.values[tile_offset].max_index = 0;
+        constants.tile_buffer.values[tile_offset].index_min = 0;
+        constants.tile_buffer.values[tile_offset].index_max = 0;
         return;
     }
 
@@ -61,7 +59,7 @@ void main() {
     }
 
     const vec2 tile_min = uvec2(x, y) * TILE_SIZE;
-    const vec2 tile_max = min(tile_min + TILE_SIZE, constants.screen_resolution);
+    const vec2 tile_max = tile_min + TILE_SIZE;
 
     bool hit_opaque = false;
     uint lo = base + 1;
@@ -86,37 +84,52 @@ void main() {
 
             const uint packed_type = constants.draw_buffer.values[draw_index].packed_type;
             const uint cmd_type = packed_type >> 24;
-            const uint cmd_packed = packed_type & 0xffffff;
+            const uint cmd_scissor = packed_type & 0xffff;
 
-            for (;;) {
-                const uint scalar_type = subgroupBroadcastFirst(cmd_type);
-                [[branch]]
-                if (scalar_type == cmd_type) {
-                    switch (scalar_type) {
-                        case DRAW_2D_CMD_RECT:
-                            const Draw2dCmdRect cmd_rect = decode_rect(constants.draw_buffer.values[draw_index]);
-                            cmd_min = cmd_rect.bounds_min;
-                            cmd_max = cmd_rect.bounds_max;
-                            if ((cmd_rect.background_color & 0xff000000) == 0xff000000) {
-                                const float border_width = float(cmd_packed & 0xff);
-                                const vec4 border_radii = unpackUnorm4x8(cmd_rect.border_radii);
-                                const float max_border_radius = max(border_radii.x, max(border_radii.y, max(border_radii.z, border_radii.w))) * 255.0;
-                                const float shrink = (2.0 - sqrt(2.0)) * max_border_radius + (cmd_rect.border_color & 0xff000000) == 0xff000000 ? 0.0 : border_width;
-                                opaque_tile = all(greaterThanEqual(tile_min, cmd_min + shrink)) && all(lessThanEqual(tile_max, cmd_max - shrink));
-                            }
-                            break;
-                        case DRAW_2D_CMD_GLYPH:
-                            const Draw2dCmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[draw_index]);
-                            const Glyph glyph = constants.glyph_buffer.values[cmd_packed];
-                            cmd_min = cmd_glyph.position + glyph.offset_min;
-                            cmd_max = cmd_glyph.position + glyph.offset_max;
-                            break;
+            const Scissor scissor = constants.scissor_buffer.values[cmd_scissor];
+
+            // If the tile doesn't intersect the scissor region it doesn't need to do work here.
+            if (any(lessThan(scissor.offset_max, tile_min)) || any(greaterThan(scissor.offset_min, tile_max))) {
+               intersects = false;
+            } else {
+                for (;;) {
+                    const uint scalar_type = subgroupBroadcastFirst(cmd_type);
+                    [[branch]]
+                    if (scalar_type == cmd_type) {
+                        switch (scalar_type) {
+                            case DRAW_2D_CMD_RECT:
+                                const CmdRect cmd_rect = decode_rect(constants.draw_buffer.values[draw_index]);
+                                cmd_min = cmd_rect.position;
+                                cmd_max = cmd_rect.position + cmd_rect.bound;
+
+                                const bool background_opaque = (cmd_rect.background_color & 0xff000000) == 0xff000000;
+                                if (background_opaque) {
+                                    const float border_width = float((packed_type >> 16) & 0xff);
+                                    const bool border_opaque = (cmd_rect.border_color & 0xff000000) == 0xff000000;
+                                    const vec4 border_radii = unpackUnorm4x8(cmd_rect.border_radii);
+                                    const float max_border_radius = max(border_radii.x, max(border_radii.y, max(border_radii.z, border_radii.w))) * 255.0;
+                                    const float shrink = ((2.0 - sqrt(2.0)) * max_border_radius) + (border_opaque ? 0.0 : border_width);
+
+                                    const vec2 cmd_shrunk_min = max(scissor.offset_min, cmd_min + shrink);
+                                    const vec2 cmd_shrunk_max = min(scissor.offset_max, cmd_max - shrink);
+                                    opaque_tile = all(greaterThan(cmd_shrunk_max, cmd_shrunk_min)) && all(greaterThan(tile_min, cmd_shrunk_min)) && all(lessThan(tile_max, cmd_shrunk_max));
+                                }
+                                break;
+                            case DRAW_2D_CMD_GLYPH:
+                                const CmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[draw_index]);
+                                const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                                cmd_min = cmd_glyph.position + glyph.offset_min;
+                                cmd_max = cmd_glyph.position + glyph.offset_max;
+                                break;
+                        }
+                        break;
                     }
-                    break;
                 }
-            }
 
-            intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
+                cmd_min = max(cmd_min, scissor.offset_min);
+                cmd_max = min(cmd_max, scissor.offset_max);
+                intersects = !(any(lessThan(tile_max, cmd_min)) || any(greaterThan(tile_min, cmd_max)));
+            }
         }
 
         uint intersects_mask = subgroupBallot(intersects).x;
@@ -133,6 +146,6 @@ void main() {
         }
     }
 
-    constants.tile_buffer.values[tile_offset].min_index = lo + 1;
-    constants.tile_buffer.values[tile_offset].max_index = hi + 1;
+    constants.tile_buffer.values[tile_offset].index_min = lo + 1;
+    constants.tile_buffer.values[tile_offset].index_max = hi + 1;
 }

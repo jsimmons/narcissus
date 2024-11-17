@@ -12,8 +12,6 @@
 #extension GL_KHR_shader_subgroup_shuffle_relative: enable
 #extension GL_KHR_shader_subgroup_vote : require
 
-#include "compute_bindings.h"
-
 #include "draw_2d.h"
 #include "indirect.h"
 #include "radix_sort.h"
@@ -22,15 +20,15 @@ layout(buffer_reference, std430, buffer_reference_align = 4) buffer VkDispatchIn
     VkDispatchIndirectCommand dimensions;
 };
 
-struct Draw2dSortConstants {
+struct SortConstants {
     uint coarse_buffer_len;
     uint _pad;
     VkDispatchIndirectCommandRef indirect_dispatch_buffer;
     CoarseRef coarse_buffer;
 };
 
-layout(std430, push_constant) uniform Draw2dSortConstantsBlock {
-    Draw2dSortConstants constants;
+layout(std430, push_constant) uniform SortConstantsBlock {
+    SortConstants constants;
 };
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;

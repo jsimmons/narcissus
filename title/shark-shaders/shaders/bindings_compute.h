@@ -1,7 +1,11 @@
 #ifndef COMPUTE_BINDINGS_INCLUDE
 #define COMPUTE_BINDINGS_INCLUDE
 
-layout (set = 0, binding = 0) uniform sampler bilinear_sampler;
+const uint SAMPLER_BILINEAR = 0;
+const uint SAMPLER_BILINEAR_UNNORMALIZED = 1;
+const uint SAMPLER_COUNT = 2;
+
+layout (set = 0, binding = 0) uniform sampler samplers[SAMPLER_COUNT];
 layout (set = 0, binding = 1) uniform texture3D tony_mc_mapface_lut;
 layout (set = 0, binding = 2) uniform texture2D glyph_atlas;
 layout (set = 0, binding = 3, rgba16f) uniform writeonly image2D ui_layer_write;

@@ -7,8 +7,8 @@ const uint DRAW_2D_CMD_RECT = 0;
 const uint DRAW_2D_CMD_GLYPH = 1;
 
 struct Tile {
-    uint min_index;
-    uint max_index;
+    uint index_min;
+    uint index_max;
 };
 
 struct Glyph {
@@ -19,14 +19,19 @@ struct Glyph {
     vec2 offset_max;
 };
 
-struct Draw2dCmd {
+struct Scissor {
+    vec2 offset_min;
+    vec2 offset_max;
+};
+
+struct Cmd {
     uint packed_type;
     uint words[7];
 };
 
-struct Draw2dCmdRect {
-    vec2 bounds_min;
-    vec2 bounds_max;
+struct CmdRect {
+    vec2 position;
+    vec2 bound;
 
     uint border_radii;
     uint border_color;
@@ -34,15 +39,16 @@ struct Draw2dCmdRect {
     uint background_color;
 };
 
-struct Draw2dCmdGlyph {
+struct CmdGlyph {
+    uint index;
     vec2 position;
     uint color;
 };
 
-Draw2dCmdRect decode_rect(Draw2dCmd cmd) {
-    Draw2dCmdRect rect = {
-        { uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1]) }, // bounds_min
-        { uintBitsToFloat(cmd.words[2]), uintBitsToFloat(cmd.words[3]) }, // bounds_max
+CmdRect decode_rect(Cmd cmd) {
+    CmdRect rect = {
+        { uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1]) }, // position
+        { uintBitsToFloat(cmd.words[2]), uintBitsToFloat(cmd.words[3]) }, // bound
         cmd.words[4], // border_radii
         cmd.words[5], // border_color
         cmd.words[6], // background_color
@@ -50,13 +56,23 @@ Draw2dCmdRect decode_rect(Draw2dCmd cmd) {
     return rect;
 }
 
-Draw2dCmdGlyph decode_glyph(in Draw2dCmd cmd) {
-    return Draw2dCmdGlyph(vec2(uintBitsToFloat(cmd.words[0]), uintBitsToFloat(cmd.words[1])), cmd.words[2]);
+CmdGlyph decode_glyph(Cmd cmd) {
+    CmdGlyph glyph = {
+        cmd.words[0], // index
+        { uintBitsToFloat(cmd.words[1]), uintBitsToFloat(cmd.words[2]) }, // position
+        cmd.words[3], // color
+    };
+    return glyph;
 }
 
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Draw2dCommandRef
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer CommandRef
 {
-    Draw2dCmd values[];
+    Cmd values[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer ScissorRef
+{
+    Scissor values[];
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer GlyphRef

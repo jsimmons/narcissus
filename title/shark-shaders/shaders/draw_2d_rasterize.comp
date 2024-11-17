@@ -10,24 +10,24 @@
 #extension GL_KHR_shader_subgroup_vote : require
 #extension GL_KHR_shader_subgroup_ballot : require
 
-#include "compute_bindings.h"
+#include "bindings_compute.h"
 #include "draw_2d.h"
 #include "sdf.h"
 
-struct Draw2dRasterizeConstants {
-    uvec2 screen_resolution;
-    uvec2 tile_resolution;
-    uvec2 atlas_resolution;
+struct RasterizeConstants {
+    uint tile_stride;
+    uint _pad;
 
-    Draw2dCommandRef draw_buffer;
+    CommandRef draw_buffer;
+    ScissorRef scissor_buffer;
     GlyphRef glyph_buffer;
     CoarseRef coarse_buffer;
     FineRef fine_buffer;
     TileRef tile_buffer;
 };
 
-layout(std430, push_constant) uniform Draw2dRasterizeConstantsBlock {
-    Draw2dRasterizeConstants constants;
+layout(std430, push_constant) uniform RasterizeConstantsBlock {
+    RasterizeConstants constants;
 };
 
 /// x = (((index >> 2) & 0x0007) & 0xFFFE) | index & 0x0001
@@ -51,10 +51,10 @@ layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy / (TILE_SIZE / gl_WorkGroupSize.xy);
-    const uint tile_index = tile_coord.y * constants.tile_resolution.x + tile_coord.x;
+    const uint tile_index = tile_coord.y * constants.tile_stride + tile_coord.x;
 
-    const uint lo = constants.tile_buffer.values[tile_index].min_index;
-    const uint hi = constants.tile_buffer.values[tile_index].max_index;
+    const uint lo = constants.tile_buffer.values[tile_index].index_min;
+    const uint hi = constants.tile_buffer.values[tile_index].index_max;
 
     if (lo == hi) {
         return;
@@ -90,23 +90,32 @@ void main() {
             const uint base_index = (constants.coarse_buffer.values[i] & 0xffff) * 32;
             const uint packed_type = constants.draw_buffer.values[base_index + index].packed_type;
             const uint cmd_type = packed_type >> 24;
-            const uint cmd_packed = packed_type & 0xffffff;
+            const uint cmd_scissor = packed_type & 0xffff;
+
+            const Scissor scissor = constants.scissor_buffer.values[cmd_scissor];
 
             vec4 primitive_color = vec4(0.0);
             switch (cmd_type) {
                 case DRAW_2D_CMD_RECT:
-                    const Draw2dCmdRect cmd_rect = decode_rect(constants.draw_buffer.values[base_index + index]);
+                {
+                    const CmdRect cmd_rect = decode_rect(constants.draw_buffer.values[base_index + index]);
 
-                    const float border_width = float(cmd_packed & 0xff);
+                    const vec2 cmd_min = cmd_rect.position;
+                    const vec2 cmd_max = cmd_rect.position + cmd_rect.bound;
+
+                    const float border_width = float((packed_type >> 16) & 0xff);
                     const vec4 border_radii = unpackUnorm4x8(cmd_rect.border_radii) * 255.0;
                     const float max_border_radius = max(border_radii.x, max(border_radii.y, max(border_radii.z, border_radii.w)));
                     const float shrink = (2.0 - sqrt(2.0)) * max_border_radius;
 
-                    if (all(greaterThan(sample_center, cmd_rect.bounds_min + border_width + shrink)) && all(lessThan(sample_center, cmd_rect.bounds_max - border_width - shrink))) {
+                    const vec2 cmd_min_clipped = max(scissor.offset_min, cmd_min + border_width + shrink);
+                    const vec2 cmd_max_clipped = min(scissor.offset_max, cmd_max - border_width - shrink);
+
+                    if (all(greaterThan(sample_center, cmd_min_clipped)) && all(lessThan(sample_center, cmd_max_clipped))) {
                         primitive_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
                     } else {
-                        const vec2 b = (cmd_rect.bounds_max - cmd_rect.bounds_min) / 2.0;
-                        const vec2 p = cmd_rect.bounds_min + b - sample_center;
+                        const vec2 b = cmd_rect.bound / 2.0;
+                        const vec2 p = cmd_rect.position + b - sample_center;
 
                         float d;
                         if (all(equal(border_radii, vec4(0.0)))) {
@@ -119,21 +128,29 @@ void main() {
                         const vec4 border_color = unpackUnorm4x8(cmd_rect.border_color).bgra;
                         primitive_color = mix(background_color, border_color, smoothstep(1.0, 0.0, 1.0 - d - border_width));
                         primitive_color = mix(primitive_color, vec4(0), smoothstep(1.0, 0.0, 1.0 - d));
+
+                        const vec2 clip_b = (scissor.offset_max - scissor.offset_min) / 2.0;
+                        const vec2 clip_p = scissor.offset_min + clip_b - sample_center;
+                        d = max(d, sdf_box(clip_p, clip_b));
+                        primitive_color = d < 0.0 ? primitive_color : vec4(0);
                     }
                     break;
+                }
                 case DRAW_2D_CMD_GLYPH:
-                    const Draw2dCmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[base_index + index]);
-                    const Glyph glyph = constants.glyph_buffer.values[cmd_packed];
-                    const vec2 glyph_min = cmd_glyph.position + glyph.offset_min;
-                    const vec2 glyph_max = cmd_glyph.position + glyph.offset_max;
-                    if (all(greaterThanEqual(sample_center, glyph_min)) && all(lessThanEqual(sample_center, glyph_max))) {
+                {
+                    const CmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[base_index + index]);
+                    const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
+                    const vec2 cmd_min = cmd_glyph.position + glyph.offset_min;
+                    const vec2 cmd_max = cmd_glyph.position + glyph.offset_max;
+                    if (all(greaterThanEqual(sample_center, max(scissor.offset_min, cmd_min))) && all(lessThanEqual(sample_center, min(scissor.offset_max, cmd_max)))) {
                         const vec2 glyph_size = glyph.offset_max - glyph.offset_min;
-                        const vec2 uv = mix(glyph.atlas_min, glyph.atlas_max, (sample_center - glyph_min) / glyph_size) / constants.atlas_resolution;
+                        const vec2 uv = mix(glyph.atlas_min, glyph.atlas_max, (sample_center - cmd_min) / glyph_size);
                         const vec4 color = unpackUnorm4x8(cmd_glyph.color).bgra;
-                        const float coverage = textureLod(sampler2D(glyph_atlas, bilinear_sampler), uv, 0.0).r * color.a;
+                        const float coverage = textureLod(sampler2D(glyph_atlas, samplers[SAMPLER_BILINEAR_UNNORMALIZED]), uv, 0.0).r * color.a;
                         primitive_color = color * coverage;
                     }
                     break;
+                }
             }
 
             // does it blend?

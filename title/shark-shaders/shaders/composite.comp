@@ -6,7 +6,7 @@
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_scalar_block_layout : require
 
-#include "compute_bindings.h"
+#include "bindings_compute.h"
 #include "draw_2d.h"
 
 float srgb_oetf(float a) {
@@ -21,7 +21,7 @@ vec3 tony_mc_mapface(vec3 stimulus) {
     const vec3 encoded = stimulus / (stimulus + 1.0);
     const float LUT_DIMS = 48.0;
     const vec3 uv = (encoded * ((LUT_DIMS - 1.0) / LUT_DIMS) + 0.5 / LUT_DIMS);
-    return textureLod(sampler3D(tony_mc_mapface_lut, bilinear_sampler), uv, 0.0).rgb;
+    return textureLod(sampler3D(tony_mc_mapface_lut, samplers[SAMPLER_BILINEAR]), uv, 0.0).rgb;
 }
 
 struct CompositeConstants {
@@ -39,8 +39,8 @@ void main() {
     const uvec2 tile_coord = gl_WorkGroupID.xy / (TILE_SIZE / gl_WorkGroupSize.xy);
     const uint tile_index = tile_coord.y * constants.tile_resolution.x + tile_coord.x;
 
-    const uint lo = constants.tile_buffer.values[tile_index].min_index;
-    const uint hi = constants.tile_buffer.values[tile_index].max_index;
+    const uint lo = constants.tile_buffer.values[tile_index].index_min;
+    const uint hi = constants.tile_buffer.values[tile_index].index_max;
 
     // Display transform
     const vec3 stimulus = imageLoad(color_layer, ivec2(gl_GlobalInvocationID.xy)).rgb;

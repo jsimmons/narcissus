@@ -38,24 +38,26 @@ const _: () = assert!(std::mem::size_of::<Draw2dCmd>() == 32);
 #[derive(Clone, Copy)]
 struct CmdGlyph {
     packed: u32,
+    index: u32,
     position: Vec2,
     color: u32,
 }
 
-const _: () = assert!(std::mem::size_of::<CmdGlyph>() == 16);
+const _: () = assert!(std::mem::size_of::<CmdGlyph>() == 20);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct CmdRect {
     /// 31       .          .          .          0
-    ///  tttt tttt  0000 0000  0000 0000  bbbb bbbb
+    ///  tttt tttt  bbbb bbbb  ssss ssss  ssss ssss
     ///
     /// t: Type
     /// b: Border width
+    /// s: Scissor index
     packed: u32,
 
-    bounds_min: Vec2,
-    bounds_max: Vec2,
+    position: Vec2,
+    bound: Vec2,
 
     border_radii: u32,
     border_color: u32,
@@ -67,11 +69,17 @@ const _: () = assert!(std::mem::size_of::<CmdRect>() == 32);
 
 impl Draw2dCmd {
     #[inline(always)]
-    pub fn glyph(touched_glyph_index: TouchedGlyphIndex, color: u32, position: Vec2) -> Self {
+    pub fn glyph(
+        scissor_index: u32,
+        touched_glyph_index: TouchedGlyphIndex,
+        color: u32,
+        position: Vec2,
+    ) -> Self {
+        let glyph_index = touched_glyph_index.as_u32();
         Self {
             glyph: CmdGlyph {
-                packed: (Draw2dCmdType::Glyph as u32) << 24
-                    | (touched_glyph_index.as_u32() & 0xffffff),
+                packed: ((Draw2dCmdType::Glyph as u32) << 24) | (scissor_index & 0xffff),
+                index: glyph_index,
                 position,
                 color,
             },
@@ -80,8 +88,9 @@ impl Draw2dCmd {
 
     #[inline(always)]
     pub fn rect(
-        bounds_min: Vec2,
-        bounds_max: Vec2,
+        scissor_index: u32,
+        position: Vec2,
+        bound: Vec2,
         border_width: u8,
         border_radii: [u8; 4],
         border_color: u32,
@@ -89,9 +98,11 @@ impl Draw2dCmd {
     ) -> Self {
         Self {
             rect: CmdRect {
-                packed: (Draw2dCmdType::Rect as u32) << 24 | border_width as u32,
-                bounds_min,
-                bounds_max,
+                packed: ((Draw2dCmdType::Rect as u32) << 24)
+                    | ((border_width as u32) << 16)
+                    | (scissor_index & 0xffff),
+                position,
+                bound,
                 border_radii: u32::from_ne_bytes(border_radii),
                 background_color,
                 border_color,
@@ -100,8 +111,15 @@ impl Draw2dCmd {
     }
 }
 
+#[repr(C)]
+pub struct Draw2dScissor {
+    pub offset_min: Vec2,
+    pub offset_max: Vec2,
+}
+
 pub struct Samplers {
     pub bilinear: Sampler,
+    pub bilinear_unnormalized: Sampler,
 }
 
 impl Samplers {
@@ -113,8 +131,23 @@ impl Samplers {
             mip_lod_bias: 0.0,
             min_lod: 0.0,
             max_lod: 0.0,
+            unnormalized_coordinates: false,
         });
-        Samplers { bilinear }
+
+        let bilinear_unnormalized = gpu.create_sampler(&SamplerDesc {
+            filter: SamplerFilter::Bilinear,
+            address_mode: SamplerAddressMode::Clamp,
+            compare_op: None,
+            mip_lod_bias: 0.0,
+            min_lod: 0.0,
+            max_lod: 0.0,
+            unnormalized_coordinates: true,
+        });
+
+        Samplers {
+            bilinear,
+            bilinear_unnormalized,
+        }
     }
 }
 
@@ -149,8 +182,6 @@ pub struct Draw2dClearConstants<'a> {
 
 #[repr(C)]
 pub struct Draw2dScatterConstants<'a> {
-    pub screen_resolution_x: u32,
-    pub screen_resolution_y: u32,
     pub tile_resolution_x: u32,
     pub tile_resolution_y: u32,
 
@@ -158,6 +189,7 @@ pub struct Draw2dScatterConstants<'a> {
     pub coarse_buffer_len: u32,
 
     pub draw_buffer_address: BufferAddress<'a>,
+    pub scissor_buffer_address: BufferAddress<'a>,
     pub glyph_buffer_address: BufferAddress<'a>,
     pub coarse_buffer_address: BufferAddress<'a>,
 }
@@ -172,15 +204,11 @@ pub struct Draw2dSortConstants<'a> {
 
 #[repr(C)]
 pub struct Draw2dResolveConstants<'a> {
-    pub screen_resolution_x: u32,
-    pub screen_resolution_y: u32,
-    pub tile_resolution_x: u32,
-    pub tile_resolution_y: u32,
-
+    pub tile_stride: u32,
     pub draw_buffer_len: u32,
-    pub _pad: u32,
 
     pub draw_buffer_address: BufferAddress<'a>,
+    pub scissor_buffer_address: BufferAddress<'a>,
     pub glyph_buffer_address: BufferAddress<'a>,
     pub coarse_buffer_address: BufferAddress<'a>,
     pub fine_buffer_address: BufferAddress<'a>,
@@ -189,14 +217,11 @@ pub struct Draw2dResolveConstants<'a> {
 
 #[repr(C)]
 pub struct Draw2dRasterizeConstants<'a> {
-    pub screen_resolution_x: u32,
-    pub screen_resolution_y: u32,
-    pub tile_resolution_x: u32,
-    pub tile_resolution_y: u32,
-    pub atlas_resolution_x: u32,
-    pub atlas_resolution_y: u32,
+    pub tile_stride: u32,
+    pub _pad: u32,
 
     pub draw_buffer_address: BufferAddress<'a>,
+    pub scissor_buffer_address: BufferAddress<'a>,
     pub glyph_buffer_address: BufferAddress<'a>,
     pub coarse_buffer_address: BufferAddress<'a>,
     pub fine_buffer_address: BufferAddress<'a>,
@@ -266,7 +291,7 @@ pub struct Pipelines {
 impl Pipelines {
     pub fn load(gpu: &Gpu) -> Self {
         let samplers = Samplers::load(gpu);
-        let immutable_samplers = &[samplers.bilinear];
+        let immutable_samplers = &[samplers.bilinear, samplers.bilinear_unnormalized];
 
         let graphics_bind_group_layout = gpu.create_bind_group_layout(&[
             // Samplers

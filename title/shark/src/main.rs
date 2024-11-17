@@ -3,12 +3,12 @@ use std::ops::Index;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use narcissus_core::dds;
+use narcissus_core::{dds, Widen};
 
 use shark_shaders::pipelines::{
     calculate_spine_size, BasicConstants, CompositeConstants, ComputeBinds, Draw2dClearConstants,
     Draw2dCmd, Draw2dRasterizeConstants, Draw2dResolveConstants, Draw2dScatterConstants,
-    Draw2dSortConstants, GraphicsBinds, Pipelines, RadixSortDownsweepConstants,
+    Draw2dScissor, Draw2dSortConstants, GraphicsBinds, Pipelines, RadixSortDownsweepConstants,
     RadixSortUpsweepConstants, DRAW_2D_TILE_SIZE,
 };
 
@@ -450,9 +450,14 @@ struct UiState<'a> {
     fonts: &'a Fonts<'a>,
     glyph_cache: GlyphCache<'a, Fonts<'a>>,
 
+    width: f32,
+    height: f32,
     scale: f32,
 
     tmp_string: String,
+
+    scissors: Vec<Draw2dScissor>,
+    scissor_stack: Vec<u32>,
 
     draw_cmds: Vec<Draw2dCmd>,
 }
@@ -464,33 +469,85 @@ impl<'a> UiState<'a> {
         Self {
             fonts,
             glyph_cache,
+            width: 0.0,
+            height: 0.0,
             scale: 1.0,
             tmp_string: default(),
+            scissors: vec![],
+            scissor_stack: vec![],
+
             draw_cmds: vec![],
         }
     }
 
+    fn begin_frame(&mut self, width: f32, height: f32, scale: f32) {
+        self.width = width;
+        self.height = height;
+        self.scale = scale;
+
+        self.draw_cmds.clear();
+
+        self.scissor_stack.clear();
+        self.scissors.clear();
+
+        // Scissor 0 is always the screen bounds.
+        self.scissors.push(Draw2dScissor {
+            offset_min: vec2(0.0, 0.0),
+            offset_max: vec2(width, height),
+        });
+    }
+
+    fn push_scissor(
+        &mut self,
+        mut offset_min: Vec2,
+        mut offset_max: Vec2,
+        intersect_with_current: bool,
+    ) {
+        if intersect_with_current {
+            let current_scissor_index = self.scissor_stack.last().copied().unwrap_or(0);
+            let current_scissor = &self.scissors[current_scissor_index.widen()];
+            offset_min = Vec2::max(offset_min, current_scissor.offset_min);
+            offset_max = Vec2::min(offset_max, current_scissor.offset_max);
+        }
+
+        let scissor_index = self.scissors.len() as u32;
+        self.scissors.push(Draw2dScissor {
+            offset_min,
+            offset_max,
+        });
+        self.scissor_stack.push(scissor_index);
+    }
+
+    fn push_fullscreen_scissor(&mut self) {
+        // The fullscreen scissor is always at index 0
+        self.scissor_stack.push(0);
+    }
+
+    fn pop_scissor(&mut self) {
+        // It's invalid to pop more than we've pushed.
+        self.scissor_stack.pop().expect("unbalanced push / pop");
+    }
+
     fn rect(
         &mut self,
-        position: Vec2,
-        bounds: Vec2,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
         border_width: f32,
         border_radii: [f32; 4],
         border_color: u32,
         background_color: u32,
     ) {
-        let bounds = bounds * self.scale;
+        let scissor_index = self.scissor_stack.last().copied().unwrap_or(0);
 
-        let bounds_min = position;
-        let bounds_max = position + bounds;
-
-        let border_width = (border_width * self.scale).clamp(0.0, 255.0).floor() as u8;
-        let border_radii =
-            border_radii.map(|radius| (radius * self.scale).clamp(0.0, 255.0).floor() as u8);
+        let border_width = border_width.clamp(0.0, 255.0).floor() as u8;
+        let border_radii = border_radii.map(|radius| radius.clamp(0.0, 255.0).floor() as u8);
 
         self.draw_cmds.push(Draw2dCmd::rect(
-            bounds_min,
-            bounds_max,
+            scissor_index,
+            vec2(x, y),
+            vec2(width, height),
             border_width,
             border_radii,
             border_color,
@@ -506,6 +563,8 @@ impl<'a> UiState<'a> {
         font_size_px: f32,
         args: std::fmt::Arguments,
     ) -> f32 {
+        let scissor_index = self.scissor_stack.last().copied().unwrap_or(0);
+
         let font = self.fonts.font(font_family);
         let font_size_px = font_size_px * self.scale;
         let scale = font.scale_for_size_px(font_size_px);
@@ -539,6 +598,7 @@ impl<'a> UiState<'a> {
             x += advance * scale;
 
             self.draw_cmds.push(Draw2dCmd::glyph(
+                scissor_index,
                 touched_glyph_index,
                 microshades::GRAY_RGBA8[4].rotate_right(8),
                 vec2(x, y),
@@ -1319,7 +1379,13 @@ impl<'gpu> DrawState<'gpu> {
                 );
 
                 let draw_buffer_len = ui_state.draw_cmds.len() as u32;
-                ui_state.draw_cmds.clear();
+
+                let scissor_buffer = gpu.request_transient_buffer_with_data(
+                    frame,
+                    thread_token,
+                    BufferUsageFlags::STORAGE,
+                    ui_state.scissors.as_slice(),
+                );
 
                 let glyph_buffer = gpu.request_transient_buffer_with_data(
                     frame,
@@ -1365,6 +1431,7 @@ impl<'gpu> DrawState<'gpu> {
                 );
 
                 let draw_buffer_address = gpu.get_buffer_address(draw_buffer.to_arg());
+                let scissor_buffer_address = gpu.get_buffer_address(scissor_buffer.to_arg());
                 let glyph_buffer_address = gpu.get_buffer_address(glyph_buffer.to_arg());
                 let coarse_buffer_address = gpu.get_buffer_address(coarse_buffer.to_arg());
                 let indirect_dispatch_buffer_address =
@@ -1402,13 +1469,12 @@ impl<'gpu> DrawState<'gpu> {
                     ShaderStageFlags::COMPUTE,
                     0,
                     &Draw2dScatterConstants {
-                        screen_resolution_x: self.width,
-                        screen_resolution_y: self.height,
                         tile_resolution_x: self.tile_resolution_x,
                         tile_resolution_y: self.tile_resolution_y,
                         draw_buffer_len,
                         coarse_buffer_len: COARSE_BUFFER_LEN as u32,
                         draw_buffer_address,
+                        scissor_buffer_address,
                         glyph_buffer_address,
                         coarse_buffer_address,
                     },
@@ -1541,13 +1607,10 @@ impl<'gpu> DrawState<'gpu> {
                     ShaderStageFlags::COMPUTE,
                     0,
                     &Draw2dResolveConstants {
-                        screen_resolution_x: self.width,
-                        screen_resolution_y: self.height,
-                        tile_resolution_x: self.tile_resolution_x,
-                        tile_resolution_y: self.tile_resolution_y,
+                        tile_stride: self.tile_resolution_x,
                         draw_buffer_len,
-                        _pad: 0,
                         draw_buffer_address,
+                        scissor_buffer_address,
                         glyph_buffer_address,
                         coarse_buffer_address,
                         fine_buffer_address: tmp_buffer_address,
@@ -1577,13 +1640,10 @@ impl<'gpu> DrawState<'gpu> {
                     ShaderStageFlags::COMPUTE,
                     0,
                     &Draw2dRasterizeConstants {
-                        screen_resolution_x: self.width,
-                        screen_resolution_y: self.height,
-                        tile_resolution_x: self.tile_resolution_x,
-                        tile_resolution_y: self.tile_resolution_y,
-                        atlas_resolution_x: atlas_width,
-                        atlas_resolution_y: atlas_height,
+                        tile_stride: self.tile_resolution_x,
+                        _pad: 0,
                         draw_buffer_address,
+                        scissor_buffer_address,
                         glyph_buffer_address,
                         coarse_buffer_address,
                         fine_buffer_address: tmp_buffer_address,
@@ -1813,82 +1873,93 @@ pub fn main() {
                 tick_accumulator -= target_dt;
             }
 
-            ui_state.scale = ui_scale_override.unwrap_or(window_display_scale);
-
             let draw_start = Instant::now();
             let tick_duration = draw_start - tick_start;
-            let (base_x, base_y) = sin_cos_pi_f32(game_state.time);
-            let base_x = (base_x + 1.0) * 0.5 * ui_state.scale;
-            let base_y = (base_y + 1.0) * 0.5 * ui_state.scale;
 
-            for _ in 0..100 {
-                ui_state.rect(
-                    vec2(100.0, 100.0),
-                    vec2(1000.0, 1000.0),
-                    0.0,
-                    [25.0; 4],
-                    0,
-                    0x88442211,
-                );
-            }
-
-            let (s, _) = sin_cos_pi_f32(game_state.time * 0.1);
-
-            let mut y = 8.0 * ui_state.scale;
-            for _ in 0..224 {
-                let vertical_advance = ui_state.text_fmt(
-                        5.0,
-                        y,
-                        FontFamily::NotoSansJapanese,
-                        16.0 + s * 8.0,
-                        format_args!(
-                            "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████"
-                        ),
-                    );
-                y += vertical_advance;
-            }
-
-            for i in 0..500 {
-                let (rect_x, rect_y) = sin_cos_pi_f32(game_state.time * 0.1 + i as f32 * 1.01);
-                ui_state.rect(
-                    (vec2(width as f32, height as f32) / 2.0)
-                        - 250.0
-                        - vec2(rect_x, rect_y) * 1000.0,
-                    vec2(400.0, 400.0),
-                    10.0,
-                    [rect_x * 50.0, rect_y * 50.0, 25.0, 25.0],
-                    0xffffffff,
-                    microshades::BLUE_RGBA8[4].rotate_right(8),
-                );
-            }
-
-            ui_state.rect(
-                vec2(base_x, base_y) * 60.0,
-                vec2(400.0, 400.0),
-                0.0,
-                [0.0; 4],
-                0,
-                microshades::ORANGE_RGBA8[2].rotate_right(8),
+            ui_state.begin_frame(
+                width as f32,
+                height as f32,
+                ui_scale_override.unwrap_or(window_display_scale),
             );
 
-            y = base_y * 150.0;
-            for i in 0..10 {
-                if i & 1 != 0 {
-                    y += ui_state.text_fmt(
-                        base_x * 100.0 - 5.0,
-                        y,
-                        FontFamily::RobotoRegular,
-                        20.0,
-                        format_args!("tick: {:?}", tick_duration),
+            {
+                let width = width as f32;
+                let height = height as f32;
+
+                let (s, c) = sin_cos_pi_f32(game_state.time * 0.1);
+
+                let w = width / 5.0;
+                let h = height / 5.0;
+                let x = width / 2.0 + w * s;
+                let y = height / 2.0 + w * c;
+
+                ui_state.push_scissor(vec2(x - w, y - h), vec2(x + w, y + h), true);
+                ui_state.rect(
+                    0.0, 0.0, width, height, 0.0, [0.0; 4], 0xffffffff, 0xffffffff,
+                );
+                ui_state.pop_scissor();
+
+                ui_state.push_scissor(vec2(x - w, y - h), vec2(x + w, y + h), true);
+
+                let mut y = 8.0 * ui_state.scale;
+                for i in 0..224 {
+                    if i & 1 == 0 {
+                        ui_state.push_fullscreen_scissor();
+                    }
+                    let vertical_advance = ui_state.text_fmt(
+                            5.0,
+                            y,
+                            FontFamily::NotoSansJapanese,
+                            16.0 + s * 8.0,
+                            format_args!(
+                                "お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog. ████████お握り The Quick Brown Fox Jumped Over The Lazy Dog.  ████████"
+                            ),
+                        );
+                    y += vertical_advance;
+                    if i & 1 == 0 {
+                        ui_state.pop_scissor();
+                    }
+                }
+
+                ui_state.pop_scissor();
+
+                for i in 0..500 {
+                    let (s, c) = sin_cos_pi_f32(game_state.time * 0.1 + i as f32 * 0.01);
+
+                    let x = width / 2.0 + w * s;
+                    let y = height / 2.0 + w * c;
+                    ui_state.rect(
+                        x - 200.0,
+                        y - 200.0,
+                        400.0,
+                        400.0,
+                        100.0,
+                        [100.0, 50.0, 25.0, 0.0],
+                        0x33333333,
+                        microshades::BLUE_RGBA8[4].rotate_right(8),
                     );
-                } else {
-                    y += ui_state.text_fmt(
-                        base_x * 100.0 - 5.0,
-                        y,
-                        FontFamily::RobotoRegular,
-                        20.0,
-                        format_args!("draw: {:?}", draw_duration),
-                    );
+                }
+
+                let x = 10.0 * ui_state.scale;
+                let mut y = 20.0 * ui_state.scale;
+                for i in 0..10 {
+                    if i & 1 != 0 {
+                        y += ui_state.text_fmt(
+                            x,
+                            y,
+                            FontFamily::RobotoRegular,
+                            20.0,
+                            format_args!("this tick: {:?}", tick_duration),
+                        );
+                    } else {
+                        y += ui_state.text_fmt(
+                            x,
+                            y,
+                            FontFamily::NotoSansJapanese,
+                            20.0,
+                            format_args!("last draw: {:?}", draw_duration),
+                        );
+                    }
                 }
             }
 

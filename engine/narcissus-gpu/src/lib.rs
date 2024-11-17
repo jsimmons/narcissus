@@ -332,6 +332,7 @@ pub struct SamplerDesc {
     pub mip_lod_bias: f32,
     pub min_lod: f32,
     pub max_lod: f32,
+    pub unnormalized_coordinates: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
