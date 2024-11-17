@@ -136,8 +136,7 @@ impl<'a> Font<'a> {
         let mut glyph_index_cache = [None; ASCII_PRINTABLE_COUNT];
         for (i, printable) in (ASCII_PRINTABLE_FIRST..=ASCII_PRINTABLE_LAST).enumerate() {
             glyph_index_cache[i] =
-                NonZeroI32::new(unsafe { stbtt_FindGlyphIndex(&info, printable as i32) })
-                    .map(GlyphIndex);
+                NonZeroI32::new(unsafe { stbtt_FindGlyphIndex(&info, printable) }).map(GlyphIndex);
         }
 
         // SAFETY: Safe to zero as all zero bytes f32 is 0.0
