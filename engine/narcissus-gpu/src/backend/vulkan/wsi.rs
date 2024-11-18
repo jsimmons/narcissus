@@ -658,6 +658,7 @@ impl VulkanDevice {
         });
         signal_semaphores.push(vk::SemaphoreSubmitInfo {
             semaphore: present_swapchain.release,
+            stage_mask,
             ..default()
         });
     }
