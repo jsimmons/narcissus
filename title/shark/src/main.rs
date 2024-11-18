@@ -728,15 +728,11 @@ impl Images {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier {
-                    prev_access: &[Access::General],
-                    next_access: &[Access::TransferWrite],
-                    prev_layout: ImageLayout::Optimal,
-                    next_layout: ImageLayout::Optimal,
-                    subresource_range: ImageSubresourceRange::default(),
+                &[ImageBarrier::optimal_discard(
+                    &Access::General,
+                    &Access::TransferWrite,
                     image,
-                    discard_contents: true,
-                }],
+                )],
             );
 
             let buffer = gpu.request_transient_buffer_with_data(
@@ -764,11 +760,10 @@ impl Images {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::TransferWrite],
-                    &[Access::FragmentShaderSampledImageRead],
+                &[ImageBarrier::optimal(
+                    &Access::TransferWrite,
+                    &Access::FragmentShaderSampledImageRead,
                     image,
-                    ImageAspectFlags::COLOR,
                 )],
             );
 
@@ -824,15 +819,11 @@ impl Images {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier {
-                    prev_access: &[Access::General],
-                    next_access: &[Access::TransferWrite],
-                    prev_layout: ImageLayout::Optimal,
-                    next_layout: ImageLayout::Optimal,
-                    subresource_range: ImageSubresourceRange::default(),
+                &[ImageBarrier::optimal_discard(
+                    &Access::General,
+                    &Access::TransferWrite,
                     image,
-                    discard_contents: true,
-                }],
+                )],
             );
 
             let buffer = gpu.request_transient_buffer_with_data(
@@ -860,11 +851,10 @@ impl Images {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::TransferWrite],
-                    &[Access::ShaderSampledImageRead],
+                &[ImageBarrier::optimal(
+                    &Access::TransferWrite,
+                    &Access::ShaderSampledImageRead,
                     image,
-                    ImageAspectFlags::COLOR,
                 )],
             );
 
@@ -1053,11 +1043,10 @@ impl<'gpu> DrawState<'gpu> {
                     gpu.cmd_barrier(
                         cmd_encoder,
                         None,
-                        &[ImageBarrier::layout_optimal(
-                            &[Access::None],
-                            &[Access::FragmentShaderSampledImageRead],
+                        &[ImageBarrier::optimal_discard(
+                            &Access::None,
+                            &Access::FragmentShaderSampledImageRead,
                             *glyph_atlas_image,
-                            ImageAspectFlags::COLOR,
                         )],
                     );
                 }
@@ -1122,9 +1111,9 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::None],
-                        &[Access::DepthStencilAttachmentWrite],
+                    &[ImageBarrier::optimal_aspect(
+                        &Access::None,
+                        &Access::DepthStencilAttachmentWrite,
                         self.depth_image,
                         ImageAspectFlags::DEPTH,
                     )],
@@ -1156,15 +1145,11 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
-                    &[ImageBarrier {
-                        prev_access: &[Access::ShaderSampledImageRead],
-                        prev_layout: ImageLayout::Optimal,
-                        next_access: &[Access::TransferWrite],
-                        next_layout: ImageLayout::Optimal,
-                        image: self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
-                        subresource_range: default(),
-                        discard_contents: true,
-                    }],
+                    &[ImageBarrier::optimal_discard(
+                        &Access::ShaderSampledImageRead,
+                        &Access::TransferWrite,
+                        self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
+                    )],
                 );
 
                 gpu.cmd_copy_buffer_to_image(
@@ -1185,11 +1170,10 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::TransferWrite],
-                        &[Access::ShaderSampledImageRead],
+                    &[ImageBarrier::optimal(
+                        &Access::TransferWrite,
+                        &Access::ShaderSampledImageRead,
                         self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
-                        ImageAspectFlags::COLOR,
                     )],
                 );
 
@@ -1200,24 +1184,16 @@ impl<'gpu> DrawState<'gpu> {
                 cmd_encoder,
                 None,
                 &[
-                    ImageBarrier {
-                        prev_access: &[Access::ShaderOtherRead],
-                        next_access: &[Access::ColorAttachmentWrite],
-                        prev_layout: ImageLayout::Optimal,
-                        next_layout: ImageLayout::Optimal,
-                        image: self.color_image,
-                        subresource_range: default(),
-                        discard_contents: true,
-                    },
-                    ImageBarrier {
-                        prev_access: &[Access::ShaderOtherRead],
-                        next_access: &[Access::ComputeWrite],
-                        prev_layout: ImageLayout::Optimal,
-                        next_layout: ImageLayout::General,
-                        image: self.ui_image,
-                        subresource_range: default(),
-                        discard_contents: true,
-                    },
+                    ImageBarrier::optimal_discard(
+                        &Access::ShaderOtherRead,
+                        &Access::ColorAttachmentWrite,
+                        self.color_image,
+                    ),
+                    ImageBarrier::general_discard(
+                        &Access::ShaderOtherRead,
+                        &Access::ComputeWrite,
+                        self.ui_image,
+                    ),
                 ],
             );
 
@@ -1680,22 +1656,18 @@ impl<'gpu> DrawState<'gpu> {
                     &[
                         ImageBarrier {
                             prev_access: &[Access::ColorAttachmentWrite],
-                            prev_layout: ImageLayout::Optimal,
                             next_access: &[Access::ShaderOtherRead],
+                            prev_layout: ImageLayout::Optimal,
                             next_layout: ImageLayout::General,
                             image: self.color_image,
                             subresource_range: ImageSubresourceRange::default(),
                             discard_contents: false,
                         },
-                        ImageBarrier {
-                            prev_access: &[Access::ComputeWrite],
-                            prev_layout: ImageLayout::General,
-                            next_access: &[Access::ComputeOtherRead],
-                            next_layout: ImageLayout::General,
-                            image: self.ui_image,
-                            subresource_range: ImageSubresourceRange::default(),
-                            discard_contents: false,
-                        },
+                        ImageBarrier::general(
+                            &Access::ComputeWrite,
+                            &Access::ComputeOtherRead,
+                            self.ui_image,
+                        ),
                     ],
                 );
 

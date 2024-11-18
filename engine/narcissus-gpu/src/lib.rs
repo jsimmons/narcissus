@@ -766,15 +766,47 @@ pub struct ImageBarrier<'a> {
 }
 
 impl<'a> ImageBarrier<'a> {
-    pub fn layout_optimal(
-        prev_access: &'a [Access],
-        next_access: &'a [Access],
+    pub fn optimal(
+        prev_access: &'a Access,
+        next_access: &'a Access,
+        image: Image,
+    ) -> ImageBarrier<'a> {
+        Self {
+            prev_access: std::slice::from_ref(prev_access),
+            next_access: std::slice::from_ref(next_access),
+            prev_layout: ImageLayout::Optimal,
+            next_layout: ImageLayout::Optimal,
+            image,
+            subresource_range: default(),
+            discard_contents: false,
+        }
+    }
+
+    pub fn optimal_discard(
+        prev_access: &'a Access,
+        next_access: &'a Access,
+        image: Image,
+    ) -> ImageBarrier<'a> {
+        Self {
+            prev_access: std::slice::from_ref(prev_access),
+            next_access: std::slice::from_ref(next_access),
+            prev_layout: ImageLayout::Optimal,
+            next_layout: ImageLayout::Optimal,
+            image,
+            subresource_range: default(),
+            discard_contents: true,
+        }
+    }
+
+    pub fn optimal_aspect(
+        prev_access: &'a Access,
+        next_access: &'a Access,
         image: Image,
         aspect: ImageAspectFlags,
     ) -> ImageBarrier<'a> {
         Self {
-            prev_access,
-            next_access,
+            prev_access: std::slice::from_ref(prev_access),
+            next_access: std::slice::from_ref(next_access),
             prev_layout: ImageLayout::Optimal,
             next_layout: ImageLayout::Optimal,
             image,
@@ -783,6 +815,38 @@ impl<'a> ImageBarrier<'a> {
                 ..default()
             },
             discard_contents: false,
+        }
+    }
+
+    pub fn general(
+        prev_access: &'a Access,
+        next_access: &'a Access,
+        image: Image,
+    ) -> ImageBarrier<'a> {
+        Self {
+            prev_access: std::slice::from_ref(prev_access),
+            next_access: std::slice::from_ref(next_access),
+            prev_layout: ImageLayout::General,
+            next_layout: ImageLayout::General,
+            image,
+            subresource_range: default(),
+            discard_contents: false,
+        }
+    }
+
+    pub fn general_discard(
+        prev_access: &'a Access,
+        next_access: &'a Access,
+        image: Image,
+    ) -> ImageBarrier<'a> {
+        Self {
+            prev_access: std::slice::from_ref(prev_access),
+            next_access: std::slice::from_ref(next_access),
+            prev_layout: ImageLayout::General,
+            next_layout: ImageLayout::General,
+            image,
+            subresource_range: default(),
+            discard_contents: true,
         }
     }
 }
