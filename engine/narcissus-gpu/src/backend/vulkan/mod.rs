@@ -2731,11 +2731,14 @@ impl Device for VulkanDevice {
             stage_mask,
         } in cmd_encoder.swapchains_touched.values()
         {
-            // transition swapchain image from attachment optimal to present src
+            // transition swapchain image to present src
             let image_memory_barriers = &[vk::ImageMemoryBarrier2 {
                 src_stage_mask: stage_mask,
                 src_access_mask: access_mask,
-                dst_stage_mask: vk::PipelineStageFlags2::BOTTOM_OF_PIPE,
+                // According to the vulkan documentation, this should be `vk::PipelineStageFlags2::NONE`, however it
+                // seems that is not true any longer.
+                // see: <https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/6177#issuecomment-1693009636>
+                dst_stage_mask: stage_mask,
                 dst_access_mask: vk::AccessFlags2::NONE,
                 src_queue_family_index: self.universal_queue_family_index,
                 dst_queue_family_index: self.universal_queue_family_index,
