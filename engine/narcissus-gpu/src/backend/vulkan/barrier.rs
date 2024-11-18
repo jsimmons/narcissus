@@ -298,14 +298,9 @@ pub fn vulkan_image_memory_barrier(
         let info = vulkan_access_info(access);
         dst_stage_mask |= info.stages;
 
-        // Add visibility operations if necessary.
-        //
-        // If the src access mask is zero, this is a write-after-read hazard (or for
-        // some reason, a read-after-read hazard), so the dst access mask can be safely
-        // zeroed as these don't need visibility.
-        if src_access_mask != default() {
-            dst_access_mask |= info.access;
-        }
+        // Open question whether this is always required.
+        // <https://github.com/Tobski/simple_vulkan_synchronization/issues/19#issuecomment-1460325972>
+        dst_access_mask |= info.access;
 
         let layout = match barrier.next_layout {
             ImageLayout::Optimal => info.layout,
