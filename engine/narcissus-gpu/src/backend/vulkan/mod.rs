@@ -2263,13 +2263,6 @@ impl Device for VulkanDevice {
                     old_layout: vk::ImageLayout::Undefined,
                     new_layout: vk::ImageLayout::General,
                     image: image.image,
-                    subresource_range: vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: !0,
-                        base_array_layer: 0,
-                        layer_count: !0,
-                    },
                     ..default()
                 }];
 
@@ -2549,13 +2542,6 @@ impl Device for VulkanDevice {
                             old_layout: vk::ImageLayout::Undefined,
                             new_layout: vk::ImageLayout::AttachmentOptimal,
                             image: image.image,
-                            subresource_range: vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: !0,
-                                base_array_layer: 0,
-                                layer_count: !0,
-                            },
                             ..default()
                         }];
 
