@@ -93,11 +93,11 @@ layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer Fin
     uint values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 16) buffer TileRef {
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer TileRef {
     Tile values[];
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer TileReadRef {
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer TileReadRef {
     Tile values[];
 };
 
