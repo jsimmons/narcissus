@@ -328,8 +328,6 @@ pub fn vulkan_image_memory_barrier(
         dst_access_mask,
         old_layout,
         new_layout,
-        src_queue_family_index: 0,
-        dst_queue_family_index: 0,
         image,
         subresource_range,
         ..default()
