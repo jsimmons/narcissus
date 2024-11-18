@@ -1139,6 +1139,8 @@ impl Default for BufferMemoryBarrier2 {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::BufferMemoryBarrier2;
+        x.src_queue_family_index = QUEUE_FAMILY_IGNORED;
+        x.dst_queue_family_index = QUEUE_FAMILY_IGNORED;
         x
     }
 }
@@ -1163,6 +1165,8 @@ impl Default for ImageMemoryBarrier2 {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::ImageMemoryBarrier2;
+        x.src_queue_family_index = QUEUE_FAMILY_IGNORED;
+        x.dst_queue_family_index = QUEUE_FAMILY_IGNORED;
         x.subresource_range = ImageSubresourceRange::default();
         x
     }
