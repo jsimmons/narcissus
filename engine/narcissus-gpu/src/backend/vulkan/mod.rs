@@ -2795,7 +2795,8 @@ impl Device for VulkanDevice {
         signal_semaphores.push(vk::SemaphoreSubmitInfo {
             semaphore: self.universal_queue_semaphore,
             semaphore_value: fence,
-            stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER
+                | vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
             ..default()
         });
 
