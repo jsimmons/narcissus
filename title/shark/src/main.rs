@@ -728,12 +728,15 @@ impl Images {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier::layout_optimal(
-                    &[Access::None],
-                    &[Access::TransferWrite],
+                &[ImageBarrier {
+                    prev_access: &[Access::General],
+                    next_access: &[Access::TransferWrite],
+                    prev_layout: ImageLayout::Optimal,
+                    next_layout: ImageLayout::Optimal,
+                    subresource_range: ImageSubresourceRange::default(),
                     image,
-                    ImageAspectFlags::COLOR,
-                )],
+                    discard_contents: true,
+                }],
             );
 
             let buffer = gpu.request_transient_buffer_with_data(
@@ -822,12 +825,13 @@ impl Images {
                 cmd_encoder,
                 None,
                 &[ImageBarrier {
-                    prev_access: &[Access::None],
+                    prev_access: &[Access::General],
                     next_access: &[Access::TransferWrite],
                     prev_layout: ImageLayout::Optimal,
                     next_layout: ImageLayout::Optimal,
                     subresource_range: ImageSubresourceRange::default(),
                     image,
+                    discard_contents: true,
                 }],
             );
 
@@ -856,14 +860,12 @@ impl Images {
             gpu.cmd_barrier(
                 cmd_encoder,
                 None,
-                &[ImageBarrier {
-                    prev_access: &[Access::TransferWrite],
-                    next_access: &[Access::ShaderSampledImageRead],
-                    prev_layout: ImageLayout::Optimal,
-                    next_layout: ImageLayout::Optimal,
-                    subresource_range: ImageSubresourceRange::default(),
+                &[ImageBarrier::layout_optimal(
+                    &[Access::TransferWrite],
+                    &[Access::ShaderSampledImageRead],
                     image,
-                }],
+                    ImageAspectFlags::COLOR,
+                )],
             );
 
             image
@@ -1154,12 +1156,15 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.cmd_barrier(
                     cmd_encoder,
                     None,
-                    &[ImageBarrier::layout_optimal(
-                        &[Access::ShaderSampledImageRead],
-                        &[Access::TransferWrite],
-                        self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
-                        ImageAspectFlags::COLOR,
-                    )],
+                    &[ImageBarrier {
+                        prev_access: &[Access::ShaderSampledImageRead],
+                        prev_layout: ImageLayout::Optimal,
+                        next_access: &[Access::TransferWrite],
+                        next_layout: ImageLayout::Optimal,
+                        image: self.glyph_atlas_images[self.glyph_atlas_image_index & 1],
+                        subresource_range: default(),
+                        discard_contents: true,
+                    }],
                 );
 
                 gpu.cmd_copy_buffer_to_image(
@@ -1195,19 +1200,23 @@ impl<'gpu> DrawState<'gpu> {
                 cmd_encoder,
                 None,
                 &[
-                    ImageBarrier::layout_optimal(
-                        &[Access::None],
-                        &[Access::ColorAttachmentWrite],
-                        self.color_image,
-                        ImageAspectFlags::COLOR,
-                    ),
                     ImageBarrier {
-                        prev_access: &[Access::None],
+                        prev_access: &[Access::ShaderOtherRead],
+                        next_access: &[Access::ColorAttachmentWrite],
+                        prev_layout: ImageLayout::Optimal,
+                        next_layout: ImageLayout::Optimal,
+                        image: self.color_image,
+                        subresource_range: default(),
+                        discard_contents: true,
+                    },
+                    ImageBarrier {
+                        prev_access: &[Access::ShaderOtherRead],
                         next_access: &[Access::ComputeWrite],
                         prev_layout: ImageLayout::Optimal,
                         next_layout: ImageLayout::General,
                         image: self.ui_image,
                         subresource_range: default(),
+                        discard_contents: true,
                     },
                 ],
             );
@@ -1312,6 +1321,8 @@ impl<'gpu> DrawState<'gpu> {
             gpu.cmd_end_rendering(cmd_encoder);
 
             gpu.cmd_end_debug_marker(cmd_encoder);
+
+            gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
 
             let compute_bind_group = gpu.request_transient_bind_group(
                 frame,
@@ -1674,6 +1685,7 @@ impl<'gpu> DrawState<'gpu> {
                             next_layout: ImageLayout::General,
                             image: self.color_image,
                             subresource_range: ImageSubresourceRange::default(),
+                            discard_contents: false,
                         },
                         ImageBarrier {
                             prev_access: &[Access::ComputeWrite],
@@ -1682,11 +1694,10 @@ impl<'gpu> DrawState<'gpu> {
                             next_layout: ImageLayout::General,
                             image: self.ui_image,
                             subresource_range: ImageSubresourceRange::default(),
+                            discard_contents: false,
                         },
                     ],
                 );
-
-                gpu.cmd_compute_touch_swapchain(cmd_encoder, swapchain_image);
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.composite_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);

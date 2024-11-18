@@ -270,23 +270,27 @@ pub fn vulkan_image_memory_barrier(
             src_access_mask |= info.access;
         }
 
-        let layout = match barrier.prev_layout {
-            ImageLayout::Optimal => info.layout,
-            ImageLayout::General => {
-                if access == Access::PresentRead {
-                    vk::ImageLayout::PresentSrcKhr
-                } else {
-                    vk::ImageLayout::General
+        old_layout = if barrier.discard_contents {
+            vk::ImageLayout::Undefined
+        } else {
+            let layout = match barrier.prev_layout {
+                ImageLayout::Optimal => info.layout,
+                ImageLayout::General => {
+                    if access == Access::PresentRead {
+                        vk::ImageLayout::PresentSrcKhr
+                    } else {
+                        vk::ImageLayout::General
+                    }
                 }
-            }
+            };
+
+            debug_assert!(
+                old_layout == vk::ImageLayout::Undefined || old_layout == layout,
+                "mixed image layout"
+            );
+
+            layout
         };
-
-        debug_assert!(
-            old_layout == vk::ImageLayout::Undefined || old_layout == layout,
-            "mixed image layout"
-        );
-
-        old_layout = layout;
     }
 
     for &access in barrier.next_access {

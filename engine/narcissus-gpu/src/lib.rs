@@ -762,6 +762,7 @@ pub struct ImageBarrier<'a> {
     pub next_layout: ImageLayout,
     pub image: Image,
     pub subresource_range: ImageSubresourceRange,
+    pub discard_contents: bool,
 }
 
 impl<'a> ImageBarrier<'a> {
@@ -781,6 +782,7 @@ impl<'a> ImageBarrier<'a> {
                 aspect,
                 ..default()
             },
+            discard_contents: false,
         }
     }
 }
