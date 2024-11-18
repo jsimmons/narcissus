@@ -1163,6 +1163,7 @@ impl Default for ImageMemoryBarrier2 {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::ImageMemoryBarrier2;
+        x.subresource_range = ImageSubresourceRange::default();
         x
     }
 }
@@ -1937,11 +1938,11 @@ pub struct ImageSubresourceRange {
 impl Default for ImageSubresourceRange {
     fn default() -> Self {
         Self {
-            aspect_mask: Default::default(),
-            base_mip_level: Default::default(),
-            level_count: Default::default(),
-            base_array_layer: Default::default(),
-            layer_count: Default::default(),
+            aspect_mask: ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: REMAINING_MIP_LEVELS,
+            base_array_layer: 0,
+            layer_count: REMAINING_ARRAY_LAYERS,
         }
     }
 }
