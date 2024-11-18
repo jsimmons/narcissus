@@ -2745,13 +2745,6 @@ impl Device for VulkanDevice {
                 old_layout: layout,
                 new_layout: vk::ImageLayout::PresentSrcKhr,
                 image,
-                subresource_range: vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                },
                 ..default()
             }];
             let dependency_info = vk::DependencyInfo {
