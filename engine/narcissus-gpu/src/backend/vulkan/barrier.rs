@@ -228,11 +228,11 @@ pub fn vulkan_memory_barrier(barrier: &GlobalBarrier) -> vk::MemoryBarrier2 {
     }
 
     if src_stage_mask == default() {
-        src_stage_mask = vk::PipelineStageFlags2::TOP_OF_PIPE;
+        src_stage_mask = vk::PipelineStageFlags2::NONE;
     }
 
     if dst_stage_mask == default() {
-        dst_stage_mask = vk::PipelineStageFlags2::BOTTOM_OF_PIPE;
+        dst_stage_mask = vk::PipelineStageFlags2::NONE;
     }
 
     vk::MemoryBarrier2 {
