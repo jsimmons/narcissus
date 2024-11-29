@@ -100,7 +100,7 @@ pub struct DeviceQueueCreateInfo<'a> {
     pub queue_priorities: VulkanSlice1<'a, u32, f32, 4>,
 }
 
-impl<'a> Default for DeviceQueueCreateInfo<'a> {
+impl Default for DeviceQueueCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::DeviceQueueCreateInfo;
@@ -119,7 +119,7 @@ pub struct DeviceCreateInfo<'a> {
     pub enabled_features: *const PhysicalDeviceFeatures,
 }
 
-impl<'a> Default for DeviceCreateInfo<'a> {
+impl Default for DeviceCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::DeviceCreateInfo;
@@ -156,7 +156,7 @@ pub struct InstanceCreateInfo<'a> {
     pub enabled_extension_names: VulkanSlice1<'a, u32, *const c_char, 4>,
 }
 
-impl<'a> Default for InstanceCreateInfo<'a> {
+impl Default for InstanceCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::InstanceCreateInfo;
@@ -438,7 +438,7 @@ pub struct SubmitInfo<'a> {
     pub signal_semaphores: VulkanSlice1<'a, u32, Semaphore, 4>,
 }
 
-impl<'a> Default for SubmitInfo<'a> {
+impl Default for SubmitInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::SubmitInfo;
@@ -456,7 +456,7 @@ pub struct SubmitInfo2<'a> {
     pub signal_semaphore_infos: VulkanSlice1<'a, u32, SemaphoreSubmitInfo, 4>,
 }
 
-impl<'a> Default for SubmitInfo2<'a> {
+impl Default for SubmitInfo2<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::SubmitInfo2;
@@ -540,7 +540,7 @@ pub struct ImageFormatListCreateInfo<'a> {
     pub view_formats: VulkanSlice1<'a, u32, Format, 4>,
 }
 
-impl<'a> Default for ImageFormatListCreateInfo<'a> {
+impl Default for ImageFormatListCreateInfo<'_> {
     fn default() -> Self {
         ImageFormatListCreateInfo {
             _type: StructureType::ImageFormatListCreateInfo,
@@ -611,7 +611,7 @@ pub struct SwapchainPresentModesCreateInfoEXT<'a> {
     pub present_modes: VulkanSlice1<'a, u32, PresentModeKHR, 4>,
 }
 
-impl<'a> Default for SwapchainPresentModesCreateInfoEXT<'a> {
+impl Default for SwapchainPresentModesCreateInfoEXT<'_> {
     fn default() -> Self {
         Self {
             _type: StructureType::SwapchainPresentModesCreateInfoExt,
@@ -628,7 +628,7 @@ pub struct SurfacePresentModeCompatibilityEXT<'a> {
     pub present_modes: VulkanSlice1<'a, u32, PresentModeKHR, 4>,
 }
 
-impl<'a> Default for SurfacePresentModeCompatibilityEXT<'a> {
+impl Default for SurfacePresentModeCompatibilityEXT<'_> {
     fn default() -> Self {
         Self {
             _type: StructureType::SurfacePresentModeCompatibilityExt,
@@ -681,7 +681,7 @@ pub struct SwapchainPresentFenceInfoEXT<'a> {
     pub fences: VulkanSlice1<'a, u32, Fence, 4>,
 }
 
-impl<'a> Default for SwapchainPresentFenceInfoEXT<'a> {
+impl Default for SwapchainPresentFenceInfoEXT<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::SwapchainPresentFenceInfoExt;
@@ -697,7 +697,7 @@ pub struct ReleaseSwapchainImagesInfoEXT<'a> {
     pub image_indices: VulkanSlice1<'a, u32, u32, 4>,
 }
 
-impl<'a> Default for ReleaseSwapchainImagesInfoEXT<'a> {
+impl Default for ReleaseSwapchainImagesInfoEXT<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::ReleaseSwapchainImagesInfoExt;
@@ -740,7 +740,7 @@ pub struct SwapchainCreateInfoKHR<'a> {
     pub old_swapchain: SwapchainKHR,
 }
 
-impl<'a> Default for SwapchainCreateInfoKHR<'a> {
+impl Default for SwapchainCreateInfoKHR<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::SwapchainCreateInfoKhr;
@@ -760,7 +760,7 @@ pub struct PresentInfoKHR<'a> {
     pub results: *mut Result,
 }
 
-impl<'a> Default for PresentInfoKHR<'a> {
+impl Default for PresentInfoKHR<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PresentInfoKhr;
@@ -810,7 +810,7 @@ pub struct ImageCreateInfo<'a> {
     pub initial_layout: ImageLayout,
 }
 
-impl<'a> Default for ImageCreateInfo<'a> {
+impl Default for ImageCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::ImageCreateInfo;
@@ -917,7 +917,7 @@ pub struct CommandBufferBeginInfo<'a> {
     pub inheritance_info: Option<&'a CommandBufferInheritanceInfo>,
 }
 
-impl<'a> Default for CommandBufferBeginInfo<'a> {
+impl Default for CommandBufferBeginInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::CommandBufferBeginInfo;
@@ -960,7 +960,7 @@ pub struct RenderingInfo<'a> {
     pub stencil_attachment: Option<&'a RenderingAttachmentInfo>,
 }
 
-impl<'a> Default for RenderingInfo<'a> {
+impl Default for RenderingInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::RenderingInfo;
@@ -978,7 +978,7 @@ pub struct PipelineRenderingCreateInfo<'a> {
     pub stencil_attachment_format: Format,
 }
 
-impl<'a> Default for PipelineRenderingCreateInfo<'a> {
+impl Default for PipelineRenderingCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineRenderingCreateInfo;
@@ -1094,7 +1094,7 @@ pub struct RenderPassBeginInfo<'a> {
     pub clear_values: VulkanSlice1<'a, u32, ClearValue, 4>,
 }
 
-impl<'a> Default for RenderPassBeginInfo<'a> {
+impl Default for RenderPassBeginInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::RenderPassBeginInfo;
@@ -1182,7 +1182,7 @@ pub struct DependencyInfo<'a> {
     pub image_memory_barriers: VulkanSlice1<'a, u32, ImageMemoryBarrier2, 4>,
 }
 
-impl<'a> Default for DependencyInfo<'a> {
+impl Default for DependencyInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::DependencyInfo;
@@ -1230,7 +1230,7 @@ pub struct SubpassDescription<'a> {
     pub preserve_attachments: VulkanSlice1<'a, u32, u32, 4>,
 }
 
-impl<'a> Default for SubpassDescription<'a> {
+impl Default for SubpassDescription<'_> {
     fn default() -> Self {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
@@ -1259,7 +1259,7 @@ pub struct RenderPassCreateInfo<'a> {
     pub dependencies: VulkanSlice1<'a, u32, SubpassDependency, 4>,
 }
 
-impl<'a> Default for RenderPassCreateInfo<'a> {
+impl Default for RenderPassCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::RenderPassCreateInfo;
@@ -1276,7 +1276,7 @@ pub struct ShaderModuleCreateInfo<'a> {
     pub code: VulkanSlice1<'a, usize, u8, 0>,
 }
 
-impl<'a> Default for ShaderModuleCreateInfo<'a> {
+impl Default for ShaderModuleCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::ShaderModuleCreateInfo;
@@ -1307,7 +1307,7 @@ pub struct DescriptorSetLayoutCreateInfo<'a> {
     pub bindings: VulkanSlice1<'a, u32, DescriptorSetLayoutBinding, 0>,
 }
 
-impl<'a> Default for DescriptorSetLayoutCreateInfo<'a> {
+impl Default for DescriptorSetLayoutCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::DescriptorSetLayoutCreateInfo;
@@ -1331,7 +1331,7 @@ pub struct DescriptorPoolCreateInfo<'a> {
     pub pool_sizes: VulkanSlice1<'a, u32, DescriptorPoolSize, 4>,
 }
 
-impl<'a> Default for DescriptorPoolCreateInfo<'a> {
+impl Default for DescriptorPoolCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::DescriptorPoolCreateInfo;
@@ -1347,7 +1347,7 @@ pub struct DescriptorSetAllocateInfo<'a> {
     pub set_layouts: VulkanSlice1<'a, u32, DescriptorSetLayout, 4>,
 }
 
-impl<'a> Default for DescriptorSetAllocateInfo<'a> {
+impl Default for DescriptorSetAllocateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::DescriptorSetAllocateInfo;
@@ -1372,7 +1372,7 @@ pub struct SpecializationInfo<'a> {
     pub data: VulkanSlice1<'a, usize, u8, 0>,
 }
 
-impl<'a> Default for SpecializationInfo<'a> {
+impl Default for SpecializationInfo<'_> {
     fn default() -> Self {
         unsafe { MaybeUninit::<Self>::zeroed().assume_init() }
     }
@@ -1392,7 +1392,7 @@ pub struct PipelineShaderStageCreateInfo<'a> {
     pub specialization_info: Option<&'a SpecializationInfo<'a>>,
 }
 
-impl<'a> Default for PipelineShaderStageCreateInfo<'a> {
+impl Default for PipelineShaderStageCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineShaderStageCreateInfo;
@@ -1429,7 +1429,7 @@ pub struct ComputePipelineCreateInfo<'a> {
     pub base_pipeline_index: i32,
 }
 
-impl<'a> Default for ComputePipelineCreateInfo<'a> {
+impl Default for ComputePipelineCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::ComputePipelineCreateInfo;
@@ -1468,7 +1468,7 @@ pub struct PipelineVertexInputStateCreateInfo<'a> {
     pub vertex_attribute_descriptions: VulkanSlice1<'a, u32, VertexInputAttributeDescription, 4>,
 }
 
-impl<'a> Default for PipelineVertexInputStateCreateInfo<'a> {
+impl Default for PipelineVertexInputStateCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineVertexInputStateCreateInfo;
@@ -1518,7 +1518,7 @@ pub struct PipelineViewportStateCreateInfo<'a> {
     pub scissors: VulkanSlice1<'a, u32, Rect2d, 4>,
 }
 
-impl<'a> Default for PipelineViewportStateCreateInfo<'a> {
+impl Default for PipelineViewportStateCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineViewportStateCreateInfo;
@@ -1601,7 +1601,7 @@ pub struct PipelineColorBlendStateCreateInfo<'a> {
     pub blend_constants: [f32; 4],
 }
 
-impl<'a> Default for PipelineColorBlendStateCreateInfo<'a> {
+impl Default for PipelineColorBlendStateCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineColorBlendStateCreateInfo;
@@ -1617,7 +1617,7 @@ pub struct PipelineDynamicStateCreateInfo<'a> {
     pub dynamic_states: VulkanSlice1<'a, u32, DynamicState, 0>,
 }
 
-impl<'a> Default for PipelineDynamicStateCreateInfo<'a> {
+impl Default for PipelineDynamicStateCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineDynamicStateCreateInfo;
@@ -1686,7 +1686,7 @@ pub struct GraphicsPipelineCreateInfo<'a> {
     pub base_pipeline_index: i32,
 }
 
-impl<'a> Default for GraphicsPipelineCreateInfo<'a> {
+impl Default for GraphicsPipelineCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::GraphicsPipelineCreateInfo;
@@ -1742,7 +1742,7 @@ pub struct PipelineLayoutCreateInfo<'a> {
     pub push_constant_ranges: VulkanSlice1<'a, u32, PushConstantRange, 4>,
 }
 
-impl<'a> Default for PipelineLayoutCreateInfo<'a> {
+impl Default for PipelineLayoutCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::PipelineLayoutCreateInfo;
@@ -1876,7 +1876,7 @@ pub struct BufferCreateInfo<'a> {
     pub queue_family_indices: VulkanSlice1<'a, u32, u32, 4>,
 }
 
-impl<'a> Default for BufferCreateInfo<'a> {
+impl Default for BufferCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::BufferCreateInfo;
@@ -1963,7 +1963,7 @@ pub struct FramebufferCreateInfo<'a> {
     pub layers: u32,
 }
 
-impl<'a> Default for FramebufferCreateInfo<'a> {
+impl Default for FramebufferCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::FramebufferCreateInfo;
@@ -1983,7 +1983,7 @@ pub struct FramebufferAttachmentImageInfo<'a> {
     view_formats: VulkanSlice1<'a, u32, Format, 0>,
 }
 
-impl<'a> Default for FramebufferAttachmentImageInfo<'a> {
+impl Default for FramebufferAttachmentImageInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::FramebufferAttachmentImageInfo;
@@ -1998,7 +1998,7 @@ pub struct FramebufferAttachmentsCreateInfo<'a> {
     attachment_image_infos: VulkanSlice1<'a, u32, FramebufferAttachmentImageInfo<'a>, 4>,
 }
 
-impl<'a> Default for FramebufferAttachmentsCreateInfo<'a> {
+impl Default for FramebufferAttachmentsCreateInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::FramebufferAttachmentsCreateInfo;
@@ -2060,7 +2060,7 @@ pub struct TimelineSemaphoreSubmitInfo<'a> {
     pub signal_semaphore_values: VulkanSlice1<'a, u32, u64, 4>,
 }
 
-impl<'a> Default for TimelineSemaphoreSubmitInfo<'a> {
+impl Default for TimelineSemaphoreSubmitInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::TimelineSemaphoreSubmitInfo;
@@ -2076,7 +2076,7 @@ pub struct SemaphoreWaitInfo<'a> {
     pub semaphores: VulkanSlice2<'a, u32, Semaphore, u64, 0>,
 }
 
-impl<'a> Default for SemaphoreWaitInfo<'a> {
+impl Default for SemaphoreWaitInfo<'_> {
     fn default() -> Self {
         let mut x = unsafe { MaybeUninit::<Self>::zeroed().assume_init() };
         x._type = StructureType::SemaphoreWaitInfo;
@@ -2204,7 +2204,6 @@ impl Default for DebugUtilsLabelExt {
 }
 
 #[repr(C)]
-
 pub struct DebugUtilsObjectTagInfoExt {
     pub _type: StructureType,
     pub _next: *const c_void,
@@ -2377,7 +2376,6 @@ pub struct PhysicalDeviceLimits {
     pub max_tessellation_control_per_patch_output_components: u32,
     ///  max total number of per-vertex and per-patch output components in TCS
     pub max_tessellation_control_total_output_components: u32,
-    ///  tessellation evaluation stage limits
 
     ///  max number of input components per vertex in TES
     pub max_tessellation_evaluation_input_components: u32,

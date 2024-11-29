@@ -103,7 +103,7 @@ pub struct VulkanSlice1<'a, I, T, const PAD: usize> {
     phantom: PhantomData<&'a T>,
 }
 
-impl<'a, I, T, const PAD: usize> std::fmt::Debug for VulkanSlice1<'a, I, T, PAD>
+impl<I, T, const PAD: usize> std::fmt::Debug for VulkanSlice1<'_, I, T, PAD>
 where
     I: TryInto<usize> + Copy,
     T: std::fmt::Debug,
@@ -115,7 +115,7 @@ where
     }
 }
 
-impl<'a, I: Default, T, const PAD: usize> Default for VulkanSlice1<'a, I, T, PAD> {
+impl<I: Default, T, const PAD: usize> Default for VulkanSlice1<'_, I, T, PAD> {
     fn default() -> Self {
         Self {
             len: Default::default(),
@@ -126,7 +126,7 @@ impl<'a, I: Default, T, const PAD: usize> Default for VulkanSlice1<'a, I, T, PAD
     }
 }
 
-impl<'a, I, T, const PAD: usize> VulkanSlice1<'a, I, T, PAD> {
+impl<I, T, const PAD: usize> VulkanSlice1<'_, I, T, PAD> {
     pub const fn dangling(len: I) -> Self {
         Self {
             len,
@@ -206,7 +206,7 @@ pub struct VulkanSlice2<'a, I, T0, T1, const PAD: usize> {
     phantom1: PhantomData<&'a T1>,
 }
 
-impl<'a, I, T0, T1, const PAD: usize> std::fmt::Debug for VulkanSlice2<'a, I, T0, T1, PAD>
+impl<I, T0, T1, const PAD: usize> std::fmt::Debug for VulkanSlice2<'_, I, T0, T1, PAD>
 where
     I: TryInto<usize> + Copy,
     T0: std::fmt::Debug,
@@ -221,7 +221,7 @@ where
     }
 }
 
-impl<'a, I: Default, T0, T1, const PAD: usize> Default for VulkanSlice2<'a, I, T0, T1, PAD> {
+impl<I: Default, T0, T1, const PAD: usize> Default for VulkanSlice2<'_, I, T0, T1, PAD> {
     fn default() -> Self {
         Self {
             len: Default::default(),

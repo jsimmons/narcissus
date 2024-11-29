@@ -1057,8 +1057,8 @@ impl<'gpu> DrawState<'gpu> {
                 gpu.destroy_image(frame, self.color_image);
                 gpu.destroy_image(frame, self.ui_image);
 
-                self.tile_resolution_x = (width + (DRAW_2D_TILE_SIZE - 1)) / DRAW_2D_TILE_SIZE;
-                self.tile_resolution_y = (height + (DRAW_2D_TILE_SIZE - 1)) / DRAW_2D_TILE_SIZE;
+                self.tile_resolution_x = width.div_ceil(DRAW_2D_TILE_SIZE);
+                self.tile_resolution_y = height.div_ceil(DRAW_2D_TILE_SIZE);
 
                 self.depth_image = gpu.create_image(&ImageDesc {
                     memory_location: MemoryLocation::Device,
@@ -1469,9 +1469,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    (draw_buffer_len
-                        + (self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size - 1))
-                        / self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size,
+                    draw_buffer_len.div_ceil(self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size),
                     1,
                     1,
                 );

@@ -296,7 +296,7 @@ mod tests {
         let mut rng = Pcg64::new();
         for _ in 0..100_000 {
             let x = rng.next_f32();
-            assert!(x >= 0.0 && x < 1.0);
+            assert!((0.0..1.0).contains(&x));
         }
     }
 
@@ -305,7 +305,7 @@ mod tests {
         let mut rng = Pcg64::new();
         for _ in 0..100_000 {
             let x = rng.next_f64();
-            assert!(x >= 0.0 && x < 1.0);
+            assert!((0.0..1.0).contains(&x));
         }
     }
 
@@ -314,7 +314,7 @@ mod tests {
         let mut rng = Pcg64::new();
         for _ in 0..100_000 {
             let x = rng.next_f32_s();
-            assert!(x >= -1.0 && x < 1.0);
+            assert!((-1.0..1.0).contains(&x));
         }
     }
 
@@ -323,7 +323,7 @@ mod tests {
         let mut rng = Pcg64::new();
         for _ in 0..100_000 {
             let x = rng.next_f64_s();
-            assert!(x >= -1.0 && x < 1.0);
+            assert!((-1.0..1.0).contains(&x));
         }
     }
 }

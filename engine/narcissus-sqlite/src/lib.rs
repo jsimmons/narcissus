@@ -277,7 +277,7 @@ pub struct Query<'a> {
     statement: &'a Statement<'a>,
 }
 
-impl<'a> Drop for Query<'a> {
+impl Drop for Query<'_> {
     fn drop(&mut self) {
         let _ = unsafe { ffi::sqlite3_clear_bindings(self.statement.statement) };
         let _ = unsafe { ffi::sqlite3_reset(self.statement.statement) };
@@ -355,7 +355,7 @@ pub struct Statement<'a> {
     marker: PhantomData<&'a Connection>,
 }
 
-impl<'a> Statement<'a> {
+impl Statement<'_> {
     pub fn parameter_index(&mut self, parameter: &str) -> Option<NonZeroI32> {
         let name = CString::new(parameter).unwrap();
         let index = unsafe { ffi::sqlite3_bind_parameter_index(self.statement, name.as_ptr()) };
@@ -367,7 +367,7 @@ impl<'a> Statement<'a> {
     }
 }
 
-impl<'conn> Drop for Statement<'conn> {
+impl Drop for Statement<'_> {
     fn drop(&mut self) {
         let _ret = unsafe { ffi::sqlite3_finalize(self.statement) };
     }
@@ -377,7 +377,7 @@ pub struct Row<'stmt> {
     statement: &'stmt Statement<'stmt>,
 }
 
-impl<'stmt> Row<'stmt> {
+impl Row<'_> {
     pub fn column_i32(&mut self, column: i32) -> i32 {
         unsafe { ffi::sqlite3_column_int(self.statement.statement, column) }
     }
@@ -447,7 +447,7 @@ impl<'stmt> Iterator for Rows<'stmt> {
     }
 }
 
-impl<'stmt> Drop for Rows<'stmt> {
+impl Drop for Rows<'_> {
     fn drop(&mut self) {
         if let Some(statement) = self.statement.take() {
             let _ = unsafe { ffi::sqlite3_reset(statement.statement) };

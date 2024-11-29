@@ -1,11 +1,11 @@
 #![allow(unused)]
 
+//! Shim implementation of some unstable Rust stdlib functions.
+
 use std::{
     iter::FusedIterator,
     slice::{Iter, IterMut},
 };
-
-/// Shim implementation of some unstable Rust stdlib functions.
 
 /// An iterator over a slice in (non-overlapping) chunks (`N` elements at a
 /// time), starting at the beginning of the slice.

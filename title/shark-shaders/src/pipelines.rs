@@ -259,7 +259,7 @@ pub const RADIX_ITEMS_PER_WGP: usize = 4096;
 pub const RADIX_DIGITS: usize = 256;
 
 pub fn calcuate_workgroup_count(count: usize) -> usize {
-    (count + (RADIX_ITEMS_PER_WGP - 1)) / RADIX_ITEMS_PER_WGP
+    count.div_ceil(RADIX_ITEMS_PER_WGP)
 }
 
 /// Returns the size of the spine required to sort the given count in units of u32 words.

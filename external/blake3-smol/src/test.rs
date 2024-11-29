@@ -1,5 +1,4 @@
 use crate::{slice, CVBytes, CVWords, IncrementCounter, Refs, BLOCK_LEN, CHUNK_LEN, OUT_LEN};
-use core::usize;
 use rand::prelude::*;
 
 // Interesting input lengths to run tests on.
@@ -81,13 +80,12 @@ pub fn test_compress_fn(compress_in_place_fn: CompressInPlaceFn, compress_xof_fn
     let flags = crate::CHUNK_END | crate::ROOT | crate::KEYED_HASH;
 
     let portable_out =
-        crate::portable::compress_xof(&initial_state, &block, block_len, counter as u64, flags);
+        crate::portable::compress_xof(&initial_state, &block, block_len, counter, flags);
 
     let mut test_state = initial_state;
-    unsafe { compress_in_place_fn(&mut test_state, &block, block_len, counter as u64, flags) };
+    unsafe { compress_in_place_fn(&mut test_state, &block, block_len, counter, flags) };
     let test_state_bytes = crate::platform::le_bytes_from_words_32(&test_state);
-    let test_xof =
-        unsafe { compress_xof_fn(&initial_state, &block, block_len, counter as u64, flags) };
+    let test_xof = unsafe { compress_xof_fn(&initial_state, &block, block_len, counter, flags) };
 
     assert_eq!(&portable_out[..32], &test_state_bytes[..]);
     assert_eq!(&portable_out[..], &test_xof[..]);
@@ -289,11 +287,11 @@ fn test_compare_reference() {
 
             // all at once
             let test_out = crate::hash(input);
-            assert_eq!(test_out, *&expected_out[..32]);
+            assert_eq!(test_out, expected_out[..32]);
             // incremental
             let mut hasher = crate::Hasher::new();
             hasher.update(input);
-            assert_eq!(hasher.finalize(), *&expected_out[..32]);
+            assert_eq!(hasher.finalize(), expected_out[..32]);
             assert_eq!(hasher.finalize(), test_out);
             // xof
             let mut extended = [0; OUT];
@@ -310,11 +308,11 @@ fn test_compare_reference() {
 
             // all at once
             let test_out = crate::keyed_hash(&TEST_KEY, input);
-            assert_eq!(test_out, *&expected_out[..32]);
+            assert_eq!(test_out, expected_out[..32]);
             // incremental
             let mut hasher = crate::Hasher::new_keyed(&TEST_KEY);
             hasher.update(input);
-            assert_eq!(hasher.finalize(), *&expected_out[..32]);
+            assert_eq!(hasher.finalize(), expected_out[..32]);
             assert_eq!(hasher.finalize(), test_out);
             // xof
             let mut extended = [0; OUT];
@@ -336,8 +334,8 @@ fn test_compare_reference() {
             // incremental
             let mut hasher = crate::Hasher::new_derive_key(context);
             hasher.update(input);
-            assert_eq!(hasher.finalize(), *&expected_out[..32]);
-            assert_eq!(hasher.finalize(), *&test_out[..32]);
+            assert_eq!(hasher.finalize(), expected_out[..32]);
+            assert_eq!(hasher.finalize(), test_out[..32]);
             // xof
             let mut extended = [0; OUT];
             hasher.finalize_xof().fill(&mut extended);
@@ -474,8 +472,8 @@ fn test_msg_schdule_permutation() {
     generated[0] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
     for round in 1..7 {
-        for i in 0..16 {
-            generated[round][i] = generated[round - 1][permutation[i]];
+        for (i, &permutation) in permutation.iter().enumerate() {
+            generated[round][i] = generated[round - 1][permutation];
         }
     }
 

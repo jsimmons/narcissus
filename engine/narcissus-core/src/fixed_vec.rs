@@ -325,7 +325,7 @@ impl<T, const CAP: usize> FixedVec<T, CAP> {
             vec: &'a mut FixedVec<T, CAP>,
         }
 
-        impl<'a, T, const CAP: usize> Drop for FillGapOnDrop<'a, T, CAP> {
+        impl<T, const CAP: usize> Drop for FillGapOnDrop<'_, T, CAP> {
             fn drop(&mut self) {
                 /* This code gets executed when `same_bucket` panics */
 

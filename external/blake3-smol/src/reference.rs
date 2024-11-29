@@ -154,12 +154,11 @@ impl Output {
     }
 
     fn root_output_bytes(&self, out_slice: &mut [u8]) {
-        let mut output_block_counter = 0;
-        for out_block in out_slice.chunks_mut(2 * OUT_LEN) {
+        for (output_block_counter, out_block) in out_slice.chunks_mut(2 * OUT_LEN).enumerate() {
             let words = compress(
                 &self.input_chaining_value,
                 &self.block_words,
-                output_block_counter,
+                output_block_counter as u64,
                 self.block_len,
                 self.flags | ROOT,
             );
@@ -167,7 +166,6 @@ impl Output {
             for (word, out_word) in words.iter().zip(out_block.chunks_mut(4)) {
                 out_word.copy_from_slice(&word.to_le_bytes()[..out_word.len()]);
             }
-            output_block_counter += 1;
         }
     }
 }

@@ -245,7 +245,7 @@ impl<'a> Rect<'a> {
     }
 }
 
-impl<'a> fmt::Display for Rect<'a> {
+impl fmt::Display for Rect<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(title) = self.title {
             write!(
@@ -372,7 +372,7 @@ where
     pub text: &'a T,
 }
 
-impl<'a, T> fmt::Display for Text<'a, T>
+impl<T> fmt::Display for Text<'_, T>
 where
     T: fmt::Display,
 {

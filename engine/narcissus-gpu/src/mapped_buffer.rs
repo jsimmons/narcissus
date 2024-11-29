@@ -63,7 +63,7 @@ pub struct PersistentBuffer<'a> {
     pub(crate) phantom: PhantomData<&'a u8>,
 }
 
-impl<'a> PersistentBuffer<'a> {
+impl PersistentBuffer<'_> {
     pub fn to_arg(&self) -> BufferArg {
         BufferArg::Persistent(self)
     }
@@ -93,7 +93,7 @@ pub struct TransientBuffer<'a> {
     pub(crate) address: BufferAddress<'a>,
 }
 
-impl<'a> TransientBuffer<'a> {
+impl TransientBuffer<'_> {
     pub fn to_arg(&self) -> BufferArg {
         BufferArg::Transient(self)
     }

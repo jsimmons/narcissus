@@ -315,7 +315,7 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
 
         struct A<'a>(&'a AtomicU32);
-        impl<'a> Drop for A<'a> {
+        impl Drop for A<'_> {
             fn drop(&mut self) {
                 self.0.fetch_add(1, Ordering::SeqCst);
             }

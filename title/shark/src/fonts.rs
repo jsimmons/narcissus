@@ -11,7 +11,7 @@ pub struct Fonts<'a> {
     roboto_regular: Font<'a>,
 }
 
-impl<'a> Fonts<'a> {
+impl Fonts<'_> {
     pub fn new() -> Self {
         // SAFETY: Safe because Roboto-Regular.ttf is a valid ttf font embedded
         // in the application.

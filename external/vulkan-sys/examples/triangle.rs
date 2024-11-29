@@ -131,9 +131,9 @@ pub fn main() {
                 let mut features_11 = vk::PhysicalDeviceVulkan11Features::default();
                 let mut features = vk::PhysicalDeviceFeatures2::default();
                 unsafe {
-                    features._next = std::mem::transmute::<_, *mut c_void>(&mut features_11);
-                    features_11._next = std::mem::transmute::<_, *mut c_void>(&mut features_12);
-                    features_12._next = std::mem::transmute::<_, *mut c_void>(&mut features_13);
+                    features._next = &mut features_11 as *mut _ as *mut c_void;
+                    features_11._next = &mut features_12 as *mut _ as *mut c_void;
+                    features_12._next = &mut features_13 as *mut _ as *mut c_void;
                     instance_fn.get_physical_device_features2(physical_device, &mut features);
                 }
                 (features.features, features_11, features_12, features_13)
@@ -166,7 +166,7 @@ pub fn main() {
         })
         .expect("failed to find universal queue for chosen device");
 
-    let device = unsafe {
+    let device = {
         let queue_priorities = &[1.0];
         let device_queue_create_infos = &[vk::DeviceQueueCreateInfo {
             queue_family_index,
@@ -179,20 +179,20 @@ pub fn main() {
             ..default()
         };
         let enabled_features_12 = vk::PhysicalDeviceVulkan12Features {
-            _next: std::mem::transmute::<_, *mut c_void>(&enabled_features_13),
+            _next: &enabled_features_13 as *const _ as *mut c_void,
             timeline_semaphore: vk::Bool32::True,
             ..default()
         };
         let enabled_features_11 = vk::PhysicalDeviceVulkan11Features {
-            _next: std::mem::transmute::<_, *mut c_void>(&enabled_features_12),
+            _next: &enabled_features_12 as *const _ as *mut c_void,
             ..default()
         };
         let enabled_features = vk::PhysicalDeviceFeatures2 {
-            _next: std::mem::transmute::<_, *mut c_void>(&enabled_features_11),
+            _next: &enabled_features_11 as *const _ as *mut c_void,
             ..default()
         };
         let create_info = vk::DeviceCreateInfo {
-            _next: std::mem::transmute::<_, *mut c_void>(&enabled_features),
+            _next: &enabled_features as *const _ as *mut c_void,
             queue_create_infos: device_queue_create_infos.into(),
             ..default()
         };

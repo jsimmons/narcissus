@@ -290,7 +290,7 @@ pub struct ShaderDesc<'a> {
     pub code: &'a [u8],
 }
 
-impl<'a> Default for ShaderDesc<'a> {
+impl Default for ShaderDesc<'_> {
     fn default() -> Self {
         Self {
             entry: c"main",
@@ -535,7 +535,7 @@ pub struct BindDesc<'a> {
     pub immutable_samplers: &'a [Sampler],
 }
 
-impl<'a> BindDesc<'a> {
+impl BindDesc<'_> {
     pub const fn new(stages: ShaderStageFlags, binding_type: BindingType) -> BindDesc<'static> {
         BindDesc {
             slot: !0,
@@ -587,7 +587,7 @@ pub struct BufferAddress<'a> {
     phantom: PhantomData<&'a [u8]>,
 }
 
-impl<'a> BufferAddress<'a> {
+impl BufferAddress<'_> {
     #[inline(always)]
     #[must_use]
     pub fn as_raw(self) -> u64 {
@@ -859,7 +859,7 @@ pub struct Frame<'a> {
     _phantom: &'a PhantomData<()>,
 }
 
-impl<'a> Frame<'a> {
+impl Frame<'_> {
     fn check_device(&self, device_addr: usize) {
         assert_eq!(self.device_addr, device_addr, "frame device mismatch")
     }
