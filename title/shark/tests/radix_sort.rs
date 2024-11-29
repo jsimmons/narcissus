@@ -68,7 +68,7 @@ fn gpu_sort(values: &mut [u32]) {
 
                 // Upsweep
                 gpu.cmd_set_pipeline(cmd_encoder, pipelines.radix_sort_0_upsweep_pipeline);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
@@ -99,7 +99,7 @@ fn gpu_sort(values: &mut [u32]) {
 
                 // Downsweep
                 gpu.cmd_set_pipeline(cmd_encoder, pipelines.radix_sort_1_downsweep_pipeline);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,

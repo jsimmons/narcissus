@@ -2394,14 +2394,16 @@ impl Device for VulkanDevice {
         }
     }
 
-    unsafe fn cmd_push_constants_unchecked(
+    unsafe fn cmd_push_constants(
         &self,
         cmd_encoder: &mut CmdEncoder,
         stage_flags: ShaderStageFlags,
         offset: u32,
-        size: u32,
-        src: *const u8,
+        ptr: *const u8,
+        len: usize,
     ) {
+        let len = u32::try_from(len).unwrap();
+
         let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
         let command_buffer = cmd_encoder.command_buffer;
 
@@ -2420,8 +2422,8 @@ impl Device for VulkanDevice {
             pipeline_layout,
             stage_flags,
             offset,
-            size,
-            src as *const std::ffi::c_void,
+            len,
+            ptr as *const std::ffi::c_void,
         )
     }
 

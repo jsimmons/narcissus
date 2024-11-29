@@ -1030,13 +1030,18 @@ pub trait Device {
         image_barriers: &[ImageBarrier],
     );
 
-    unsafe fn cmd_push_constants_unchecked(
+    /// Incrementally update the push constants for the given shader stage flags and offset.
+    ///
+    /// # Safety
+    ///
+    /// The memory region from `ptr` through `ptr` + `len` must be valid.
+    unsafe fn cmd_push_constants(
         &self,
         cmd_encoder: &mut CmdEncoder,
         stage_flags: ShaderStageFlags,
         offset: u32,
-        size: u32,
-        src: *const u8,
+        ptr: *const u8,
+        len: usize,
     );
 
     fn cmd_copy_buffer_to_image(
@@ -1106,7 +1111,7 @@ fn overflow() -> ! {
 }
 
 pub trait DeviceExt: Device {
-    fn cmd_push_constants<T: ?Sized>(
+    fn cmd_push_constants_with_data<T: ?Sized>(
         &self,
         cmd_encoder: &mut CmdEncoder,
         stage_flags: ShaderStageFlags,
@@ -1114,27 +1119,17 @@ pub trait DeviceExt: Device {
         data: &T,
     ) {
         let size = std::mem::size_of_val(data);
-        let src = data as *const _ as *const u8;
+        let ptr = data as *const _ as *const u8;
 
         // # Safety
         //
-        // The memory region from `src` through `src` + `size` must be valid as it's
+        // The memory region from `ptr` through `ptr` + `size` is ensured to be valid as it's
         // directly derived from `data`.
-        //
-        // This function will propagate undefined values from T, for example, padding
-        // bytes, however we promise not to materialize a rust reference to any such
-        // data.
         unsafe {
             if size >= u32::MAX as usize || offset >= u32::MAX as usize {
                 overflow();
             }
-            self.cmd_push_constants_unchecked(
-                cmd_encoder,
-                stage_flags,
-                offset as u32,
-                size as u32,
-                src,
-            )
+            self.cmd_push_constants(cmd_encoder, stage_flags, offset as u32, ptr, size)
         }
     }
 

@@ -1273,7 +1273,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.basic_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &graphics_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::VERTEX,
                     0,
@@ -1429,7 +1429,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_0_clear_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
@@ -1451,7 +1451,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_1_scatter_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
@@ -1469,7 +1469,8 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_dispatch(
                     cmd_encoder,
-                    draw_buffer_len.div_ceil(self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size),
+                    draw_buffer_len
+                        .div_ceil(self.pipelines.draw_2d_bin_1_scatter_pipeline_workgroup_size),
                     1,
                     1,
                 );
@@ -1485,7 +1486,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_2_sort_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
@@ -1526,7 +1527,7 @@ impl<'gpu> DrawState<'gpu> {
                     // Upsweep
                     gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.radix_sort_0_upsweep_pipeline);
                     gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                    gpu.cmd_push_constants(
+                    gpu.cmd_push_constants_with_data(
                         cmd_encoder,
                         ShaderStageFlags::COMPUTE,
                         0,
@@ -1556,7 +1557,7 @@ impl<'gpu> DrawState<'gpu> {
                         self.pipelines.radix_sort_1_downsweep_pipeline,
                     );
                     gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                    gpu.cmd_push_constants(
+                    gpu.cmd_push_constants_with_data(
                         cmd_encoder,
                         ShaderStageFlags::COMPUTE,
                         0,
@@ -1587,7 +1588,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_bin_3_resolve_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
@@ -1620,7 +1621,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.draw_2d_rasterize_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
@@ -1671,7 +1672,7 @@ impl<'gpu> DrawState<'gpu> {
 
                 gpu.cmd_set_pipeline(cmd_encoder, self.pipelines.composite_pipeline);
                 gpu.cmd_set_bind_group(cmd_encoder, 0, &compute_bind_group);
-                gpu.cmd_push_constants(
+                gpu.cmd_push_constants_with_data(
                     cmd_encoder,
                     ShaderStageFlags::COMPUTE,
                     0,
