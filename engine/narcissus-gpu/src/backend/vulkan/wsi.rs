@@ -271,12 +271,14 @@ impl VulkanDevice {
         let mut swapchains = self.wsi.swapchains.lock();
         let vulkan_swapchain = swapchains.entry(surface).or_insert_with(|| {
             let mut supported = vk::Bool32::False;
-            vk_check!(self.wsi.surface_fn.get_physical_device_surface_support(
-                self.physical_device,
-                self.universal_queue_family_index,
-                surface,
-                &mut supported
-            ));
+            vk_check!(unsafe {
+                self.wsi.surface_fn.get_physical_device_surface_support(
+                    self.physical_device,
+                    self.universal_queue_family_index,
+                    surface,
+                    &mut supported,
+                )
+            });
 
             assert_eq!(
                 supported,
@@ -347,14 +349,15 @@ impl VulkanDevice {
             .collect::<Vec<_>>();
 
             let mut capabilities = vk::SurfaceCapabilitiesKHR::default();
-            vk_check!(self
-                .wsi
-                .surface_fn
-                .get_physical_device_surface_capabilities(
-                    self.physical_device,
-                    surface,
-                    &mut capabilities
-                ));
+            vk_check!(unsafe {
+                self.wsi
+                    .surface_fn
+                    .get_physical_device_surface_capabilities(
+                        self.physical_device,
+                        surface,
+                        &mut capabilities,
+                    )
+            });
 
             let supported_usage_flags =
                 from_vulkan_image_usage_flags(capabilities.supported_usage_flags);
@@ -393,14 +396,15 @@ impl VulkanDevice {
             Entry::Vacant(entry) => entry.insert(default()),
         };
 
-        vk_check!(self
-            .wsi
-            .surface_fn
-            .get_physical_device_surface_capabilities(
-                self.physical_device,
-                surface,
-                &mut vulkan_swapchain.capabilities
-            ));
+        vk_check!(unsafe {
+            self.wsi
+                .surface_fn
+                .get_physical_device_surface_capabilities(
+                    self.physical_device,
+                    surface,
+                    &mut vulkan_swapchain.capabilities,
+                )
+        });
 
         let width = width.clamp(
             vulkan_swapchain.capabilities.min_image_extent.width,
@@ -435,12 +439,14 @@ impl VulkanDevice {
                         ..default()
                     };
 
-                    vk_check!(self.wsi.swapchain_fn.create_swapchain(
-                        self.device,
-                        &create_info,
-                        None,
-                        &mut new_swapchain
-                    ));
+                    vk_check!(unsafe {
+                        self.wsi.swapchain_fn.create_swapchain(
+                            self.device,
+                            &create_info,
+                            None,
+                            &mut new_swapchain,
+                        )
+                    });
                     assert!(!new_swapchain.is_null());
 
                     let swapchain_images = vk_vec(|count, ptr| unsafe {
@@ -469,12 +475,14 @@ impl VulkanDevice {
                                 ..default()
                             };
                             let mut view = vk::ImageView::null();
-                            vk_check!(self.device_fn.create_image_view(
-                                self.device,
-                                &create_info,
-                                None,
-                                &mut view,
-                            ));
+                            vk_check!(unsafe {
+                                self.device_fn.create_image_view(
+                                    self.device,
+                                    &create_info,
+                                    None,
+                                    &mut view,
+                                )
+                            });
 
                             let handle = image_pool.insert(VulkanImageHolder::Swapchain(
                                 VulkanImageSwapchain {
@@ -824,12 +832,10 @@ impl VulkanDevice {
         for recyle in self.wsi.recycle_swapchain_semaphores.get_mut().drain(..) {
             if self.wsi.support.swapchain_maintenance1 {
                 let fences = &[recyle.fence];
-                vk_check!(self.device_fn.wait_for_fences(
-                    self.device,
-                    fences,
-                    vk::Bool32::True,
-                    !0
-                ));
+                vk_check!(unsafe {
+                    self.device_fn
+                        .wait_for_fences(self.device, fences, vk::Bool32::True, !0)
+                });
                 unsafe {
                     self.device_fn
                         .destroy_fence(self.device, recyle.fence, None)

@@ -101,15 +101,13 @@ const VULKAN_CONSTANTS: VulkanConstants = VulkanConstants {
 #[macro_export]
 macro_rules! vk_check {
     ($e:expr) => ({
-        #[allow(unused_unsafe)]
-        let e = unsafe { $e };
+        let e = $e;
         if e != vulkan_sys::Result::Success {
             panic!("assertion failed: `result == vk::Result::Success`: \n value: `{:?}`", e);
         }
     });
     ($e:expr, $($msg_args:tt)+) => ({
-        #[allow(unused_unsafe)]
-        let e = unsafe { $e };
+        let e = $e;
         if e != vulkan_sys::::Result::Success {
             panic!("assertion failed: `result == vk::Result::Success`: \n value: `{:?}: {}`", e, format_args!($($msg_args)+));
         }
@@ -178,7 +176,9 @@ fn vulkan_shader_module(
         ..default()
     };
     let mut shader_module = vk::ShaderModule::null();
-    vk_check!(device_fn.create_shader_module(device, &create_info, None, &mut shader_module));
+    vk_check!(unsafe {
+        device_fn.create_shader_module(device, &create_info, None, &mut shader_module)
+    });
     shader_module
 }
 
@@ -500,7 +500,7 @@ impl VulkanDevice {
                 ..default()
             };
             let mut instance = vk::Instance::null();
-            vk_check!(global_fn.create_instance(&create_info, None, &mut instance));
+            vk_check!(unsafe { global_fn.create_instance(&create_info, None, &mut instance) });
             instance
         };
 
@@ -649,7 +649,9 @@ impl VulkanDevice {
                 ..default()
             };
             let mut device = vk::Device::null();
-            vk_check!(instance_fn.create_device(physical_device, &create_info, None, &mut device));
+            vk_check!(unsafe {
+                instance_fn.create_device(physical_device, &create_info, None, &mut device)
+            });
             device
         };
 
@@ -688,7 +690,9 @@ impl VulkanDevice {
                 ..default()
             };
             let mut semaphore = vk::Semaphore::null();
-            vk_check!(device_fn.create_semaphore(device, &create_info, None, &mut semaphore));
+            vk_check!(unsafe {
+                device_fn.create_semaphore(device, &create_info, None, &mut semaphore)
+            });
             semaphore
         };
 
@@ -701,7 +705,9 @@ impl VulkanDevice {
                         ..default()
                     };
                     let mut pool = vk::CommandPool::null();
-                    vk_check!(device_fn.create_command_pool(device, &create_info, None, &mut pool));
+                    vk_check!(unsafe {
+                        device_fn.create_command_pool(device, &create_info, None, &mut pool)
+                    });
                     pool
                 };
                 let cmd_buffer_pool = VulkanCmdBufferPool {
@@ -849,12 +855,14 @@ impl VulkanDevice {
                 pool_sizes: pool_sizes.into(),
                 ..default()
             };
-            vk_check!(self.device_fn.create_descriptor_pool(
-                self.device,
-                &create_info,
-                None,
-                &mut descriptor_pool
-            ));
+            vk_check!(unsafe {
+                self.device_fn.create_descriptor_pool(
+                    self.device,
+                    &create_info,
+                    None,
+                    &mut descriptor_pool,
+                )
+            });
             descriptor_pool
         }
     }
@@ -862,14 +870,15 @@ impl VulkanDevice {
     fn request_fence(&self) -> vk::Fence {
         if let Some(fence) = self.recycled_fences.lock().pop_front() {
             let fences = &[fence];
-            vk_check!(self.device_fn.reset_fences(self.device, fences));
+            vk_check!(unsafe { self.device_fn.reset_fences(self.device, fences) });
             fence
         } else {
             let mut fence = vk::Fence::null();
             let create_info = vk::FenceCreateInfo::default();
-            vk_check!(self
-                .device_fn
-                .create_fence(self.device, &create_info, None, &mut fence));
+            vk_check!(unsafe {
+                self.device_fn
+                    .create_fence(self.device, &create_info, None, &mut fence)
+            });
             fence
         }
     }
@@ -880,12 +889,10 @@ impl VulkanDevice {
         } else {
             let mut semaphore = vk::Semaphore::null();
             let create_info = vk::SemaphoreCreateInfo::default();
-            vk_check!(self.device_fn.create_semaphore(
-                self.device,
-                &create_info,
-                None,
-                &mut semaphore
-            ));
+            vk_check!(unsafe {
+                self.device_fn
+                    .create_semaphore(self.device, &create_info, None, &mut semaphore)
+            });
             semaphore
         }
     }
@@ -937,9 +944,10 @@ impl Device for VulkanDevice {
             ..default()
         };
         let mut buffer = vk::Buffer::null();
-        vk_check!(self
-            .device_fn
-            .create_buffer(self.device, &create_info, None, &mut buffer));
+        vk_check!(unsafe {
+            self.device_fn
+                .create_buffer(self.device, &create_info, None, &mut buffer)
+        });
 
         let memory = self.allocate_memory(
             desc.memory_location,
@@ -1057,9 +1065,10 @@ impl Device for VulkanDevice {
         };
 
         let mut image = vk::Image::null();
-        vk_check!(self
-            .device_fn
-            .create_image(self.device, &create_info, None, &mut image));
+        vk_check!(unsafe {
+            self.device_fn
+                .create_image(self.device, &create_info, None, &mut image)
+        });
 
         let memory = self.allocate_memory(
             image_desc.memory_location,
@@ -1097,9 +1106,10 @@ impl Device for VulkanDevice {
         };
 
         let mut view = vk::ImageView::null();
-        vk_check!(self
-            .device_fn
-            .create_image_view(self.device, &create_info, None, &mut view));
+        vk_check!(unsafe {
+            self.device_fn
+                .create_image_view(self.device, &create_info, None, &mut view)
+        });
 
         let image = VulkanImageUnique {
             image: VulkanImage { image, memory },
@@ -1151,9 +1161,10 @@ impl Device for VulkanDevice {
         };
 
         let mut view = vk::ImageView::null();
-        vk_check!(self
-            .device_fn
-            .create_image_view(self.device, &create_info, None, &mut view));
+        vk_check!(unsafe {
+            self.device_fn
+                .create_image_view(self.device, &create_info, None, &mut view)
+        });
 
         let handle = image_pool.insert(VulkanImageHolder::Shared(VulkanImageShared {
             image: arc_image,
@@ -1203,28 +1214,30 @@ impl Device for VulkanDevice {
         let unnormalized_coordinates = sampler_desc.unnormalized_coordinates.into();
 
         let mut sampler = vk::Sampler::null();
-        vk_check!(self.device_fn.create_sampler(
-            self.device,
-            &vk::SamplerCreateInfo {
-                max_lod: sampler_desc.max_lod,
-                min_lod: sampler_desc.min_lod,
-                mip_lod_bias: sampler_desc.mip_lod_bias,
-                min_filter: filter,
-                mag_filter: filter,
-                mipmap_mode,
-                anisotropy_enable,
-                max_anisotropy: 16.0, // TODO: check maxSamplerAnisotropy
-                address_mode_u: address_mode,
-                address_mode_v: address_mode,
-                address_mode_w: address_mode,
-                compare_enable,
-                compare_op,
-                unnormalized_coordinates,
-                ..default()
-            },
-            None,
-            &mut sampler,
-        ));
+        vk_check!(unsafe {
+            self.device_fn.create_sampler(
+                self.device,
+                &vk::SamplerCreateInfo {
+                    max_lod: sampler_desc.max_lod,
+                    min_lod: sampler_desc.min_lod,
+                    mip_lod_bias: sampler_desc.mip_lod_bias,
+                    min_filter: filter,
+                    mag_filter: filter,
+                    mipmap_mode,
+                    anisotropy_enable,
+                    max_anisotropy: 16.0, // TODO: check maxSamplerAnisotropy
+                    address_mode_u: address_mode,
+                    address_mode_v: address_mode,
+                    address_mode_w: address_mode,
+                    compare_enable,
+                    compare_op,
+                    unnormalized_coordinates,
+                    ..default()
+                },
+                None,
+                &mut sampler,
+            )
+        });
 
         let handle = self.sampler_pool.lock().insert(VulkanSampler(sampler));
         Sampler(handle)
@@ -1293,12 +1306,14 @@ impl Device for VulkanDevice {
             ..default()
         };
         let mut descriptor_set_layout = vk::DescriptorSetLayout::null();
-        vk_check!(self.device_fn.create_descriptor_set_layout(
-            self.device,
-            create_info,
-            None,
-            &mut descriptor_set_layout,
-        ));
+        vk_check!(unsafe {
+            self.device_fn.create_descriptor_set_layout(
+                self.device,
+                create_info,
+                None,
+                &mut descriptor_set_layout,
+            )
+        });
 
         let hash = hasher.finalize();
         let bind_group_layout = self
@@ -1466,13 +1481,15 @@ impl Device for VulkanDevice {
             ..default()
         }];
         let mut pipelines = [vk::Pipeline::null()];
-        vk_check!(self.device_fn.create_graphics_pipelines(
-            self.device,
-            vk::PipelineCache::null(),
-            create_infos,
-            None,
-            &mut pipelines
-        ));
+        vk_check!(unsafe {
+            self.device_fn.create_graphics_pipelines(
+                self.device,
+                vk::PipelineCache::null(),
+                create_infos,
+                None,
+                &mut pipelines,
+            )
+        });
 
         unsafe {
             self.device_fn
@@ -1620,13 +1637,15 @@ impl Device for VulkanDevice {
         }
 
         let mut pipelines = [vk::Pipeline::null()];
-        vk_check!(self.device_fn.create_compute_pipelines(
-            self.device,
-            vk::PipelineCache::null(),
-            std::slice::from_ref(compute_pipeline_create_info),
-            None,
-            &mut pipelines
-        ));
+        vk_check!(unsafe {
+            self.device_fn.create_compute_pipelines(
+                self.device,
+                vk::PipelineCache::null(),
+                std::slice::from_ref(compute_pipeline_create_info),
+                None,
+                &mut pipelines,
+            )
+        });
 
         unsafe {
             self.device_fn
@@ -2100,11 +2119,13 @@ impl Device for VulkanDevice {
                 command_buffer_count: cmd_buffers.len() as u32,
                 ..default()
             };
-            vk_check!(self.device_fn.allocate_command_buffers(
-                self.device,
-                &allocate_info,
-                cmd_buffers.as_mut_ptr()
-            ));
+            vk_check!(unsafe {
+                self.device_fn.allocate_command_buffers(
+                    self.device,
+                    &allocate_info,
+                    cmd_buffers.as_mut_ptr(),
+                )
+            });
             cmd_buffer_pool.command_buffers.extend(cmd_buffers.iter());
         }
 
@@ -2112,13 +2133,15 @@ impl Device for VulkanDevice {
         cmd_buffer_pool.next_free_index += 1;
         let command_buffer = cmd_buffer_pool.command_buffers[index];
 
-        vk_check!(self.device_fn.begin_command_buffer(
-            command_buffer,
-            &vk::CommandBufferBeginInfo {
-                flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-                ..default()
-            }
-        ));
+        vk_check!(unsafe {
+            self.device_fn.begin_command_buffer(
+                command_buffer,
+                &vk::CommandBufferBeginInfo {
+                    flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+                    ..default()
+                },
+            )
+        });
 
         let vulkan_cmd_encoder = per_thread.arena.alloc(VulkanCmdEncoder {
             command_buffer,
@@ -2737,9 +2760,10 @@ impl Device for VulkanDevice {
             };
         }
 
-        vk_check!(self
-            .device_fn
-            .end_command_buffer(cmd_encoder.command_buffer));
+        vk_check!(unsafe {
+            self.device_fn
+                .end_command_buffer(cmd_encoder.command_buffer)
+        });
 
         let mut wait_semaphores = Vec::new();
         let mut signal_semaphores = Vec::new();
@@ -2779,16 +2803,18 @@ impl Device for VulkanDevice {
             ..default()
         }];
 
-        vk_check!(self.device_fn.queue_submit2(
-            self.universal_queue,
-            &[vk::SubmitInfo2 {
-                wait_semaphore_infos: wait_semaphores.as_slice().into(),
-                command_buffer_infos: cmd_buffer_infos.into(),
-                signal_semaphore_infos: signal_semaphores.as_slice().into(),
-                ..default()
-            }],
-            vk::Fence::null()
-        ));
+        vk_check!(unsafe {
+            self.device_fn.queue_submit2(
+                self.universal_queue,
+                &[vk::SubmitInfo2 {
+                    wait_semaphore_infos: wait_semaphores.as_slice().into(),
+                    command_buffer_infos: cmd_buffer_infos.into(),
+                    signal_semaphore_infos: signal_semaphores.as_slice().into(),
+                    ..default()
+                }],
+                vk::Fence::null(),
+            )
+        });
     }
 
     fn wait_idle(&self) {
@@ -2812,18 +2838,20 @@ impl Device for VulkanDevice {
                     semaphores: (semaphores, semaphore_fences).into(),
                     ..default()
                 };
-                vk_check!(device_fn.wait_semaphores(device, &wait_info, !0));
+                vk_check!(unsafe { device_fn.wait_semaphores(device, &wait_info, !0) });
             }
 
             for per_thread in frame.per_thread.slots_mut() {
                 per_thread.descriptor_pool.set(vk::DescriptorPool::null());
                 let cmd_buffer_pool = per_thread.cmd_buffer_pool.get_mut();
                 if cmd_buffer_pool.next_free_index != 0 {
-                    vk_check!(device_fn.reset_command_pool(
-                        device,
-                        cmd_buffer_pool.command_pool,
-                        vk::CommandPoolResetFlags::default()
-                    ));
+                    vk_check!(unsafe {
+                        device_fn.reset_command_pool(
+                            device,
+                            cmd_buffer_pool.command_pool,
+                            vk::CommandPoolResetFlags::default(),
+                        )
+                    });
                     cmd_buffer_pool.next_free_index = 0;
                 }
 
@@ -2843,11 +2871,13 @@ impl Device for VulkanDevice {
                 .extend(frame.recycled_semaphores.get_mut().drain(..));
 
             for descriptor_pool in frame.recycled_descriptor_pools.get_mut() {
-                vk_check!(device_fn.reset_descriptor_pool(
-                    device,
-                    *descriptor_pool,
-                    vk::DescriptorPoolResetFlags::default()
-                ))
+                vk_check!(unsafe {
+                    device_fn.reset_descriptor_pool(
+                        device,
+                        *descriptor_pool,
+                        vk::DescriptorPoolResetFlags::default(),
+                    )
+                })
             }
 
             self.recycled_descriptor_pools
@@ -2906,9 +2936,10 @@ impl VulkanDevice {
                 ..default()
             };
             let mut buffer = vk::Buffer::null();
-            vk_check!(self
-                .device_fn
-                .create_buffer(self.device, &create_info, None, &mut buffer));
+            vk_check!(unsafe {
+                self.device_fn
+                    .create_buffer(self.device, &create_info, None, &mut buffer)
+            });
 
             let memory = self.allocate_memory(
                 MemoryLocation::Host,
@@ -3055,9 +3086,10 @@ impl VulkanDevice {
             ..default()
         };
         let mut buffer = vk::Buffer::null();
-        vk_check!(self
-            .device_fn
-            .create_buffer(self.device, &create_info, None, &mut buffer));
+        vk_check!(unsafe {
+            self.device_fn
+                .create_buffer(self.device, &create_info, None, &mut buffer)
+        });
 
         let memory = self.allocate_memory(
             MemoryLocation::Host,
@@ -3190,12 +3222,14 @@ impl VulkanDevice {
                             ..default()
                         };
                         let mut pipeline_layout = vk::PipelineLayout::null();
-                        vk_check!(self.device_fn.create_pipeline_layout(
-                            self.device,
-                            &create_info,
-                            None,
-                            &mut pipeline_layout,
-                        ));
+                        vk_check!(unsafe {
+                            self.device_fn.create_pipeline_layout(
+                                self.device,
+                                &create_info,
+                                None,
+                                &mut pipeline_layout,
+                            )
+                        });
                         pipeline_layout
                     };
 
@@ -3208,7 +3242,7 @@ impl VulkanDevice {
 
 impl Drop for VulkanDevice {
     fn drop(&mut self) {
-        vk_check!(self.device_fn.device_wait_idle(self.device));
+        vk_check!(unsafe { self.device_fn.device_wait_idle(self.device) });
 
         let device = self.device;
 

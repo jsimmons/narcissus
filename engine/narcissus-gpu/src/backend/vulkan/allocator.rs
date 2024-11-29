@@ -285,14 +285,16 @@ impl VulkanDevice {
 
         let mapped_ptr = if host_mapped {
             let mut data = std::ptr::null_mut();
-            vk_check!(self.device_fn.map_memory(
-                self.device,
-                memory,
-                0,
-                vk::WHOLE_SIZE,
-                vk::MemoryMapFlags::default(),
-                &mut data
-            ));
+            vk_check!(unsafe {
+                self.device_fn.map_memory(
+                    self.device,
+                    memory,
+                    0,
+                    vk::WHOLE_SIZE,
+                    vk::MemoryMapFlags::default(),
+                    &mut data,
+                )
+            });
             data as *mut u8
         } else {
             std::ptr::null_mut()
