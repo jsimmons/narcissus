@@ -30,3 +30,9 @@ lto="thin"
 [profile.dev]
 panic = "abort"
 opt-level = 0
+
+# Disable some pointless lints globally
+
+[workspace.lints.clippy]
+too_many_arguments = "allow"
+len_without_is_empty = "allow"

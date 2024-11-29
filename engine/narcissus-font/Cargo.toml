@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lints]
+workspace = true
+
 [dependencies]
 stb_truetype-sys = { path = "../../external/stb_truetype-sys" }
 narcissus-core = { path = "../narcissus-core" }
