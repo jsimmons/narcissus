@@ -139,7 +139,14 @@ fn gpu_sort(values: &mut [u32]) {
 
     gpu.wait_idle();
 
-    unsafe { sort_buffer.copy_to_slice(values) };
+    unsafe {
+        assert!(sort_buffer.len() == std::mem::size_of_val(values));
+        std::ptr::copy(
+            sort_buffer.as_ptr().cast_const(),
+            values.as_mut_ptr().cast(),
+            std::mem::size_of_val(values),
+        );
+    };
 }
 
 // This test requires a GPU, so ignore the test by default.
