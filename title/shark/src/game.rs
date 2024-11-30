@@ -82,10 +82,6 @@ impl Actions {
         self.new_values[action as usize] != 0.0 && self.old_values[action as usize] == 0.0
     }
 
-    pub fn became_inactive_this_frame(&self, action: Action) -> bool {
-        self.new_values[action as usize] == 0.0 && self.old_values[action as usize] != 0.0
-    }
-
     pub fn tick(&mut self, action_queue: &[ActionEvent]) {
         self.old_values = self.new_values;
 
