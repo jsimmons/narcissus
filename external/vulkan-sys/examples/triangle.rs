@@ -98,7 +98,7 @@ pub fn main() {
     let physical_device = physical_devices
         .iter()
         .copied()
-        .filter(|&physical_device| {
+        .find(|&physical_device| {
             let (
                 physical_device_properties,
                 _physical_device_properties_11,
@@ -110,9 +110,9 @@ pub fn main() {
                 let mut properties_11 = vk::PhysicalDeviceVulkan11Properties::default();
                 let mut properties = vk::PhysicalDeviceProperties2::default();
                 unsafe {
-                    properties._next = std::mem::transmute::<_, *mut c_void>(&mut properties_11);
-                    properties_11._next = std::mem::transmute::<_, *mut c_void>(&mut properties_12);
-                    properties_12._next = std::mem::transmute::<_, *mut c_void>(&mut properties_13);
+                    properties._next = &mut properties_11 as *mut _ as *mut c_void;
+                    properties_11._next = &mut properties_12 as *mut _ as *mut c_void;
+                    properties_12._next = &mut properties_13 as *mut _ as *mut c_void;
                     instance_fn.get_physical_device_properties2(physical_device, &mut properties);
                 }
                 (properties, properties_11, properties_12, properties_13)
@@ -141,7 +141,6 @@ pub fn main() {
                 && physical_device_features_13.dynamic_rendering == vk::Bool32::True
                 && physical_device_features_12.timeline_semaphore == vk::Bool32::True
         })
-        .next()
         .expect("no supported physical devices reported");
 
     let physical_device_memory_properties = unsafe {
@@ -210,18 +209,20 @@ pub fn main() {
     };
 
     let mut semaphore_value = 0;
-    let semaphore = unsafe {
+    let semaphore = {
         let type_create_info = vk::SemaphoreTypeCreateInfo {
             semaphore_type: vk::SemaphoreType::Timeline,
             initial_value: semaphore_value,
             ..default()
         };
         let create_info = vk::SemaphoreCreateInfo {
-            _next: std::mem::transmute::<_, _>(&type_create_info),
+            _next: &type_create_info as *const _ as *const c_void,
             ..default()
         };
         let mut semaphore = vk::Semaphore::null();
-        vk_check!(device_fn.create_semaphore(device, &create_info, None, &mut semaphore));
+        vk_check!(unsafe {
+            device_fn.create_semaphore(device, &create_info, None, &mut semaphore)
+        });
         semaphore
     };
 
@@ -364,10 +365,9 @@ pub fn main() {
                     physical_device_memory_properties.memory_types[memory_type_index as usize],
                 )
             })
-            .filter(|(i, memory_type)| {
+            .find(|(i, memory_type)| {
                 (filter & (1 << i)) != 0 && memory_type.property_flags.contains(flags)
             })
-            .next()
             .expect("could not find memory type matching flags")
             .0
     };
