@@ -203,7 +203,11 @@ pub fn main() {
 
     // Default to wayland because otherwise HiDPI is totally borked.
     // Unless renderdoc is attached, in which case wayland would break capture.
-    if renderdoc.is_none() && std::env::var("SDL_VIDEODRIVER").is_err() {
+    if renderdoc.is_none()
+        && std::env::var("SDL_VIDEODRIVER").is_err()
+        // Hot new SDL 3 environment variables!
+        && std::env::var("SDL_VIDEO_DRIVER").is_err()
+    {
         std::env::set_var("SDL_VIDEODRIVER", "wayland")
     }
 
