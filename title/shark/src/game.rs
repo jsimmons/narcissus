@@ -1,6 +1,6 @@
 use std::f32::consts::SQRT_2;
 
-use narcissus_core::{box_assume_init, default, rand::Pcg64, zeroed_box, BitIter};
+use narcissus_core::{box_assume_init, default, random::Pcg64, zeroed_box, BitIter};
 use narcissus_maths::{clamp, perlin_noise3, sin_pi_f32, vec3, Deg, HalfTurn, Mat4, Point3, Vec3};
 
 use crate::spring::simple_spring_damper_exact;
