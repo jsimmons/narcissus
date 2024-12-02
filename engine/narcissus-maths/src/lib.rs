@@ -261,6 +261,31 @@ pub fn f32_to_i64(x: f32) -> i64 {
     }
 }
 
+/// Returns either `x`, if `t` is `false` or `y` if `t` is `true`, avoiding branches.
+#[must_use]
+#[inline(always)]
+fn select_f32(x: f32, y: f32, t: bool) -> f32 {
+    // With avx512 the compiler tends to emit masked moves anyway, so don't bother being clever.
+    #[cfg(any(target_feature = "avx512f", not(target_feature = "sse4.1")))]
+    {
+        if t {
+            y
+        } else {
+            x
+        }
+    }
+
+    #[cfg(all(target_feature = "sse4.1", not(target_feature = "avx512f")))]
+    unsafe {
+        let x = core::arch::x86_64::_mm_load_ss(&x);
+        let y = core::arch::x86_64::_mm_load_ss(&y);
+        let mask = std::mem::transmute(core::arch::x86_64::_mm_cvtsi32_si128(-(t as i32)));
+        let mut res = 0.0_f32;
+        core::arch::x86_64::_mm_store_ss(&mut res, core::arch::x86_64::_mm_blendv_ps(x, y, mask));
+        res
+    }
+}
+
 #[macro_export]
 macro_rules! impl_shared {
     ($name:ty, $t:ty, $n:expr) => {
@@ -502,7 +527,7 @@ macro_rules! impl_vector {
 
 #[cfg(test)]
 mod tests {
-    use crate::{dequantize_unorm_u8, quantize_unorm_u8};
+    use crate::{dequantize_unorm_u8, quantize_unorm_u8, select_f32};
 
     #[test]
     fn quantize_dequantize() {
@@ -510,5 +535,11 @@ mod tests {
         assert_eq!(quantize_unorm_u8(0.0), 0);
         assert_eq!(dequantize_unorm_u8(255), 1.0);
         assert_eq!(dequantize_unorm_u8(0), 0.0);
+    }
+
+    #[test]
+    fn select() {
+        assert_eq!(select_f32(1.0, 2.0, true), 2.0);
+        assert_eq!(select_f32(1.0, 2.0, false), 1.0);
     }
 }
