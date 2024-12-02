@@ -229,8 +229,7 @@ pub fn f32_to_i32(x: f32) -> i32 {
 
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        let x = core::arch::x86_64::_mm_load_ss(&x);
-        core::arch::x86_64::_mm_cvtt_ss2si(x)
+        core::arch::x86_64::_mm_cvtt_ss2si(core::arch::x86_64::_mm_load_ss(&x))
     }
 }
 
@@ -256,8 +255,7 @@ pub fn f32_to_i64(x: f32) -> i64 {
 
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        let x = core::arch::x86_64::_mm_load_ss(&x);
-        core::arch::x86_64::_mm_cvttss_si64(x)
+        core::arch::x86_64::_mm_cvttss_si64(core::arch::x86_64::_mm_load_ss(&x))
     }
 }
 
@@ -277,11 +275,14 @@ fn select_f32(x: f32, y: f32, t: bool) -> f32 {
 
     #[cfg(all(target_feature = "sse4.1", not(target_feature = "avx512f")))]
     unsafe {
-        let x = core::arch::x86_64::_mm_load_ss(&x);
-        let y = core::arch::x86_64::_mm_load_ss(&y);
-        let mask = std::mem::transmute(core::arch::x86_64::_mm_cvtsi32_si128(-(t as i32)));
+        use core::arch::x86_64::{
+            __m128, __m128i, _mm_blendv_ps, _mm_cvtsi32_si128, _mm_load_ss, _mm_store_ss,
+        };
+        let x = _mm_load_ss(&x);
+        let y = _mm_load_ss(&y);
+        let mask = std::mem::transmute::<__m128i, __m128>(_mm_cvtsi32_si128(-(t as i32)));
         let mut res = 0.0_f32;
-        core::arch::x86_64::_mm_store_ss(&mut res, core::arch::x86_64::_mm_blendv_ps(x, y, mask));
+        _mm_store_ss(&mut res, _mm_blendv_ps(x, y, mask));
         res
     }
 }
