@@ -2,6 +2,7 @@ mod arena;
 mod bitset;
 pub mod dds;
 mod directory;
+pub mod errno;
 mod finite;
 mod fixed_vec;
 mod fourcc;

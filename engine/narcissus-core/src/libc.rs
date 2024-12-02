@@ -440,4 +440,7 @@ extern "C" {
     ) -> *mut c_void;
     pub fn munmap(addr: *mut c_void, len: size_t) -> c_int;
     pub fn mprotect(addr: *mut c_void, len: size_t, prot: c_int) -> c_int;
+
+    #[cfg_attr(target_os = "linux", link_name = "__errno_location")]
+    pub fn errno_location() -> *mut c_int;
 }
