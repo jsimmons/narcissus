@@ -1,5 +1,6 @@
 mod arena;
 mod bitset;
+pub mod crypto_random;
 pub mod dds;
 mod directory;
 pub mod errno;

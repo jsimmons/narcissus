@@ -2,7 +2,10 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused)]
 
-use std::os::raw::{c_int, c_long, c_void};
+use std::{
+    ffi::c_uint,
+    os::raw::{c_int, c_long, c_void},
+};
 
 pub type size_t = usize;
 pub type ptrdiff_t = isize;
@@ -443,4 +446,6 @@ extern "C" {
 
     #[cfg_attr(target_os = "linux", link_name = "__errno_location")]
     pub fn errno_location() -> *mut c_int;
+
+    pub fn getrandom(buf: *mut c_void, buf_len: size_t, flags: c_uint) -> isize;
 }
