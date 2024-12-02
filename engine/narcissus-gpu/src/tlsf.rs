@@ -854,7 +854,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use narcissus_core::rand::Pcg64;
+    use narcissus_core::random::Pcg64;
 
     use super::*;
 

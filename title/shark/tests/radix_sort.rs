@@ -1,4 +1,4 @@
-use narcissus_core::rand::Pcg64;
+use narcissus_core::random::Pcg64;
 use narcissus_gpu::{
     create_device, Access, BufferDesc, BufferUsageFlags, DeviceExt, GlobalBarrier, MemoryLocation,
     ShaderStageFlags, ThreadToken,
