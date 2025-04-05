@@ -57,6 +57,12 @@ pub struct VulkanWsiSupport {
     swapchain_mutable_format: bool,
 }
 
+impl VulkanWsiSupport {
+    pub fn swapchain_maintenance1(&self) -> bool {
+        self.swapchain_maintenance1
+    }
+}
+
 struct RecycleSwapchainSemaphore {
     fence: vk::Fence,
     semaphore: vk::Semaphore,

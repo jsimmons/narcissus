@@ -15,6 +15,8 @@ use narcissus_core::{
     Arc, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
+use physical_device_features::VulkanPhysicalDeviceFeatures;
+use physical_device_properties::VulkanPhysicalDeviceProperties;
 use vulkan_sys::{self as vk};
 
 use crate::{
@@ -33,6 +35,8 @@ mod allocator;
 mod barrier;
 mod convert;
 mod libc;
+mod physical_device_features;
+mod physical_device_properties;
 mod wsi;
 
 use self::{
@@ -382,16 +386,9 @@ pub(crate) struct VulkanDevice {
 
     allocator: VulkanAllocator,
 
-    physical_device_properties: Box<vk::PhysicalDeviceProperties2>,
-    _physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties>,
-    _physical_device_properties_12: Box<vk::PhysicalDeviceVulkan12Properties>,
-    physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties>,
+    physical_device_properties: Box<VulkanPhysicalDeviceProperties>,
     physical_device_memory_properties: Box<vk::PhysicalDeviceMemoryProperties>,
-
-    _physical_device_features: Box<vk::PhysicalDeviceFeatures2>,
-    _physical_device_features_11: Box<vk::PhysicalDeviceVulkan11Features>,
-    _physical_device_features_12: Box<vk::PhysicalDeviceVulkan12Features>,
-    _physical_device_features_13: Box<vk::PhysicalDeviceVulkan13Features>,
+    _physical_device_features: Box<VulkanPhysicalDeviceFeatures>,
 
     _global_fn: vk::GlobalFunctions,
     instance_fn: vk::InstanceFunctions,
@@ -510,31 +507,8 @@ impl VulkanDevice {
             instance_fn.enumerate_physical_devices(instance, count, ptr)
         });
 
-        let mut physical_device_properties: Box<vk::PhysicalDeviceProperties2> = default();
-        let mut physical_device_properties_11: Box<vk::PhysicalDeviceVulkan11Properties> =
-            default();
-        let mut physical_device_properties_12: Box<vk::PhysicalDeviceVulkan12Properties> =
-            default();
-        let mut physical_device_properties_13: Box<vk::PhysicalDeviceVulkan13Properties> =
-            default();
-
-        physical_device_properties_12._next =
-            physical_device_properties_13.as_mut() as *mut _ as *mut _;
-        physical_device_properties_11._next =
-            physical_device_properties_12.as_mut() as *mut _ as *mut _;
-        physical_device_properties._next =
-            physical_device_properties_11.as_mut() as *mut _ as *mut _;
-
-        let mut physical_device_features: Box<vk::PhysicalDeviceFeatures2> = default();
-        let mut physical_device_features_11: Box<vk::PhysicalDeviceVulkan11Features> = default();
-        let mut physical_device_features_12: Box<vk::PhysicalDeviceVulkan12Features> = default();
-        let mut physical_device_features_13: Box<vk::PhysicalDeviceVulkan13Features> = default();
-
-        physical_device_features_12._next =
-            physical_device_features_13.as_mut() as *mut _ as *mut _;
-        physical_device_features_11._next =
-            physical_device_features_12.as_mut() as *mut _ as *mut _;
-        physical_device_features._next = physical_device_features_11.as_mut() as *mut _ as *mut _;
+        let mut physical_device_properties: Box<VulkanPhysicalDeviceProperties> = default();
+        let mut physical_device_features: Box<VulkanPhysicalDeviceFeatures> = default();
 
         let physical_device = physical_devices
             .iter()
@@ -543,26 +517,24 @@ impl VulkanDevice {
                 unsafe {
                     instance_fn.get_physical_device_properties2(
                         physical_device,
-                        physical_device_properties.as_mut(),
+                        physical_device_properties.link(),
                     );
                     instance_fn.get_physical_device_features2(
                         physical_device,
-                        physical_device_features.as_mut(),
+                        physical_device_features.link(),
                     );
                 }
 
-                physical_device_properties.properties.api_version >= vk::VERSION_1_3
-                    && physical_device_features_13.dynamic_rendering == vk::Bool32::True
-                    && physical_device_features_13.subgroup_size_control == vk::Bool32::True
-                    && physical_device_features_13.maintenance4 == vk::Bool32::True
-                    && physical_device_features_13.compute_full_subgroups == vk::Bool32::True
-                    && physical_device_features_12.timeline_semaphore == vk::Bool32::True
-                    && physical_device_features_12.descriptor_indexing == vk::Bool32::True
-                    && physical_device_features_12.descriptor_binding_partially_bound
-                        == vk::Bool32::True
-                    && physical_device_features_12.draw_indirect_count == vk::Bool32::True
-                    && physical_device_features_12.uniform_buffer_standard_layout
-                        == vk::Bool32::True
+                physical_device_properties.api_version() >= vk::VERSION_1_3
+                    && physical_device_features.dynamic_rendering()
+                    && physical_device_features.subgroup_size_control()
+                    && physical_device_features.maintenance4()
+                    && physical_device_features.compute_full_subgroups()
+                    && physical_device_features.timeline_semaphore()
+                    && physical_device_features.descriptor_indexing()
+                    && physical_device_features.descriptor_binding_partially_bound()
+                    && physical_device_features.draw_indirect_count()
+                    && physical_device_features.uniform_buffer_standard_layout()
             })
             .expect("no supported physical devices reported");
 
@@ -616,38 +588,32 @@ impl VulkanDevice {
                 .iter()
                 .map(|x| x.as_ptr())
                 .collect::<Vec<*const c_char>>();
-            let enabled_features_13 = vk::PhysicalDeviceVulkan13Features {
-                dynamic_rendering: vk::Bool32::True,
-                synchronization2: vk::Bool32::True,
-                subgroup_size_control: vk::Bool32::True,
-                compute_full_subgroups: vk::Bool32::True,
-                maintenance4: vk::Bool32::True,
-                ..default()
-            };
-            let enabled_features_12 = vk::PhysicalDeviceVulkan12Features {
-                _next: &enabled_features_13 as *const vk::PhysicalDeviceVulkan13Features as *mut _,
-                buffer_device_address: vk::Bool32::True,
-                timeline_semaphore: vk::Bool32::True,
-                descriptor_indexing: vk::Bool32::True,
-                descriptor_binding_partially_bound: vk::Bool32::True,
-                draw_indirect_count: vk::Bool32::True,
-                uniform_buffer_standard_layout: vk::Bool32::True,
-                ..default()
-            };
-            let enabled_features_11 = vk::PhysicalDeviceVulkan11Features {
-                _next: &enabled_features_12 as *const vk::PhysicalDeviceVulkan12Features as *mut _,
-                ..default()
-            };
-            let enabled_features = vk::PhysicalDeviceFeatures2 {
-                _next: &enabled_features_11 as *const vk::PhysicalDeviceVulkan11Features as *mut _,
-                ..default()
-            };
+
+            let mut enabled_features: Box<VulkanPhysicalDeviceFeatures> = default();
+
+            enabled_features.set_dynamic_rendering(true);
+            enabled_features.set_synchronization2(true);
+            enabled_features.set_subgroup_size_control(true);
+            enabled_features.set_compute_full_subgroups(true);
+            enabled_features.set_maintenance4(true);
+            enabled_features.set_buffer_device_address(true);
+            enabled_features.set_timeline_semaphore(true);
+            enabled_features.set_descriptor_indexing(true);
+            enabled_features.set_descriptor_binding_partially_bound(true);
+            enabled_features.set_draw_indirect_count(true);
+            enabled_features.set_uniform_buffer_standard_layout(true);
+
+            if wsi_support.swapchain_maintenance1() {
+                enabled_features.set_swapchain_maintenance1(true);
+            }
+
             let create_info = vk::DeviceCreateInfo {
-                _next: &enabled_features as *const vk::PhysicalDeviceFeatures2 as *const _,
+                _next: enabled_features.link() as *mut _ as *const _,
                 enabled_extension_names: enabled_extensions.as_slice().into(),
                 queue_create_infos: device_queue_create_infos.into(),
                 ..default()
             };
+
             let mut device = vk::Device::null();
             vk_check!(unsafe {
                 instance_fn.create_device(physical_device, &create_info, None, &mut device)
@@ -742,10 +708,7 @@ impl VulkanDevice {
         }));
 
         let allocator = VulkanAllocator::new(
-            physical_device_properties
-                .properties
-                .limits
-                .buffer_image_granularity,
+            physical_device_properties.limits().buffer_image_granularity,
             physical_device_memory_properties.as_ref(),
         );
 
@@ -780,15 +743,8 @@ impl VulkanDevice {
             allocator,
 
             physical_device_properties,
-            _physical_device_properties_11: physical_device_properties_11,
-            _physical_device_properties_12: physical_device_properties_12,
-            physical_device_properties_13,
             physical_device_memory_properties,
-
             _physical_device_features: physical_device_features,
-            _physical_device_features_11: physical_device_features_11,
-            _physical_device_features_12: physical_device_features_12,
-            _physical_device_features_13: physical_device_features_13,
 
             _global_fn: global_fn,
             instance_fn,
@@ -1616,13 +1572,13 @@ impl Device for VulkanDevice {
 
         if let Some(required_subgroup_size) = pipeline_desc.shader.required_subgroup_size {
             assert!(self
-                .physical_device_properties_13
-                .required_subgroup_size_stages
+                .physical_device_properties
+                .required_subgroup_size_stages()
                 .contains(vk::ShaderStageFlags::COMPUTE));
             assert!(
-                required_subgroup_size >= self.physical_device_properties_13.min_subgroup_size
+                required_subgroup_size >= self.physical_device_properties.min_subgroup_size()
                     && required_subgroup_size
-                        <= self.physical_device_properties_13.max_subgroup_size
+                        <= self.physical_device_properties.max_subgroup_size()
             );
 
             let shader_stage_required_subgroup_size_create_info =
@@ -2999,8 +2955,7 @@ impl VulkanDevice {
         let align = if usage.contains(BufferUsageFlags::UNIFORM) {
             align.max(
                 self.physical_device_properties
-                    .properties
-                    .limits
+                    .limits()
                     .min_uniform_buffer_offset_alignment,
             )
         } else {
@@ -3010,8 +2965,7 @@ impl VulkanDevice {
         let align = if usage.contains(BufferUsageFlags::STORAGE) {
             align.max(
                 self.physical_device_properties
-                    .properties
-                    .limits
+                    .limits()
                     .min_storage_buffer_offset_alignment,
             )
         } else {
@@ -3023,8 +2977,7 @@ impl VulkanDevice {
         let align = if usage.contains(BufferUsageFlags::TRANSFER) {
             align.max(
                 self.physical_device_properties
-                    .properties
-                    .limits
+                    .limits()
                     .optimal_buffer_copy_offset_alignment,
             )
         } else {

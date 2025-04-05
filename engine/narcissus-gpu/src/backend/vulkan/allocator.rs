@@ -230,8 +230,7 @@ impl VulkanDevice {
         if self.allocator.stats.num_allocations()
             >= self
                 .physical_device_properties
-                .properties
-                .limits
+                .limits()
                 .max_memory_allocation_count
         {
             return None;
