@@ -14,13 +14,15 @@ impl std::fmt::Display for AllocError {
 impl std::error::Error for AllocError {}
 
 #[inline(always)]
-unsafe fn layout_from_size_align(size: usize, align: usize) -> Layout { unsafe {
-    if cfg!(debug_assertions) {
-        Layout::from_size_align(size, align).unwrap()
-    } else {
-        Layout::from_size_align_unchecked(size, align)
+unsafe fn layout_from_size_align(size: usize, align: usize) -> Layout {
+    unsafe {
+        if cfg!(debug_assertions) {
+            Layout::from_size_align(size, align).unwrap()
+        } else {
+            Layout::from_size_align_unchecked(size, align)
+        }
     }
-}}
+}
 
 /// Wrapper around a pointer to a page footer.
 ///
@@ -66,9 +68,9 @@ impl PagePointer {
     }
 
     #[inline(always)]
-    unsafe fn as_ref<'a>(&self) -> &'a PageFooter { unsafe {
-        &*self.as_ptr()
-    }}
+    unsafe fn as_ref<'a>(&self) -> &'a PageFooter {
+        unsafe { &*self.as_ptr() }
+    }
 }
 
 #[repr(C)]
@@ -131,11 +133,13 @@ impl PageFooter {
     /// This must only be called on pages which have no outstanding references to
     /// allocations, as it allows subsequent operations to allocate the same
     /// addresses.
-    unsafe fn reset(&self) { unsafe {
-        self.bump.set(NonNull::new_unchecked(
-            self.base.as_ptr().add(self.size - PAGE_FOOTER_SIZE),
-        ));
-    }}
+    unsafe fn reset(&self) {
+        unsafe {
+            self.bump.set(NonNull::new_unchecked(
+                self.base.as_ptr().add(self.size - PAGE_FOOTER_SIZE),
+            ));
+        }
+    }
 }
 
 /// Special type for the empty page because static requires Sync.
@@ -166,44 +170,47 @@ static EMPTY_PAGE: PageFooterSync = PageFooterSync(unsafe {
 ///
 /// `page` must refer to a valid page footer, or the empty page.
 #[cold]
-unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePointer> { unsafe {
-    let page_size = page.as_ref().size;
-    // Double each allocated page to amortize allocation cost.
-    let new_page_size = page_size * 2;
-    // Clamp between `PAGE_MIN_SIZE` and `PAGE_MAX_SIZE` to handle the case where
-    // the existing page is the empty page, and to avoid overly large allocated
-    // blocks.
-    let new_page_size = new_page_size.clamp(PAGE_MIN_SIZE, PAGE_MAX_SIZE);
-    // Ensure that after all that, the given page is large enough to hold the thing
-    // we're trying to allocate.
-    let new_page_size = new_page_size.max(layout.size() + (layout.align() - 1) + PAGE_FOOTER_SIZE);
-    // Round up to page footer alignment.
-    let new_page_size = align_offset(new_page_size, std::mem::align_of::<PageFooter>());
-    let size_without_footer = new_page_size - PAGE_FOOTER_SIZE;
-    debug_assert_ne!(size_without_footer, 0);
+unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePointer> {
+    unsafe {
+        let page_size = page.as_ref().size;
+        // Double each allocated page to amortize allocation cost.
+        let new_page_size = page_size * 2;
+        // Clamp between `PAGE_MIN_SIZE` and `PAGE_MAX_SIZE` to handle the case where
+        // the existing page is the empty page, and to avoid overly large allocated
+        // blocks.
+        let new_page_size = new_page_size.clamp(PAGE_MIN_SIZE, PAGE_MAX_SIZE);
+        // Ensure that after all that, the given page is large enough to hold the thing
+        // we're trying to allocate.
+        let new_page_size =
+            new_page_size.max(layout.size() + (layout.align() - 1) + PAGE_FOOTER_SIZE);
+        // Round up to page footer alignment.
+        let new_page_size = align_offset(new_page_size, std::mem::align_of::<PageFooter>());
+        let size_without_footer = new_page_size - PAGE_FOOTER_SIZE;
+        debug_assert_ne!(size_without_footer, 0);
 
-    let layout = layout_from_size_align(new_page_size, std::mem::align_of::<PageFooter>());
-    let base_ptr = std::alloc::alloc(layout);
-    let base = NonNull::new(base_ptr)?;
-    let bump = base_ptr.add(size_without_footer);
-    let bump = NonNull::new_unchecked(bump);
-    let footer = bump.as_ptr() as *mut PageFooter;
+        let layout = layout_from_size_align(new_page_size, std::mem::align_of::<PageFooter>());
+        let base_ptr = std::alloc::alloc(layout);
+        let base = NonNull::new(base_ptr)?;
+        let bump = base_ptr.add(size_without_footer);
+        let bump = NonNull::new_unchecked(bump);
+        let footer = bump.as_ptr() as *mut PageFooter;
 
-    debug_assert_ne!(base, bump);
-    debug_assert!(base < bump);
+        debug_assert_ne!(base, bump);
+        debug_assert!(base < bump);
 
-    std::ptr::write(
-        footer,
-        PageFooter {
-            base,
-            bump: Cell::new(bump),
-            size: new_page_size,
-            next: Cell::new(page),
-        },
-    );
+        std::ptr::write(
+            footer,
+            PageFooter {
+                base,
+                bump: Cell::new(bump),
+                size: new_page_size,
+                next: Cell::new(page),
+            },
+        );
 
-    Some(PagePointer::new_heap(footer))
-}}
+        Some(PagePointer::new_heap(footer))
+    }
+}
 
 /// Deallocate the given page if it was allocated with the global allocator, and
 /// all the heap pages linked to it.
@@ -213,17 +220,20 @@ unsafe fn prepend_new_page(page: PagePointer, layout: Layout) -> Option<PagePoin
 /// Must not be called on any pages that hold live allocations, or pages which
 /// link to pages that hold live allocations.
 #[cold]
-unsafe fn deallocate_page_list(mut page: PagePointer) { unsafe {
-    // Walk the linked list of pages and deallocate each one that originates from
-    // the heap. The last page is either the empty page, or the hybrid page, both of
-    // which are marked as stack page pointers.
-    while !page.is_stack() {
-        let p = page;
-        page = page.as_ref().next.get();
-        let layout = layout_from_size_align(p.as_ref().size, std::mem::align_of::<PageFooter>());
-        std::alloc::dealloc(p.as_ref().base.as_ptr(), layout);
+unsafe fn deallocate_page_list(mut page: PagePointer) {
+    unsafe {
+        // Walk the linked list of pages and deallocate each one that originates from
+        // the heap. The last page is either the empty page, or the hybrid page, both of
+        // which are marked as stack page pointers.
+        while !page.is_stack() {
+            let p = page;
+            page = page.as_ref().next.get();
+            let layout =
+                layout_from_size_align(p.as_ref().size, std::mem::align_of::<PageFooter>());
+            std::alloc::dealloc(p.as_ref().base.as_ptr(), layout);
+        }
     }
-}}
+}
 
 /// An allocation arena.
 ///
@@ -318,10 +328,7 @@ impl Arena {
         // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
-            let ptr = match self.try_alloc_layout(layout) {
-                Ok(ptr) => ptr,
-                Err(e) => return Err(e),
-            };
+            let ptr = self.try_alloc_layout(layout)?;
             let ptr = ptr.as_ptr() as *mut T;
             std::ptr::write(ptr, f());
             Ok(&mut *ptr)
@@ -578,10 +585,7 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
         // SAFETY: We allocate memory for `T` and then write a `T` into that location.
         unsafe {
             let layout = Layout::new::<T>();
-            let ptr = match self.try_alloc_layout(layout) {
-                Ok(ptr) => ptr,
-                Err(e) => return Err(e),
-            };
+            let ptr = self.try_alloc_layout(layout)?;
             let ptr = ptr.as_ptr() as *mut T;
             std::ptr::write(ptr, f());
             Ok(&mut *ptr)
@@ -648,20 +652,22 @@ impl<const STACK_CAP: usize> HybridArena<STACK_CAP> {
     /// the hybrid page.
     #[inline(never)]
     #[cold]
-    unsafe fn setup_hybrid_page(&self) { unsafe {
-        let base = self.data.as_ptr() as *mut u8;
-        let bump = base.add(STACK_CAP);
-        self.footer.set(PageFooter {
-            base: NonNull::new_unchecked(base),
-            bump: Cell::new(NonNull::new_unchecked(bump)),
-            size: STACK_CAP + PAGE_FOOTER_SIZE,
-            next: Cell::new(PagePointer::empty()),
-        });
-        debug_assert_eq!(base as usize, self as *const _ as usize);
-        debug_assert_eq!(bump as usize, self.footer.as_ptr() as usize);
-        self.page_list_head
-            .set(PagePointer::new_stack(self.footer.as_ptr()));
-    }}
+    unsafe fn setup_hybrid_page(&self) {
+        unsafe {
+            let base = self.data.as_ptr() as *mut u8;
+            let bump = base.add(STACK_CAP);
+            self.footer.set(PageFooter {
+                base: NonNull::new_unchecked(base),
+                bump: Cell::new(NonNull::new_unchecked(bump)),
+                size: STACK_CAP + PAGE_FOOTER_SIZE,
+                next: Cell::new(PagePointer::empty()),
+            });
+            debug_assert_eq!(base as usize, self as *const _ as usize);
+            debug_assert_eq!(bump as usize, self.footer.as_ptr() as usize);
+            self.page_list_head
+                .set(PagePointer::new_stack(self.footer.as_ptr()));
+        }
+    }
 
     #[inline(never)]
     #[cold]

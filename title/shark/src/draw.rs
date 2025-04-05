@@ -2,18 +2,18 @@ use std::ops::Index;
 use std::path::Path;
 
 use crate::game::GameState;
-use crate::{microshades, UiState};
+use crate::{UiState, microshades};
 use narcissus_core::dds;
 
 use shark_shaders::pipelines::{
-    calculate_spine_size, BasicConstants, CompositeConstants, ComputeBinds, Draw2dClearConstants,
+    BasicConstants, CompositeConstants, ComputeBinds, DRAW_2D_TILE_SIZE, Draw2dClearConstants,
     Draw2dRasterizeConstants, Draw2dResolveConstants, Draw2dScatterConstants, Draw2dSortConstants,
     GraphicsBinds, Pipelines, RadixSortDownsweepConstants, RadixSortUpsweepConstants,
-    DRAW_2D_TILE_SIZE,
+    calculate_spine_size,
 };
 
 use crate::helpers::load_obj;
-use narcissus_core::{default, BitIter};
+use narcissus_core::{BitIter, default};
 use narcissus_gpu::{
     Access, Bind, BufferImageCopy, BufferUsageFlags, ClearValue, CmdEncoder, DeviceExt, Extent2d,
     Extent3d, Frame, GlobalBarrier, Gpu, Image, ImageAspectFlags, ImageBarrier, ImageDesc,
@@ -22,7 +22,7 @@ use narcissus_gpu::{
     RenderingDesc, Scissor, ShaderStageFlags, StoreOp, ThreadToken, TypedBind, Viewport,
 };
 use narcissus_image as image;
-use narcissus_maths::{vec3, Affine3, HalfTurn, Mat3, Mat4, Vec3};
+use narcissus_maths::{Affine3, HalfTurn, Mat3, Mat4, Vec3, vec3};
 
 pub struct Model<'a> {
     indices: u32,
@@ -1049,7 +1049,12 @@ impl<'gpu> DrawState<'gpu> {
                         tile_buffer_address,
                     },
                 );
-                gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    self.width.div_ceil(8),
+                    self.height.div_ceil(8),
+                    1,
+                );
 
                 gpu.cmd_end_debug_marker(cmd_encoder);
             }
@@ -1095,7 +1100,12 @@ impl<'gpu> DrawState<'gpu> {
                         tile_buffer_address,
                     },
                 );
-                gpu.cmd_dispatch(cmd_encoder, (self.width + 7) / 8, (self.height + 7) / 8, 1);
+                gpu.cmd_dispatch(
+                    cmd_encoder,
+                    self.width.div_ceil(8),
+                    self.height.div_ceil(8),
+                    1,
+                );
 
                 gpu.cmd_end_debug_marker(cmd_encoder);
             }
