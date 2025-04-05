@@ -1,6 +1,6 @@
 
 #[allow(dead_code)]
-extern "C" {
+unsafe extern "C" {
     pub fn blake3_compress_in_place_avx512(
         cv: *mut u32,
         block: *const u8,

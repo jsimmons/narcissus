@@ -155,7 +155,7 @@ pub mod truetype {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn stbrp_pack_rects(
         context: *mut rectpack::Context,
         rects: *mut rectpack::Rect,

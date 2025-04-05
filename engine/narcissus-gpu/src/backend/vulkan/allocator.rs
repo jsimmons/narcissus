@@ -302,7 +302,7 @@ impl VulkanDevice {
         Some((memory, mapped_ptr))
     }
 
-    unsafe fn free_super_block(&self, user_data: &VulkanSuperBlockInfo) {
+    unsafe fn free_super_block(&self, user_data: &VulkanSuperBlockInfo) { unsafe {
         self.device_fn
             .free_memory(self.device, user_data.memory, None);
 
@@ -312,7 +312,7 @@ impl VulkanDevice {
         let size = self.allocator.tlsf_super_block_size[memory_heap_index.widen()];
 
         self.allocator.stats.free(memory_heap_index, size);
-    }
+    }}
 
     pub fn allocate_memory(
         &self,

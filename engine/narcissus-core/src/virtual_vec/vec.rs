@@ -66,13 +66,13 @@ impl<T> VirtualVec<T> {
     }
 
     #[inline]
-    unsafe fn append_elements(&mut self, other: *const [T]) {
+    unsafe fn append_elements(&mut self, other: *const [T]) { unsafe {
         let count = (*other).len();
         self.reserve(count);
         let len = self.len();
         ptr::copy_nonoverlapping(other as *const T, self.as_mut_ptr().add(len), count);
         self.len += count;
-    }
+    }}
 
     pub fn clear(&mut self) {
         self.truncate(0)

@@ -21,7 +21,7 @@ fn overflow() -> ! {
 /// This function will propagate undefined values from T, for example, padding
 /// bytes, so it's vital that no Rust reference to the written memory exists
 /// after writing a `T` which contains undefined values.
-unsafe fn copy_from_with_offset<T: ?Sized>(ptr: NonNull<u8>, len: usize, offset: usize, src: &T) {
+unsafe fn copy_from_with_offset<T: ?Sized>(ptr: NonNull<u8>, len: usize, offset: usize, src: &T) { unsafe {
     let size = std::mem::size_of_val(src);
 
     let Some(end) = offset.checked_add(size) else {
@@ -50,7 +50,7 @@ unsafe fn copy_from_with_offset<T: ?Sized>(ptr: NonNull<u8>, len: usize, offset:
     let src = src.add(offset);
     let dst = ptr.as_ptr();
     std::ptr::copy_nonoverlapping(src, dst, count)
-}
+}}
 
 /// Persistent mapped buffer.
 ///

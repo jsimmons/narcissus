@@ -5,7 +5,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use narcissus_maths::{exp_f32, next_after_f32, sin_cos_pi_f32, tan_pi_f32};
+use narcissus_maths::{exp_f32, sin_cos_pi_f32, tan_pi_f32};
 
 use gmp_mpfr_sys::mpfr;
 
@@ -288,7 +288,13 @@ impl FloatCheck {
         }
 
         let err = our_value - ref_value;
-        let ulp = next_after_f32(ref_value, our_value) - ref_value;
+        let ulp = if ref_value > our_value {
+            ref_value.next_down()
+        } else if ref_value < our_value {
+            ref_value.next_up()
+        } else {
+            ref_value
+        } - ref_value;
         let err = (err / ulp).abs();
         if err >= u32::MAX as f32 {
             u32::MAX

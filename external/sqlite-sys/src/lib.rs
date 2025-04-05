@@ -323,7 +323,7 @@ impl Destructor {
 pub const SQLITE_STATIC: Destructor = unsafe { std::mem::transmute(0usize) };
 pub const SQLITE_TRANSIENT: Destructor = unsafe { std::mem::transmute(!0usize) };
 
-extern "C" {
+unsafe extern "C" {
     pub fn sqlite3_libversion_number() -> c_int;
 
     pub fn sqlite3_initialize() -> c_int;

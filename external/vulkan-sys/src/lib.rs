@@ -318,7 +318,7 @@ pub struct GlobalFunctions {
 }
 
 impl GlobalFunctions {
-    pub unsafe fn new(get_proc_addr: *mut c_void) -> Self {
+    pub unsafe fn new(get_proc_addr: *mut c_void) -> Self { unsafe {
         let get_instance_proc_addr = transmute::<_, FnGetInstanceProcAddr>(get_proc_addr);
         Self {
             get_instance_proc_addr,
@@ -339,7 +339,7 @@ impl GlobalFunctions {
                     .expect("failed to load vkCreateInstance"),
             ),
         }
-    }
+    }}
 
     #[inline]
     pub unsafe fn get_instance_proc_addr(

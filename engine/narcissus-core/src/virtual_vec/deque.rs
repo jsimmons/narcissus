@@ -71,27 +71,27 @@ impl<T> VirtualDeque<T> {
 
     /// Turn ptr into a slice
     #[inline]
-    unsafe fn buffer_as_slice(&self) -> &[T] {
+    unsafe fn buffer_as_slice(&self) -> &[T] { unsafe {
         slice::from_raw_parts(self.ptr(), self.cap())
-    }
+    }}
 
     /// Turn ptr into a mut slice
     #[inline]
-    unsafe fn buffer_as_mut_slice(&mut self) -> &mut [T] {
+    unsafe fn buffer_as_mut_slice(&mut self) -> &mut [T] { unsafe {
         slice::from_raw_parts_mut(self.ptr(), self.cap())
-    }
+    }}
 
     /// Moves an element out of the buffer
     #[inline]
-    unsafe fn buffer_read(&mut self, off: usize) -> T {
+    unsafe fn buffer_read(&mut self, off: usize) -> T { unsafe {
         ptr::read(self.ptr().add(off))
-    }
+    }}
 
     /// Writes an element into the buffer, moving it.
     #[inline]
-    unsafe fn buffer_write(&mut self, off: usize, value: T) {
+    unsafe fn buffer_write(&mut self, off: usize, value: T) { unsafe {
         ptr::write(self.ptr().add(off), value);
-    }
+    }}
 
     pub fn len(&self) -> usize {
         count(self.tail, self.head, self.cap())
@@ -124,7 +124,7 @@ impl<T> VirtualDeque<T> {
 
     /// Copies a contiguous block of memory len long from src to dst
     #[inline]
-    unsafe fn copy(&self, dst: usize, src: usize, len: usize) {
+    unsafe fn copy(&self, dst: usize, src: usize, len: usize) { unsafe {
         debug_assert!(
             dst + len <= self.cap(),
             "cpy dst={} src={} len={} cap={}",
@@ -142,11 +142,11 @@ impl<T> VirtualDeque<T> {
             self.cap()
         );
         ptr::copy(self.ptr().add(src), self.ptr().add(dst), len);
-    }
+    }}
 
     /// Copies a contiguous block of memory len long from src to dst
     #[inline]
-    unsafe fn copy_nonoverlapping(&self, dst: usize, src: usize, len: usize) {
+    unsafe fn copy_nonoverlapping(&self, dst: usize, src: usize, len: usize) { unsafe {
         debug_assert!(
             dst + len <= self.cap(),
             "cno dst={} src={} len={} cap={}",
@@ -164,12 +164,12 @@ impl<T> VirtualDeque<T> {
             self.cap()
         );
         ptr::copy_nonoverlapping(self.ptr().add(src), self.ptr().add(dst), len);
-    }
+    }}
 
     /// Frobs the head and tail sections around to handle the fact that we
     /// just reallocated. Unsafe because it trusts old_capacity.
     #[inline]
-    unsafe fn handle_capacity_increase(&mut self, old_capacity: usize) {
+    unsafe fn handle_capacity_increase(&mut self, old_capacity: usize) { unsafe {
         let new_capacity = self.cap();
 
         // Move the shortest contiguous section of the ring buffer
@@ -204,7 +204,7 @@ impl<T> VirtualDeque<T> {
         debug_assert!(self.head < self.cap());
         debug_assert!(self.tail < self.cap());
         debug_assert!(self.cap().count_ones() == 1);
-    }
+    }}
 
     pub fn reserve_exact(&mut self, additional: usize) {
         self.reserve(additional);

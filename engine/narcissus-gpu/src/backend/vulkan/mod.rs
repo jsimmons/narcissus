@@ -2360,29 +2360,31 @@ impl Device for VulkanDevice {
         ptr: *const u8,
         len: usize,
     ) {
-        let len = u32::try_from(len).unwrap();
+        unsafe {
+            let len = u32::try_from(len).unwrap();
 
-        let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
-        let command_buffer = cmd_encoder.command_buffer;
+            let cmd_encoder = self.cmd_encoder_mut(cmd_encoder);
+            let command_buffer = cmd_encoder.command_buffer;
 
-        let VulkanBoundPipeline {
-            pipeline_layout,
-            pipeline_bind_point: _,
-        } = cmd_encoder
-            .bound_pipeline
-            .as_ref()
-            .expect("cannot push constants without a pipeline bound")
-            .clone();
+            let VulkanBoundPipeline {
+                pipeline_layout,
+                pipeline_bind_point: _,
+            } = cmd_encoder
+                .bound_pipeline
+                .as_ref()
+                .expect("cannot push constants without a pipeline bound")
+                .clone();
 
-        let stage_flags = vulkan_shader_stage_flags(stage_flags);
-        self.device_fn.cmd_push_constants(
-            command_buffer,
-            pipeline_layout,
-            stage_flags,
-            offset,
-            len,
-            ptr as *const std::ffi::c_void,
-        )
+            let stage_flags = vulkan_shader_stage_flags(stage_flags);
+            self.device_fn.cmd_push_constants(
+                command_buffer,
+                pipeline_layout,
+                stage_flags,
+                offset,
+                len,
+                ptr as *const std::ffi::c_void,
+            )
+        }
     }
 
     fn cmd_copy_buffer_to_image(

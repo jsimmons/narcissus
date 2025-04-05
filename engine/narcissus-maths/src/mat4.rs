@@ -264,12 +264,12 @@ impl Mat4 {
     // SAFETY: Requires SSE2.
     #[inline]
     #[target_feature(enable = "sse2")]
-    unsafe fn transpose_sse2(self) -> Mat4 {
+    unsafe fn transpose_sse2(self) -> Mat4 { unsafe {
         use std::arch::x86_64::_MM_TRANSPOSE4_PS;
         let [mut row0, mut row1, mut row2, mut row3] = self.as_m128_array();
         _MM_TRANSPOSE4_PS(&mut row0, &mut row1, &mut row2, &mut row3);
         Mat4::from_m128_array([row0, row1, row2, row3])
-    }
+    }}
 
     /// Returns the transpose of `self`.
     #[must_use]
@@ -337,7 +337,7 @@ impl Mat4 {
     #[allow(dead_code)]
     #[inline]
     #[target_feature(enable = "sse4.1")]
-    unsafe fn transform_vec4_sse41(&self, vec: Vec4) -> Vec4 {
+    unsafe fn transform_vec4_sse41(&self, vec: Vec4) -> Vec4 { unsafe {
         use std::arch::x86_64::{_mm_hadd_ps, _mm_mul_ps};
 
         let vec = vec.into();
@@ -349,7 +349,7 @@ impl Mat4 {
         );
 
         values.into()
-    }
+    }}
 
     /// Transforms the given [`Vec4`] `vec` by `self`.
     #[must_use]
@@ -421,14 +421,14 @@ unsafe fn mul_mat4_sse2(lhs: Mat4, rhs: Mat4) -> Mat4 {
 #[allow(dead_code)]
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn mul_mat4_avx2(lhs: Mat4, rhs: Mat4) -> Mat4 {
+unsafe fn mul_mat4_avx2(lhs: Mat4, rhs: Mat4) -> Mat4 { unsafe {
     use std::arch::x86_64::{
         __m128, __m256, _mm256_add_ps, _mm256_broadcast_ps, _mm256_loadu_ps, _mm256_mul_ps,
         _mm256_shuffle_ps, _mm256_storeu_ps, _mm256_zeroupper,
     };
 
     #[inline(always)]
-    unsafe fn two_linear_combine(a: __m256, m: &[__m128; 4]) -> __m256 {
+    unsafe fn two_linear_combine(a: __m256, m: &[__m128; 4]) -> __m256 { unsafe {
         let m0 = _mm256_broadcast_ps(&m[0]);
         let m1 = _mm256_broadcast_ps(&m[1]);
         let m2 = _mm256_broadcast_ps(&m[2]);
@@ -437,7 +437,7 @@ unsafe fn mul_mat4_avx2(lhs: Mat4, rhs: Mat4) -> Mat4 {
         let r = _mm256_add_ps(r, _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0x55), m1));
         let r = _mm256_add_ps(r, _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xaa), m2));
         _mm256_add_ps(r, _mm256_mul_ps(_mm256_shuffle_ps(a, a, 0xff), m3))
-    }
+    }}
 
     _mm256_zeroupper();
 
@@ -452,7 +452,7 @@ unsafe fn mul_mat4_avx2(lhs: Mat4, rhs: Mat4) -> Mat4 {
     _mm256_storeu_ps(&mut result.0[0], x0);
     _mm256_storeu_ps(&mut result.0[8], x1);
     result
-}
+}}
 
 impl std::ops::Mul for Mat4 {
     type Output = Mat4;

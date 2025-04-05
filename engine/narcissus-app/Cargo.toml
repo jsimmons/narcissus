@@ -1,7 +1,7 @@
 [package]
 name = "narcissus-app"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,4 +10,4 @@ workspace = true
 
 [dependencies]
 narcissus-core = { path = "../narcissus-core" }
-sdl3-sys = "0.1.2"
+sdl3-sys = "0.4.7"

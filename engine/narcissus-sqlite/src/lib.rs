@@ -14,7 +14,7 @@ use sqlite_sys as ffi;
 static SQLITE_GLOBAL_INIT: OnceLock<()> = OnceLock::new();
 
 #[cold]
-unsafe fn initialize() {
+unsafe fn initialize() { unsafe {
     let ret = ffi::sqlite3_initialize();
     if ret != sqlite_sys::SQLITE_OK {
         panic!("error initializing sqlite: {:?}", Error::new(ret));
@@ -37,7 +37,7 @@ unsafe fn initialize() {
             panic!("error installing sqlite logger: {:?}", Error::new(ret));
         }
     }
-}
+}}
 
 fn check_initalized() {
     SQLITE_GLOBAL_INIT.get_or_init(|| unsafe { initialize() });

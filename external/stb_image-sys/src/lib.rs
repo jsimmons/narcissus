@@ -21,7 +21,7 @@ pub struct stbi_io_callbacks {
     pub eof: extern "C" fn(user: *mut c_void) -> i32,
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn stbi_load_from_memory(
         buffer: *const c_uchar,
         len: c_int,

@@ -196,7 +196,8 @@ impl<'a> UiState<'a> {
 pub fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("RUST_BACKTRACE").is_err() {
-        std::env::set_var("RUST_BACKTRACE", "1")
+        // SAFETY: Called on the main thread before other threads are spawned.
+        unsafe { std::env::set_var("RUST_BACKTRACE", "1") }
     }
 
     let renderdoc = rdoc::RenderdocApi1_5_0::load();
@@ -208,7 +209,8 @@ pub fn main() {
         // Hot new SDL 3 environment variables!
         && std::env::var("SDL_VIDEO_DRIVER").is_err()
     {
-        std::env::set_var("SDL_VIDEODRIVER", "wayland")
+        // SAFETY: Called on the main thread before other threads are spawned.
+        unsafe { std::env::set_var("SDL_VIDEODRIVER", "wayland") }
     }
 
     let ui_scale_override =

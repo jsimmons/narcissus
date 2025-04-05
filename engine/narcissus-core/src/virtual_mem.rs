@@ -55,10 +55,10 @@ pub fn virtual_reserve(size: usize) -> Result<*mut std::ffi::c_void, MapError> {
 /// Panics if changing page permissions for the range fails.
 #[cold]
 #[inline(never)]
-pub unsafe fn virtual_commit(ptr: *mut std::ffi::c_void, size: usize) {
+pub unsafe fn virtual_commit(ptr: *mut std::ffi::c_void, size: usize) { unsafe {
     let result = libc::mprotect(ptr, size, libc::PROT_READ | libc::PROT_WRITE);
     assert!(result == 0);
-}
+}}
 
 /// Release a reserved or comitted virtual memory range.
 ///
@@ -68,11 +68,11 @@ pub unsafe fn virtual_commit(ptr: *mut std::ffi::c_void, size: usize) {
 /// - `size` must be within range of that reservation.
 #[cold]
 #[inline(never)]
-pub unsafe fn virtual_free(ptr: *mut std::ffi::c_void, size: usize) -> Result<(), MapError> {
+pub unsafe fn virtual_free(ptr: *mut std::ffi::c_void, size: usize) -> Result<(), MapError> { unsafe {
     let result = libc::munmap(ptr, size);
     if result != 0 {
         Err(MapError::MapFailed)
     } else {
         Ok(())
     }
-}
+}}

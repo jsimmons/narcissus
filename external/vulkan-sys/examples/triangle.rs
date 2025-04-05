@@ -8,7 +8,7 @@ mod libc {
     pub const RTLD_NOW: c_int = 0x2;
     pub const RTLD_LOCAL: c_int = 0;
 
-    extern "C" {
+    unsafe extern "C" {
         pub fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
         pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     }
@@ -765,12 +765,14 @@ pub fn main() {
 
     #[inline]
     unsafe fn as_chunks_unchecked<T, const N: usize>(slice: &[T]) -> &[[T; N]] {
-        debug_assert_ne!(N, 0);
-        debug_assert_eq!(slice.len() % N, 0);
-        let new_len = slice.len() / N;
-        // SAFETY: We cast a slice of `new_len * N` elements into
-        // a slice of `new_len` many `N` elements chunks.
-        std::slice::from_raw_parts(slice.as_ptr().cast(), new_len)
+        unsafe {
+            debug_assert_ne!(N, 0);
+            debug_assert_eq!(slice.len() % N, 0);
+            let new_len = slice.len() / N;
+            // SAFETY: We cast a slice of `new_len * N` elements into
+            // a slice of `new_len` many `N` elements chunks.
+            std::slice::from_raw_parts(slice.as_ptr().cast(), new_len)
+        }
     }
 
     print!("\x1b[2J");
