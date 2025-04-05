@@ -1,8 +1,8 @@
 use std::collections::hash_map::Entry;
 
-use crate::{font::GlyphBitmapBox, FontCollection, GlyphIndex, Oversample, Packer};
+use crate::{FontCollection, GlyphIndex, Oversample, Packer, font::GlyphBitmapBox};
 pub use narcissus_core::FiniteF32;
-use narcissus_core::{default, Widen};
+use narcissus_core::{Widen, default};
 use rustc_hash::FxHashMap;
 use stb_truetype_sys::rectpack::Rect;
 

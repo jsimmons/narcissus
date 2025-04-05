@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use narcissus_core::{obj, Widen};
-use narcissus_maths::{vec2, vec3, vec4, Vec2, Vec3};
+use narcissus_core::{Widen, obj};
+use narcissus_maths::{Vec2, Vec3, vec2, vec3, vec4};
 
 use shark_shaders::pipelines::Vertex;
 

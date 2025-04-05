@@ -64,11 +64,7 @@ pub fn tan_pi_f32(a: f32) -> f32 {
     let r = if i & 1 == 1 { 1.0 / -r } else { r };
 
     // Handle integer arguments.
-    if a == a.floor() {
-        a * e
-    } else {
-        r
-    }
+    if a == a.floor() { a * e } else { r }
 }
 
 #[cfg(test)]

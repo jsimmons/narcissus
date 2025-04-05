@@ -1,4 +1,4 @@
-use crate::{portable, CVWords, IncrementCounter, BLOCK_LEN, OUT_LEN};
+use crate::{BLOCK_LEN, CVWords, IncrementCounter, OUT_LEN, portable};
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub const MAX_SIMD_DEGREE: usize = 16;

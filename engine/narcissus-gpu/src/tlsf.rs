@@ -90,7 +90,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use narcissus_core::{default, linear_log_binning, static_assert, Widen};
+use narcissus_core::{Widen, default, linear_log_binning, static_assert};
 
 // The log2 of the size of the 'linear' bin.
 pub const LINEAR_LOG2: u32 = 9; // 2^9 = 512

@@ -1,4 +1,4 @@
-use crate::{sin_cos_pi_f32, HalfTurn, Point2, Point3, Vec2, Vec3};
+use crate::{HalfTurn, Point2, Point3, Vec2, Vec3, sin_cos_pi_f32};
 
 /// 3x3 matrix.
 #[derive(Clone, Copy, PartialEq)]

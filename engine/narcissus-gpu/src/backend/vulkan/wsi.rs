@@ -1,25 +1,25 @@
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::Entry},
     ffi::CStr,
 };
 
 use narcissus_core::{
-    default,
+    HybridArena, Mutex, Pool, Widen, default,
     raw_window::{AsRawWindow, RawWindow},
-    HybridArena, Mutex, Pool, Widen,
 };
 use vulkan_sys as vk;
 
 use crate::{
+    ColorSpace, Frame, Image, ImageFormat, PresentMode, SwapchainConfigurator, SwapchainImage,
+    SwapchainOutOfDateError,
     backend::vulkan::{
-        from_vulkan_image_usage_flags, vk_vec, vulkan_color_space, vulkan_format,
-        vulkan_image_usage_flags, vulkan_present_mode, VulkanImageHolder, VulkanImageSwapchain,
+        VulkanImageHolder, VulkanImageSwapchain, from_vulkan_image_usage_flags, vk_vec,
+        vulkan_color_space, vulkan_format, vulkan_image_usage_flags, vulkan_present_mode,
     },
-    vk_check, ColorSpace, Frame, Image, ImageFormat, PresentMode, SwapchainConfigurator,
-    SwapchainImage, SwapchainOutOfDateError,
+    vk_check,
 };
 
-use super::{VulkanDevice, VulkanFrame, VULKAN_CONSTANTS};
+use super::{VULKAN_CONSTANTS, VulkanDevice, VulkanFrame};
 
 #[derive(Default)]
 struct VulkanPresentInfo {
@@ -234,12 +234,13 @@ impl VulkanDevice {
                         ..default()
                     };
                     let mut surface = vk::SurfaceKHR::null();
-                    vk_check!(self
-                        .wsi
-                        .xcb_surface_fn
-                        .as_ref()
-                        .unwrap()
-                        .create_xcb_surface(self.instance, &create_info, None, &mut surface));
+                    vk_check!(
+                        self.wsi
+                            .xcb_surface_fn
+                            .as_ref()
+                            .unwrap()
+                            .create_xcb_surface(self.instance, &create_info, None, &mut surface)
+                    );
                     surface
                 }
                 RawWindow::Xlib(xlib) => {
@@ -249,12 +250,13 @@ impl VulkanDevice {
                         ..default()
                     };
                     let mut surface = vk::SurfaceKHR::null();
-                    vk_check!(self
-                        .wsi
-                        .xlib_surface_fn
-                        .as_ref()
-                        .unwrap()
-                        .create_xlib_surface(self.instance, &create_info, None, &mut surface));
+                    vk_check!(
+                        self.wsi
+                            .xlib_surface_fn
+                            .as_ref()
+                            .unwrap()
+                            .create_xlib_surface(self.instance, &create_info, None, &mut surface)
+                    );
                     surface
                 }
                 RawWindow::Wayland(wayland) => {
@@ -264,12 +266,18 @@ impl VulkanDevice {
                         ..default()
                     };
                     let mut surface = vk::SurfaceKHR::null();
-                    vk_check!(self
-                        .wsi
-                        .wayland_surface_fn
-                        .as_ref()
-                        .unwrap()
-                        .create_wayland_surface(self.instance, &create_info, None, &mut surface));
+                    vk_check!(
+                        self.wsi
+                            .wayland_surface_fn
+                            .as_ref()
+                            .unwrap()
+                            .create_wayland_surface(
+                                self.instance,
+                                &create_info,
+                                None,
+                                &mut surface
+                            )
+                    );
                     surface
                 }
             });
@@ -374,9 +382,11 @@ impl VulkanDevice {
 
             assert!(available_present_modes.contains(&present_mode));
             assert!((!supported_usage_flags.as_raw() & usage_flags.as_raw()) == 0);
-            assert!(supported_surface_formats
-                .iter()
-                .any(|&supported_format| { supported_format == surface_format }));
+            assert!(
+                supported_surface_formats
+                    .iter()
+                    .any(|&supported_format| { supported_format == surface_format })
+            );
 
             let present_mode = vulkan_present_mode(present_mode);
             let usage_flags = vulkan_image_usage_flags(usage_flags);

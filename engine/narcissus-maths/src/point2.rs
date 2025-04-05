@@ -1,4 +1,4 @@
-use crate::{impl_affine, impl_shared, Vec2};
+use crate::{Vec2, impl_affine, impl_shared};
 
 /// Type representing a point in a 2d affine space.
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default, Debug)]

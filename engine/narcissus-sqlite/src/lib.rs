@@ -1,6 +1,6 @@
 use core::ffi::c_int;
 use std::{
-    ffi::{c_char, c_void, CStr, CString},
+    ffi::{CStr, CString, c_char, c_void},
     marker::PhantomData,
     num::NonZeroI32,
     path::Path,
@@ -14,30 +14,32 @@ use sqlite_sys as ffi;
 static SQLITE_GLOBAL_INIT: OnceLock<()> = OnceLock::new();
 
 #[cold]
-unsafe fn initialize() { unsafe {
-    let ret = ffi::sqlite3_initialize();
-    if ret != sqlite_sys::SQLITE_OK {
-        panic!("error initializing sqlite: {:?}", Error::new(ret));
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        extern "C" fn log(_user: *mut c_void, _result: c_int, msg: *const c_char) {
-            let msg = unsafe { CStr::from_ptr(msg) };
-            let msg = msg.to_string_lossy();
-            println!("sqlite3: {}", msg);
-        }
-
-        let ret = ffi::sqlite3_config(
-            ffi::SQLITE_CONFIG_LOG,
-            log as extern "C" fn(*mut c_void, i32, *const i8),
-            std::ptr::null_mut::<c_void>(),
-        );
+unsafe fn initialize() {
+    unsafe {
+        let ret = ffi::sqlite3_initialize();
         if ret != sqlite_sys::SQLITE_OK {
-            panic!("error installing sqlite logger: {:?}", Error::new(ret));
+            panic!("error initializing sqlite: {:?}", Error::new(ret));
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            extern "C" fn log(_user: *mut c_void, _result: c_int, msg: *const c_char) {
+                let msg = unsafe { CStr::from_ptr(msg) };
+                let msg = msg.to_string_lossy();
+                println!("sqlite3: {}", msg);
+            }
+
+            let ret = ffi::sqlite3_config(
+                ffi::SQLITE_CONFIG_LOG,
+                log as extern "C" fn(*mut c_void, i32, *const i8),
+                std::ptr::null_mut::<c_void>(),
+            );
+            if ret != sqlite_sys::SQLITE_OK {
+                panic!("error installing sqlite logger: {:?}", Error::new(ret));
+            }
         }
     }
-}}
+}
 
 fn check_initalized() {
     SQLITE_GLOBAL_INIT.get_or_init(|| unsafe { initialize() });

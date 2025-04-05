@@ -3,7 +3,7 @@ use std::{ffi::CStr, marker::PhantomData};
 use backend::vulkan;
 use mapped_buffer::TransientBindGroup;
 use narcissus_core::{
-    default, flags_def, raw_window::AsRawWindow, thread_token_def, Handle, PhantomUnsend,
+    Handle, PhantomUnsend, default, flags_def, raw_window::AsRawWindow, thread_token_def,
 };
 
 mod backend;

@@ -1,4 +1,4 @@
-use crate::{sin_cos_pi_f32, HalfTurn, Vec3};
+use crate::{HalfTurn, Vec3, sin_cos_pi_f32};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(C)]

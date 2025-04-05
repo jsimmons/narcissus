@@ -1,4 +1,4 @@
-use crate::{mul_full_width_u64, Widen};
+use crate::{Widen, mul_full_width_u64};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Pcg64 {

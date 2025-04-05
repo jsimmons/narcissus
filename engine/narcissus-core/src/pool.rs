@@ -1,8 +1,8 @@
 use std::{marker::PhantomData, mem::size_of, ptr::NonNull};
 
 use crate::{
-    align_offset, mod_inverse_u32, static_assert, virtual_commit, virtual_free, virtual_reserve,
-    Widen,
+    Widen, align_offset, mod_inverse_u32, static_assert, virtual_commit, virtual_free,
+    virtual_reserve,
 };
 
 /// Each handle uses `GEN_BITS` bits of per-slot generation counter. Looking up
@@ -687,7 +687,7 @@ impl<T> Default for Pool<T> {
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    use super::{Handle, Pool, MAX_CAP};
+    use super::{Handle, MAX_CAP, Pool};
 
     #[test]
     fn lookup_null() {

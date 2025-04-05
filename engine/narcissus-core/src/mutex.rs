@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicI32, Ordering},
 };
 
-use crate::{waiter, PhantomUnsend};
+use crate::{PhantomUnsend, waiter};
 
 #[cfg(debug_assertions)]
 #[inline(always)]

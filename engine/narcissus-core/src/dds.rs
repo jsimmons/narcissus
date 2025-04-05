@@ -2,7 +2,7 @@
 
 use std::mem::size_of;
 
-use crate::{flags_def, fourcc, FourCC};
+use crate::{FourCC, flags_def, fourcc};
 
 const DDS_FOURCC: FourCC = fourcc!("DDS ");
 const DX10_FOURCC: FourCC = fourcc!("DX10");

@@ -9,10 +9,9 @@ use std::{
 };
 
 use narcissus_core::{
-    default, is_aligned_to,
+    Arc, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen, default, is_aligned_to,
     manual_arc::{self, ManualArc},
     raw_window::AsRawWindow,
-    Arc, Arena, HybridArena, Mutex, PhantomUnsend, Pool, Widen,
 };
 
 use physical_device_features::VulkanPhysicalDeviceFeatures;
@@ -20,15 +19,14 @@ use physical_device_properties::VulkanPhysicalDeviceProperties;
 use vulkan_sys::{self as vk};
 
 use crate::{
-    frame_counter::FrameCounter, mapped_buffer::TransientBindGroup, Bind, BindDesc,
-    BindGroupLayout, BindingType, Buffer, BufferAddress, BufferArg, BufferDesc, BufferImageCopy,
-    BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d, Frame,
-    GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit, ImageDesc,
-    ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation, Offset2d,
-    Offset3d, PersistentBuffer, Pipeline, PipelineLayout, Sampler, SamplerAddressMode,
+    Bind, BindDesc, BindGroupLayout, BindingType, Buffer, BufferAddress, BufferArg, BufferDesc,
+    BufferImageCopy, BufferUsageFlags, CmdEncoder, ComputePipelineDesc, Device, Extent2d, Extent3d,
+    Frame, GlobalBarrier, GpuConcurrent, GraphicsPipelineDesc, Image, ImageBarrier, ImageBlit,
+    ImageDesc, ImageDimension, ImageLayout, ImageTiling, ImageViewDesc, IndexType, MemoryLocation,
+    Offset2d, Offset3d, PersistentBuffer, Pipeline, PipelineLayout, Sampler, SamplerAddressMode,
     SamplerCompareOp, SamplerDesc, SamplerFilter, ShaderStageFlags, SpecConstant,
     SwapchainConfigurator, SwapchainImage, SwapchainOutOfDateError, ThreadToken, TransientBuffer,
-    TypedBind,
+    TypedBind, frame_counter::FrameCounter, mapped_buffer::TransientBindGroup,
 };
 
 mod allocator;
@@ -1573,10 +1571,11 @@ impl Device for VulkanDevice {
         });
 
         if let Some(required_subgroup_size) = pipeline_desc.shader.required_subgroup_size {
-            assert!(self
-                .physical_device_properties
-                .required_subgroup_size_stages()
-                .contains(vk::ShaderStageFlags::COMPUTE));
+            assert!(
+                self.physical_device_properties
+                    .required_subgroup_size_stages()
+                    .contains(vk::ShaderStageFlags::COMPUTE)
+            );
             assert!(
                 required_subgroup_size >= self.physical_device_properties.min_subgroup_size()
                     && required_subgroup_size

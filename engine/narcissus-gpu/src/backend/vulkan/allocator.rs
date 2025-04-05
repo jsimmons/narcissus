@@ -4,13 +4,13 @@ use std::{
     sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
-use narcissus_core::{default, BitIter, Mutex, Widen};
+use narcissus_core::{BitIter, Mutex, Widen, default};
 
 use vulkan_sys as vk;
 
-use crate::{tlsf, vk_check, MemoryLocation};
+use crate::{MemoryLocation, tlsf, vk_check};
 
-use super::{VulkanDevice, VulkanFrame, VULKAN_CONSTANTS};
+use super::{VULKAN_CONSTANTS, VulkanDevice, VulkanFrame};
 
 type Tlsf = tlsf::Tlsf<VulkanSuperBlockInfo>;
 
@@ -302,17 +302,19 @@ impl VulkanDevice {
         Some((memory, mapped_ptr))
     }
 
-    unsafe fn free_super_block(&self, user_data: &VulkanSuperBlockInfo) { unsafe {
-        self.device_fn
-            .free_memory(self.device, user_data.memory, None);
+    unsafe fn free_super_block(&self, user_data: &VulkanSuperBlockInfo) {
+        unsafe {
+            self.device_fn
+                .free_memory(self.device, user_data.memory, None);
 
-        let memory_type_index = user_data.memory_type_index.widen();
-        let memory_heap_index =
-            self.physical_device_memory_properties.memory_types[memory_type_index].heap_index;
-        let size = self.allocator.tlsf_super_block_size[memory_heap_index.widen()];
+            let memory_type_index = user_data.memory_type_index.widen();
+            let memory_heap_index =
+                self.physical_device_memory_properties.memory_types[memory_type_index].heap_index;
+            let size = self.allocator.tlsf_super_block_size[memory_heap_index.widen()];
 
-        self.allocator.stats.free(memory_heap_index, size);
-    }}
+            self.allocator.stats.free(memory_heap_index, size);
+        }
+    }
 
     pub fn allocate_memory(
         &self,

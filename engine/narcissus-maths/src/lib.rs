@@ -21,14 +21,14 @@ pub use mat2::Mat2;
 pub use mat3::Mat3;
 pub use mat4::Mat4;
 pub use perlin::{perlin_noise3, perlin_noise3_wrap, perlin_noise3_wrap_seed};
-pub use point2::{point2, Point2};
-pub use point3::{point3, Point3};
+pub use point2::{Point2, point2};
+pub use point3::{Point3, point3};
 pub use quat::Quat;
 pub use sin_cos_pi::{cos_pi_f32, sin_cos_pi_f32, sin_pi_f32};
 pub use tan_pi::tan_pi_f32;
-pub use vec2::{vec2, Vec2};
-pub use vec3::{vec3, Vec3};
-pub use vec4::{vec4, Vec4};
+pub use vec2::{Vec2, vec2};
+pub use vec3::{Vec3, vec3};
+pub use vec4::{Vec4, vec4};
 
 /// Unit type for an angle expressed in radians.
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Default)]
@@ -264,11 +264,7 @@ fn select_f32(x: f32, y: f32, t: bool) -> f32 {
     // With avx512 the compiler tends to emit masked moves anyway, so don't bother being clever.
     #[cfg(any(target_feature = "avx512f", not(target_feature = "sse4.1")))]
     {
-        if t {
-            y
-        } else {
-            x
-        }
+        if t { y } else { x }
     }
 
     #[cfg(all(target_feature = "sse4.1", not(target_feature = "avx512f")))]

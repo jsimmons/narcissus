@@ -1,11 +1,11 @@
 use narcissus_core::random::Pcg64;
 use narcissus_gpu::{
-    create_device, Access, BufferDesc, BufferUsageFlags, DeviceExt, GlobalBarrier, MemoryLocation,
-    ShaderStageFlags, ThreadToken,
+    Access, BufferDesc, BufferUsageFlags, DeviceExt, GlobalBarrier, MemoryLocation,
+    ShaderStageFlags, ThreadToken, create_device,
 };
 use shark_shaders::pipelines::{
-    calcuate_workgroup_count, calculate_spine_size, Pipelines, RadixSortDownsweepConstants,
-    RadixSortUpsweepConstants,
+    Pipelines, RadixSortDownsweepConstants, RadixSortUpsweepConstants, calcuate_workgroup_count,
+    calculate_spine_size,
 };
 
 fn gpu_sort(values: &mut [u32]) {

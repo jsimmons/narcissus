@@ -29,11 +29,7 @@ pub fn exp_f32(a: f32) -> f32 {
 
     // handle special cases: severe overflow / underflow
     if a.abs() >= 104.0 {
-        if a > 0.0 {
-            f32::INFINITY
-        } else {
-            0.0
-        }
+        if a > 0.0 { f32::INFINITY } else { 0.0 }
     } else {
         r
     }

@@ -80,21 +80,23 @@ impl<T> ManualArc<T> {
     pub fn release(mut self) -> Release<T> {
         #[cold]
         #[inline(never)]
-        unsafe fn release_slow<T>(ptr: NonNull<Inner<T>>) -> T { unsafe {
-            // Ref-counting operations imply a full memory barrier on x86, but not in general. So
-            // insert an acquire barrier on the slow path to ensure all modifications to inner are
-            // visible before we call drop.
-            std::sync::atomic::fence(Ordering::Acquire);
+        unsafe fn release_slow<T>(ptr: NonNull<Inner<T>>) -> T {
+            unsafe {
+                // Ref-counting operations imply a full memory barrier on x86, but not in general. So
+                // insert an acquire barrier on the slow path to ensure all modifications to inner are
+                // visible before we call drop.
+                std::sync::atomic::fence(Ordering::Acquire);
 
-            // SAFETY: Was created by Box::leak in the constructor, so it's valid to recreate a box.
-            let mut inner = Box::from_raw(ptr.as_ptr());
-            // extract the value from the container so we can return it.
-            let value = ManuallyDrop::take(&mut inner.value);
-            // since the contained value is wrapped in `ManuallyDrop` it won't be dropped here.
-            drop(inner);
+                // SAFETY: Was created by Box::leak in the constructor, so it's valid to recreate a box.
+                let mut inner = Box::from_raw(ptr.as_ptr());
+                // extract the value from the container so we can return it.
+                let value = ManuallyDrop::take(&mut inner.value);
+                // since the contained value is wrapped in `ManuallyDrop` it won't be dropped here.
+                drop(inner);
 
-            value
-        }}
+                value
+            }
+        }
 
         // SAFETY: `release` consumes `self` so it's impossible to call twice on the same instance,
         // release is also the only function able to invalidate the pointer. Hence the pointer is

@@ -21,36 +21,38 @@ fn overflow() -> ! {
 /// This function will propagate undefined values from T, for example, padding
 /// bytes, so it's vital that no Rust reference to the written memory exists
 /// after writing a `T` which contains undefined values.
-unsafe fn copy_from_with_offset<T: ?Sized>(ptr: NonNull<u8>, len: usize, offset: usize, src: &T) { unsafe {
-    let size = std::mem::size_of_val(src);
+unsafe fn copy_from_with_offset<T: ?Sized>(ptr: NonNull<u8>, len: usize, offset: usize, src: &T) {
+    unsafe {
+        let size = std::mem::size_of_val(src);
 
-    let Some(end) = offset.checked_add(size) else {
-        overflow()
-    };
+        let Some(end) = offset.checked_add(size) else {
+            overflow()
+        };
 
-    if end > len {
-        overflow()
+        if end > len {
+            overflow()
+        }
+
+        // SAFETY:
+        //  * Taking a pointer of `T` as bytes is always valid, even when it contains
+        //    padding. So long as we never materialize a reference to those undef bytes
+        //    and directly copy through the pointer instead.
+        //
+        //  * The number of bytes we're reading from src is directly derived from its
+        //    size in bytes.
+        //
+        //  * We check the length of the buffer is sufficient for `size` plus `offset`
+        //    bytes above.
+        //
+        //  * `src` and `dst` cannot overlap because it's not possible to make a
+        //    reference to the bytes from the transient buffer.
+        let count = size;
+        let src = src as *const _ as *const u8;
+        let src = src.add(offset);
+        let dst = ptr.as_ptr();
+        std::ptr::copy_nonoverlapping(src, dst, count)
     }
-
-    // SAFETY:
-    //  * Taking a pointer of `T` as bytes is always valid, even when it contains
-    //    padding. So long as we never materialize a reference to those undef bytes
-    //    and directly copy through the pointer instead.
-    //
-    //  * The number of bytes we're reading from src is directly derived from its
-    //    size in bytes.
-    //
-    //  * We check the length of the buffer is sufficient for `size` plus `offset`
-    //    bytes above.
-    //
-    //  * `src` and `dst` cannot overlap because it's not possible to make a
-    //    reference to the bytes from the transient buffer.
-    let count = size;
-    let src = src as *const _ as *const u8;
-    let src = src.add(offset);
-    let dst = ptr.as_ptr();
-    std::ptr::copy_nonoverlapping(src, dst, count)
-}}
+}
 
 /// Persistent mapped buffer.
 ///

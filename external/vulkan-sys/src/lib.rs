@@ -18,9 +18,9 @@ pub use structs::*;
 
 use std::{
     convert::{TryFrom, TryInto},
-    ffi::{c_void, CStr},
+    ffi::{CStr, c_void},
     marker::PhantomData,
-    mem::{transmute, MaybeUninit},
+    mem::{MaybeUninit, transmute},
     os::raw::c_char,
 };
 
@@ -302,11 +302,15 @@ where
 }
 
 fn vulkan_instance_version_not_supported() {
-    panic!("calling an instance function not supported by the version requested in `InstanceFunctions::new`")
+    panic!(
+        "calling an instance function not supported by the version requested in `InstanceFunctions::new`"
+    )
 }
 
 fn vulkan_device_version_not_supported() {
-    panic!("calling a device function not supported by the version requested in `DeviceFunctions::new`")
+    panic!(
+        "calling a device function not supported by the version requested in `DeviceFunctions::new`"
+    )
 }
 
 pub struct GlobalFunctions {
@@ -318,28 +322,30 @@ pub struct GlobalFunctions {
 }
 
 impl GlobalFunctions {
-    pub unsafe fn new(get_proc_addr: *mut c_void) -> Self { unsafe {
-        let get_instance_proc_addr = transmute::<_, FnGetInstanceProcAddr>(get_proc_addr);
-        Self {
-            get_instance_proc_addr,
-            enumerate_instance_version: transmute::<_, _>(get_instance_proc_addr(
-                Instance::null(),
-                c"vkEnumerateInstanceVersion".as_ptr(),
-            )),
-            enumerate_instance_extension_properties: transmute::<_, _>(get_instance_proc_addr(
-                Instance::null(),
-                c"vkEnumerateInstanceExtensionProperties".as_ptr(),
-            )),
-            enumerate_instance_layer_properties: transmute::<_, _>(get_instance_proc_addr(
-                Instance::null(),
-                c"vkEnumerateInstanceLayerProperties".as_ptr(),
-            )),
-            create_instance: transmute::<_, _>(
-                get_instance_proc_addr(Instance::null(), c"vkCreateInstance".as_ptr())
-                    .expect("failed to load vkCreateInstance"),
-            ),
+    pub unsafe fn new(get_proc_addr: *mut c_void) -> Self {
+        unsafe {
+            let get_instance_proc_addr = transmute::<_, FnGetInstanceProcAddr>(get_proc_addr);
+            Self {
+                get_instance_proc_addr,
+                enumerate_instance_version: transmute::<_, _>(get_instance_proc_addr(
+                    Instance::null(),
+                    c"vkEnumerateInstanceVersion".as_ptr(),
+                )),
+                enumerate_instance_extension_properties: transmute::<_, _>(get_instance_proc_addr(
+                    Instance::null(),
+                    c"vkEnumerateInstanceExtensionProperties".as_ptr(),
+                )),
+                enumerate_instance_layer_properties: transmute::<_, _>(get_instance_proc_addr(
+                    Instance::null(),
+                    c"vkEnumerateInstanceLayerProperties".as_ptr(),
+                )),
+                create_instance: transmute::<_, _>(
+                    get_instance_proc_addr(Instance::null(), c"vkCreateInstance".as_ptr())
+                        .expect("failed to load vkCreateInstance"),
+                ),
+            }
         }
-    }}
+    }
 
     #[inline]
     pub unsafe fn get_instance_proc_addr(

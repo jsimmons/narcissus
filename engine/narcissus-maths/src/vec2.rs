@@ -1,4 +1,4 @@
-use crate::{impl_shared, impl_vector, Point2};
+use crate::{Point2, impl_shared, impl_vector};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default, Debug)]
 #[repr(C)]

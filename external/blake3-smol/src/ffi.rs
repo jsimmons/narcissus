@@ -1,4 +1,3 @@
-
 #[allow(dead_code)]
 unsafe extern "C" {
     pub fn blake3_compress_in_place_avx512(
