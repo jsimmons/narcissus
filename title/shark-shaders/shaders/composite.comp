@@ -5,6 +5,7 @@
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_image_load_formatted : require
 
 #include "bindings_compute.h"
 #include "draw_2d.h"

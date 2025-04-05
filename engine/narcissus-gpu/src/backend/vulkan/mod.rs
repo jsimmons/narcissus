@@ -591,16 +591,18 @@ impl VulkanDevice {
 
             let mut enabled_features: Box<VulkanPhysicalDeviceFeatures> = default();
 
-            enabled_features.set_dynamic_rendering(true);
-            enabled_features.set_synchronization2(true);
-            enabled_features.set_subgroup_size_control(true);
-            enabled_features.set_compute_full_subgroups(true);
-            enabled_features.set_maintenance4(true);
             enabled_features.set_buffer_device_address(true);
-            enabled_features.set_timeline_semaphore(true);
-            enabled_features.set_descriptor_indexing(true);
+            enabled_features.set_compute_full_subgroups(true);
             enabled_features.set_descriptor_binding_partially_bound(true);
+            enabled_features.set_descriptor_indexing(true);
             enabled_features.set_draw_indirect_count(true);
+            enabled_features.set_dynamic_rendering(true);
+            enabled_features.set_maintenance4(true);
+            enabled_features.set_shader_storage_image_read_without_format(true);
+            enabled_features.set_shader_storage_image_write_without_format(true);
+            enabled_features.set_subgroup_size_control(true);
+            enabled_features.set_synchronization2(true);
+            enabled_features.set_timeline_semaphore(true);
             enabled_features.set_uniform_buffer_standard_layout(true);
 
             if wsi_support.swapchain_maintenance1() {
