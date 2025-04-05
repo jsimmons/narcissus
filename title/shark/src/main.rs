@@ -10,14 +10,14 @@ use shark_shaders::pipelines::{Draw2dCmd, Draw2dScissor};
 use renderdoc_sys as rdoc;
 
 use fonts::{FontFamily, Fonts};
-use narcissus_app::{create_app, Event, Key, WindowDesc};
+use narcissus_app::{Event, Key, WindowDesc, create_app};
 use narcissus_core::default;
 use narcissus_font::{FontCollection, GlyphCache, HorizontalMetrics};
 use narcissus_gpu::{
-    create_device, ColorSpace, ImageFormat, ImageUsageFlags, PresentMode, SwapchainConfigurator,
-    SwapchainImage, ThreadToken,
+    ColorSpace, ImageFormat, ImageUsageFlags, PresentMode, SwapchainConfigurator, SwapchainImage,
+    ThreadToken, create_device,
 };
-use narcissus_maths::{sin_cos_pi_f32, vec2, Vec2};
+use narcissus_maths::{Vec2, sin_cos_pi_f32, vec2};
 
 mod draw;
 mod fonts;
@@ -295,7 +295,7 @@ pub fn main() {
                 let (width, height) = window.size_in_pixels();
                 if let Ok(result) = gpu.acquire_swapchain(
                     frame,
-                    window.upcast(),
+                    window.as_ref(),
                     width,
                     height,
                     &mut swapchain_configurator,
@@ -346,7 +346,7 @@ pub fn main() {
                         }
                         CloseRequested { window_id } => {
                             let window = app.window(window_id);
-                            gpu.destroy_swapchain(window.upcast());
+                            gpu.destroy_swapchain(window.as_ref());
                         }
                         _ => {}
                     }

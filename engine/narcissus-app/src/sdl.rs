@@ -8,19 +8,19 @@ use std::{
 use crate::{App, ButtonFlags, Event, Key, ModifierFlags, Window, WindowId};
 
 use narcissus_core::{
+    Mutex,
     raw_window::{AsRawWindow, RawWindow, WaylandWindow, XlibWindow},
-    Mutex, Upcast,
 };
 use sdl3_sys::{
     events::{
-        SDL_EventType, SDL_PollEvent, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP,
-        SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP, SDL_EVENT_MOUSE_MOTION,
-        SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED, SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED,
+        SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP, SDL_EVENT_MOUSE_BUTTON_DOWN,
+        SDL_EVENT_MOUSE_BUTTON_UP, SDL_EVENT_MOUSE_MOTION, SDL_EVENT_QUIT,
+        SDL_EVENT_WINDOW_CLOSE_REQUESTED, SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED,
         SDL_EVENT_WINDOW_FOCUS_GAINED, SDL_EVENT_WINDOW_FOCUS_LOST, SDL_EVENT_WINDOW_MOUSE_ENTER,
         SDL_EVENT_WINDOW_MOUSE_LEAVE, SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED,
-        SDL_EVENT_WINDOW_RESIZED,
+        SDL_EVENT_WINDOW_RESIZED, SDL_EventType, SDL_PollEvent,
     },
-    init::{SDL_InitSubSystem, SDL_Quit, SDL_INIT_VIDEO},
+    init::{SDL_INIT_VIDEO, SDL_InitSubSystem, SDL_Quit},
     keycode::*,
     mouse::{
         SDL_BUTTON_LMASK, SDL_BUTTON_MMASK, SDL_BUTTON_RMASK, SDL_BUTTON_X1MASK, SDL_BUTTON_X2MASK,
@@ -30,10 +30,9 @@ use sdl3_sys::{
     video::{
         SDL_CreateWindow, SDL_DestroyWindow, SDL_GetCurrentVideoDriver, SDL_GetWindowDisplayScale,
         SDL_GetWindowID, SDL_GetWindowProperties, SDL_GetWindowSize, SDL_GetWindowSizeInPixels,
-        SDL_Window, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER,
-        SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, SDL_PROP_WINDOW_X11_DISPLAY_POINTER,
-        SDL_PROP_WINDOW_X11_WINDOW_NUMBER, SDL_WINDOW_HIGH_PIXEL_DENSITY, SDL_WINDOW_RESIZABLE,
-        SDL_WINDOW_VULKAN,
+        SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER,
+        SDL_PROP_WINDOW_X11_DISPLAY_POINTER, SDL_PROP_WINDOW_X11_WINDOW_NUMBER,
+        SDL_WINDOW_HIGH_PIXEL_DENSITY, SDL_WINDOW_RESIZABLE, SDL_WINDOW_VULKAN, SDL_Window,
     },
 };
 
@@ -134,12 +133,6 @@ impl AsRawWindow for SdlWindow {
 
         #[cfg(not(target_os = "linux"))]
         panic!("unsupported os")
-    }
-}
-
-impl Upcast<dyn AsRawWindow> for SdlWindow {
-    fn upcast(&self) -> &(dyn AsRawWindow + 'static) {
-        self
     }
 }
 

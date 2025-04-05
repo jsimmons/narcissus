@@ -3,7 +3,7 @@ mod sdl;
 
 use std::rc::Rc;
 
-use narcissus_core::{flags_def, raw_window::AsRawWindow, Upcast};
+use narcissus_core::{flags_def, raw_window::AsRawWindow};
 
 pub use key::Key;
 
@@ -33,7 +33,7 @@ pub struct WindowDesc<'a> {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct WindowId(u64);
 
-pub trait Window: AsRawWindow + Upcast<dyn AsRawWindow> {
+pub trait Window: AsRawWindow {
     fn id(&self) -> WindowId;
 
     fn size(&self) -> (u32, u32);
