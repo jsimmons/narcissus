@@ -25,7 +25,7 @@ const F32_COS_PI_8_K: [f32; 4] = unsafe {
 /// Simultaneously computes the sine and cosine of `a` expressed in multiples of
 /// *pi* radians, or half-turns.
 ///
-/// Sin error <= 0.96563 ulp.
+/// Sin error <= 0.96441 ulp.
 /// Cos error <= 0.96677 ulp.
 ///
 /// Returns `(sin(a * pi), cos(a * pi))`
