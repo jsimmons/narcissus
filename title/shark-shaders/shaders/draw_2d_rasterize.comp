@@ -84,36 +84,41 @@ void main() {
 
     for (uint i = lo; i < hi; i++) {
         uint bitmap = constants.fine_buffer.values[i];
+
         while (bitmap != 0) {
             const uint index = findLSB(bitmap);
             bitmap ^= bitmap & -bitmap;
 
             const uint base_index = (constants.coarse_buffer.values[i] & 0xffff) * 32;
-            const uint packed_type = constants.draw_buffer.values[base_index + index].packed_type;
-            const uint cmd_type = packed_type >> 24;
-            const uint cmd_scissor = packed_type & 0xffff;
+            const Cmd cmd = constants.draw_buffer.values[base_index + index];
+            const uint cmd_type = cmd.packed_type >> 24;
+            const uint cmd_scissor = cmd.packed_type & 0xffff;
 
             const Scissor scissor = constants.scissor_buffer.values[cmd_scissor];
 
             vec4 primitive_color = vec4(0.0);
             switch (cmd_type) {
-                case DRAW_2D_CMD_RECT:
-                {
-                    const CmdRect cmd_rect = decode_rect(constants.draw_buffer.values[base_index + index]);
+                case DRAW_2D_CMD_RECT: {
+                    const CmdRect cmd_rect = decode_rect(cmd);
 
                     const vec2 cmd_min = cmd_rect.position;
                     const vec2 cmd_max = cmd_rect.position + cmd_rect.bound;
 
-                    const float border_width = float((packed_type >> 16) & 0xff);
+                    if (any(lessThan(sample_center, cmd_min)) && any(greaterThan(sample_center, cmd_max))) {
+                        continue;
+                    }
+
+                    const float border_width = float((cmd.packed_type >> 16) & 0xff);
                     const vec4 border_radii = unpackUnorm4x8(cmd_rect.border_radii) * 255.0;
                     const float max_border_radius = max(border_radii.x, max(border_radii.y, max(border_radii.z, border_radii.w)));
                     const float shrink = (2.0 - sqrt(2.0)) * max_border_radius;
+                    const vec4 background_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
 
                     const vec2 cmd_min_clipped = max(scissor.offset_min, cmd_min + border_width + shrink);
                     const vec2 cmd_max_clipped = min(scissor.offset_max, cmd_max - border_width - shrink);
 
                     if (all(greaterThan(sample_center, cmd_min_clipped)) && all(lessThan(sample_center, cmd_max_clipped))) {
-                        primitive_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
+                        primitive_color = background_color;
                     } else {
                         const vec2 b = cmd_rect.bound / 2.0;
                         const vec2 p = cmd_rect.position + b - sample_center;
@@ -125,7 +130,6 @@ void main() {
                             d = sdf_rounded_box(p, b, border_radii);
                         }
 
-                        const vec4 background_color = unpackUnorm4x8(cmd_rect.background_color).bgra;
                         const vec4 border_color = unpackUnorm4x8(cmd_rect.border_color).bgra;
                         primitive_color = mix(background_color, border_color, smoothstep(1.0, 0.0, 1.0 - d - border_width));
                         primitive_color = mix(primitive_color, vec4(0), smoothstep(1.0, 0.0, 1.0 - d));
@@ -137,9 +141,8 @@ void main() {
                     }
                     break;
                 }
-                case DRAW_2D_CMD_GLYPH:
-                {
-                    const CmdGlyph cmd_glyph = decode_glyph(constants.draw_buffer.values[base_index + index]);
+                case DRAW_2D_CMD_GLYPH: {
+                    const CmdGlyph cmd_glyph = decode_glyph(cmd);
                     const Glyph glyph = constants.glyph_buffer.values[cmd_glyph.index];
                     const vec2 cmd_min = cmd_glyph.position + glyph.offset_min;
                     const vec2 cmd_max = cmd_glyph.position + glyph.offset_max;
