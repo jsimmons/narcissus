@@ -24,7 +24,7 @@ pub use perlin::{perlin_noise3, perlin_noise3_wrap, perlin_noise3_wrap_seed};
 pub use point2::{Point2, point2};
 pub use point3::{Point3, point3};
 pub use quat::Quat;
-pub use sin_cos_pi::{cos_pi_f32, sin_cos_pi_f32, sin_pi_f32};
+pub use sin_cos_pi::{cos_pi_f32, sin_cos_pi_f32, sin_cos_pi_f32x4, sin_pi_f32};
 pub use tan_pi::tan_pi_f32;
 pub use vec2::{Vec2, vec2};
 pub use vec3::{Vec3, vec3};
@@ -223,7 +223,7 @@ pub fn lerp(t: f32, a: f32, b: f32) -> f32 {
 #[inline(always)]
 pub fn f32_to_i32(x: f32) -> i32 {
     #[cfg(not(target_arch = "x86_64"))]
-    const _: () = panic!("unsupported platform");
+    compile_error!("unsupported platform");
 
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -254,30 +254,6 @@ pub fn f32_to_i64(x: f32) -> i64 {
     #[cfg(target_arch = "x86_64")]
     unsafe {
         core::arch::x86_64::_mm_cvttss_si64(core::arch::x86_64::_mm_load_ss(&x))
-    }
-}
-
-/// Returns either `x`, if `t` is `false` or `y` if `t` is `true`, avoiding branches.
-#[must_use]
-#[inline(always)]
-fn select_f32(x: f32, y: f32, t: bool) -> f32 {
-    // With avx512 the compiler tends to emit masked moves anyway, so don't bother being clever.
-    #[cfg(any(target_feature = "avx512f", not(target_feature = "sse4.1")))]
-    {
-        if t { y } else { x }
-    }
-
-    #[cfg(all(target_feature = "sse4.1", not(target_feature = "avx512f")))]
-    unsafe {
-        use core::arch::x86_64::{
-            __m128, __m128i, _mm_blendv_ps, _mm_cvtsi32_si128, _mm_load_ss, _mm_store_ss,
-        };
-        let x = _mm_load_ss(&x);
-        let y = _mm_load_ss(&y);
-        let mask = std::mem::transmute::<__m128i, __m128>(_mm_cvtsi32_si128(-(t as i32)));
-        let mut res = 0.0_f32;
-        _mm_store_ss(&mut res, _mm_blendv_ps(x, y, mask));
-        res
     }
 }
 
@@ -522,7 +498,7 @@ macro_rules! impl_vector {
 
 #[cfg(test)]
 mod tests {
-    use crate::{dequantize_unorm_u8, quantize_unorm_u8, select_f32};
+    use crate::{dequantize_unorm_u8, quantize_unorm_u8};
 
     #[test]
     fn quantize_dequantize() {
@@ -530,11 +506,5 @@ mod tests {
         assert_eq!(quantize_unorm_u8(0.0), 0);
         assert_eq!(dequantize_unorm_u8(255), 1.0);
         assert_eq!(dequantize_unorm_u8(0), 0.0);
-    }
-
-    #[test]
-    fn select() {
-        assert_eq!(select_f32(1.0, 2.0, true), 2.0);
-        assert_eq!(select_f32(1.0, 2.0, false), 1.0);
     }
 }
